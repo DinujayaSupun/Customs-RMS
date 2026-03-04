@@ -1,6 +1,5 @@
 package lk.customs.rms.dto;
 
-import jakarta.validation.constraints.NotNull;
 import lk.customs.rms.enums.Priority;
 import lombok.Getter;
 import lombok.Setter;
@@ -15,7 +14,4 @@ public class UpdateDocumentRequest {
     private LocalDate receivedDate;
     private String companyName;
     private Priority priority;
-
-    @NotNull
-    private Long performedByUserId;
 }

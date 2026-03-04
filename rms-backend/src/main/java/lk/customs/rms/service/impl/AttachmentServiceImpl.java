@@ -45,12 +45,12 @@ public class AttachmentServiceImpl implements AttachmentService {
 
     @Override
     @Transactional
-    public AttachmentResponse upload(Long documentId, Long uploadedByUserId, MultipartFile file) {
+        public AttachmentResponse upload(Long documentId, Long actorUserId, MultipartFile file) {
         Document doc = documentRepository.findByIdAndDeletedFalse(documentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
 
-        var uploader = userRepository.findById(uploadedByUserId)
-                .orElseThrow(() -> new BadRequestException("User not found: " + uploadedByUserId));
+        var uploader = userRepository.findById(actorUserId)
+                .orElseThrow(() -> new BadRequestException("User not found: " + actorUserId));
 
         int nextVersion = attachmentRepository.findMaxVersionNo(documentId) + 1;
 
@@ -77,7 +77,7 @@ public class AttachmentServiceImpl implements AttachmentService {
 
         DocumentAttachment saved = attachmentRepository.save(a);
 
-        auditLogService.logAttachment(documentId, saved.getId(), uploadedByUserId, "UPLOAD",
+        auditLogService.logAttachment(documentId, saved.getId(), actorUserId, "UPLOAD",
                 "Attachment uploaded: v" + nextVersion + " " + saved.getFileName());
 
         return toResponse(saved);
@@ -95,19 +95,19 @@ public class AttachmentServiceImpl implements AttachmentService {
     }
 
     @Override
-    public AttachmentDownloadResult downloadWithMeta(Long attachmentId, Long performedByUserId) {
+        public AttachmentDownloadResult downloadWithMeta(Long attachmentId, Long actorUserId) {
         DocumentAttachment a = attachmentRepository.findByIdAndDeletedFalse(attachmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Attachment not found: " + attachmentId));
 
         Resource resource = fileStorageService.loadAsResource(a.getFilePath());
 
         // ✅ Optional audit log for download (only if caller gives performedByUserId)
-        if (performedByUserId != null) {
+        if (actorUserId != null) {
             // validate user exists
-            userRepository.findById(performedByUserId)
-                    .orElseThrow(() -> new BadRequestException("User not found: " + performedByUserId));
+            userRepository.findById(actorUserId)
+                    .orElseThrow(() -> new BadRequestException("User not found: " + actorUserId));
 
-            auditLogService.logAttachment(a.getDocumentId(), a.getId(), performedByUserId, "DOWNLOAD",
+            auditLogService.logAttachment(a.getDocumentId(), a.getId(), actorUserId, "DOWNLOAD",
                     "Attachment downloaded: v" + a.getVersionNo() + " " + a.getFileName());
         }
 
@@ -116,16 +116,16 @@ public class AttachmentServiceImpl implements AttachmentService {
 
     @Override
     @Transactional
-    public void softDelete(Long attachmentId, Long performedByUserId) {
+        public void softDelete(Long attachmentId, Long actorUserId) {
         DocumentAttachment a = attachmentRepository.findByIdAndDeletedFalse(attachmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Attachment not found: " + attachmentId));
 
-        userRepository.findById(performedByUserId)
-                .orElseThrow(() -> new BadRequestException("User not found: " + performedByUserId));
+        userRepository.findById(actorUserId)
+                .orElseThrow(() -> new BadRequestException("User not found: " + actorUserId));
 
         a.setDeleted(true);
         a.setDeletedAt(LocalDateTime.now());
-        a.setDeletedBy(performedByUserId);
+        a.setDeletedBy(actorUserId);
         a.setIsLatest(false);
         attachmentRepository.save(a);
 
@@ -137,7 +137,7 @@ public class AttachmentServiceImpl implements AttachmentService {
             attachmentRepository.save(latest);
         }
 
-        auditLogService.logAttachment(a.getDocumentId(), a.getId(), performedByUserId, "DELETE",
+        auditLogService.logAttachment(a.getDocumentId(), a.getId(), actorUserId, "DELETE",
                 "Attachment soft-deleted: v" + a.getVersionNo() + " " + a.getFileName());
     }
 

@@ -11,9 +11,6 @@ public class ForwardReturnRequest {
     @NotNull
     private Long toUserId;
 
-    @NotNull
-    private Long actionByUserId;
-
     // ✅ Optional remark to save before forward/return
     private String remarkText;
 }

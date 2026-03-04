@@ -41,7 +41,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import AppLayout from "../layouts/AppLayout.vue";
 import { listDocuments } from "../api/documents.api";
@@ -74,8 +74,12 @@ function open(id) {
 }
 
 onMounted(() => {
-  window.addEventListener("rms_user_changed", load);
+  window.addEventListener("rms_auth_changed", load);
   load();
+});
+
+onUnmounted(() => {
+  window.removeEventListener("rms_auth_changed", load);
 });
 </script>
 

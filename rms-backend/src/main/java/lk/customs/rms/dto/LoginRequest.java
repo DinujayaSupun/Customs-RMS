@@ -6,7 +6,11 @@ import lombok.Setter;
 
 @Getter
 @Setter
-public class CreateRemarkRequest {
+public class LoginRequest {
+
     @NotBlank
-    private String remarkText;
+    private String username;
+
+    @NotBlank
+    private String password;
 }

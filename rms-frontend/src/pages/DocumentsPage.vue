@@ -117,7 +117,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import AppLayout from "../layouts/AppLayout.vue";
 import { listDocuments } from "../api/documents.api";
@@ -126,7 +126,7 @@ import { getCurrentUser } from "../auth/currentUser";
 const router = useRouter();
 
 const currentUser = ref(getCurrentUser());
-const canCreate = computed(() => ["DC", "PMA"].includes(currentUser.value.role));
+const canCreate = computed(() => ["DC", "PMA"].includes(currentUser.value?.role));
 
 const q = ref("");
 const status = ref("");
@@ -141,7 +141,7 @@ const previewOpen = ref(false);
 const previewDoc = ref(null);
 
 function canPreview(doc) {
-  if (currentUser.value.role === "DC") return true;
+  if (currentUser.value?.role === "DC") return true;
   return doc.currentOwnerUserId === currentUser.value.id;
 }
 
@@ -202,8 +202,12 @@ function onUserChanged() {
 }
 
 onMounted(() => {
-  window.addEventListener("rms_user_changed", onUserChanged);
+  window.addEventListener("rms_auth_changed", onUserChanged);
   load();
+});
+
+onUnmounted(() => {
+  window.removeEventListener("rms_auth_changed", onUserChanged);
 });
 </script>
 

@@ -10,8 +10,10 @@ import lk.customs.rms.exception.ResourceNotFoundException;
 import lk.customs.rms.repository.DocumentRemarkRepository;
 import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.UserRepository;
+import lk.customs.rms.security.CurrentUserService;
 import lk.customs.rms.service.AuditLogService;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -26,17 +28,20 @@ public class DocumentRemarkController {
     private final DocumentRemarkRepository remarkRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
+        private final CurrentUserService currentUserService;
 
     public DocumentRemarkController(
             DocumentRepository documentRepository,
             DocumentRemarkRepository remarkRepository,
             UserRepository userRepository,
-            AuditLogService auditLogService
+                        AuditLogService auditLogService,
+                        CurrentUserService currentUserService
     ) {
         this.documentRepository = documentRepository;
         this.remarkRepository = remarkRepository;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
+                this.currentUserService = currentUserService;
     }
 
     // ✅ ADD REMARK (ONLY CURRENT OWNER)
@@ -44,18 +49,21 @@ public class DocumentRemarkController {
     @ResponseStatus(HttpStatus.CREATED)
     public RemarkResponse addRemark(
             @PathVariable Long documentId,
-            @Valid @RequestBody CreateRemarkRequest request
+            @Valid @RequestBody CreateRemarkRequest request,
+            Authentication authentication
     ) {
         Document doc = documentRepository.findByIdAndDeletedFalse(documentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
 
+        Long actorUserId = currentUserService.requireUserId(authentication);
+
         // 🔒 Only current owner can add remark
-        if (!doc.getCurrentOwnerUserId().equals(request.getRemarkedByUserId())) {
+        if (!doc.getCurrentOwnerUserId().equals(actorUserId)) {
             throw new BadRequestException("Only the current owner can add remarks.");
         }
 
-        var user = userRepository.findById(request.getRemarkedByUserId())
-                .orElseThrow(() -> new BadRequestException("User not found: " + request.getRemarkedByUserId()));
+        var user = userRepository.findById(actorUserId)
+                .orElseThrow(() -> new BadRequestException("User not found: " + actorUserId));
 
         String text = request.getRemarkText() == null ? "" : request.getRemarkText().trim();
         if (text.isEmpty()) {
@@ -65,7 +73,7 @@ public class DocumentRemarkController {
         DocumentRemark remark = DocumentRemark.builder()
                 .documentId(documentId)
                 .remarkText(text)
-                .remarkedByUserId(user.getId())
+                .remarkedByUserId(actorUserId)
                 .remarkedAt(LocalDateTime.now())
                 .build();
 

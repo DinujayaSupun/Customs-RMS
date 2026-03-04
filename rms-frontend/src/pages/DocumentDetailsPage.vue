@@ -129,7 +129,7 @@
             <select class="input" v-model="toUserId" :disabled="busy || !canForward">
               <option :value="null">-- Select user --</option>
               <option v-for="u in forwardTargets" :key="u.id" :value="Number(u.id)">
-                {{ u.name }} ({{ u.role }}) — id={{ u.id }}
+                {{ u.fullName }} ({{ u.role }}) — id={{ u.id }}
               </option>
             </select>
 
@@ -353,7 +353,8 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../layouts/AppLayout.vue";
-import { getCurrentUser, getUsers } from "../auth/currentUser";
+import { getCurrentUser } from "../auth/currentUser";
+import { listUsers } from "../api/auth.api";
 import {
   getDocument,
   listMovements,
@@ -368,6 +369,7 @@ import {
   rejectDocument,
   issueDocument,
   reopenDocument,
+  buildAttachmentUrl,
 } from "../api/documents.api";
 
 const route = useRoute();
@@ -375,7 +377,7 @@ const router = useRouter();
 const documentId = Number(route.params.id);
 
 const currentUser = ref(getCurrentUser());
-const users = ref(getUsers());
+const users = ref([]);
 
 const doc = ref(null);
 const movements = ref([]);
@@ -499,15 +501,10 @@ function formatDateTime(d) {
 }
 
 function previewUrl(attachmentId) {
-  const u = new URL(`http://localhost:8080/api/attachments/${attachmentId}/download`);
-  u.searchParams.set("performedByUserId", String(currentUser.value.id));
-  u.searchParams.set("inline", "true");
-  return u.toString();
+  return buildAttachmentUrl(attachmentId, { inline: true });
 }
 function downloadUrl(attachmentId) {
-  const u = new URL(`http://localhost:8080/api/attachments/${attachmentId}/download`);
-  u.searchParams.set("performedByUserId", String(currentUser.value.id));
-  return u.toString();
+  return buildAttachmentUrl(attachmentId);
 }
 function openInNewTab(a) {
   window.open(downloadUrl(a.id), "_blank");
@@ -555,7 +552,14 @@ async function reloadAll() {
   }
 }
 
-onMounted(reloadAll);
+onMounted(async () => {
+  try {
+    users.value = await listUsers();
+  } catch {
+    users.value = [];
+  }
+  await reloadAll();
+});
 
 function goBack() {
   router.push("/documents");
@@ -571,7 +575,6 @@ async function saveRemarkOnly() {
   try {
     await addRemark(documentId, {
       remarkText: text,
-      remarkedByUserId: currentUser.value.id,
     });
     remarkDraft.value = "";
     await reloadAll();
@@ -590,7 +593,6 @@ async function doForward() {
   try {
     await forwardDocument(documentId, {
       toUserId: Number(toUserId.value),
-      actionByUserId: currentUser.value.id,
       remarkText: remarkOrNull(), // ✅ this is what backend expects
     });
     remarkDraft.value = "";
@@ -608,7 +610,6 @@ async function doReturn() {
   try {
     await returnDocument(documentId, {
       toUserId: Number(toUserId.value),
-      actionByUserId: currentUser.value.id,
       remarkText: remarkOrNull(),
     });
     remarkDraft.value = "";
@@ -624,7 +625,7 @@ async function doApprove() {
   error.value = "";
   busy.value = true;
   try {
-    await approveDocument(documentId, { actionByUserId: currentUser.value.id, remarkText: remarkOrNull() });
+    await approveDocument(documentId, { remarkText: remarkOrNull() });
     remarkDraft.value = "";
     await reloadAll();
   } catch (e) {
@@ -638,7 +639,7 @@ async function doReject() {
   error.value = "";
   busy.value = true;
   try {
-    await rejectDocument(documentId, { actionByUserId: currentUser.value.id, remarkText: remarkOrNull() });
+    await rejectDocument(documentId, { remarkText: remarkOrNull() });
     remarkDraft.value = "";
     await reloadAll();
   } catch (e) {
@@ -652,7 +653,7 @@ async function doIssue() {
   error.value = "";
   busy.value = true;
   try {
-    await issueDocument(documentId, { actionByUserId: currentUser.value.id, remarkText: remarkOrNull() });
+    await issueDocument(documentId, { remarkText: remarkOrNull() });
     remarkDraft.value = "";
     await reloadAll();
   } catch (e) {
@@ -669,7 +670,7 @@ async function doReopen() {
 
   busy.value = true;
   try {
-    await reopenDocument(documentId, { actionByUserId: currentUser.value.id, remarkText: txt });
+    await reopenDocument(documentId, { remarkText: txt });
     remarkDraft.value = "";
     await reloadAll();
   } catch (e) {
@@ -688,7 +689,7 @@ async function uploadPicked() {
 
   busy.value = true;
   try {
-    await uploadAttachment(documentId, currentUser.value.id, pickedFile.value);
+    await uploadAttachment(documentId, pickedFile.value);
     pickedFile.value = null;
     await reloadAll();
   } catch (e) {
@@ -704,7 +705,7 @@ async function removeAttachment(a) {
 
   busy.value = true;
   try {
-    await deleteAttachment(a.id, currentUser.value.id);
+    await deleteAttachment(a.id);
     await reloadAll();
   } catch (e) {
     error.value = e?.message || "Delete failed.";

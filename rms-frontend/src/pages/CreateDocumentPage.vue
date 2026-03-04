@@ -128,12 +128,14 @@ import { ref, computed, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import AppLayout from "../layouts/AppLayout.vue";
 import { createDocument, uploadAttachment } from "../api/documents.api";
-import { getCurrentUser, getUsers } from "../auth/currentUser";
+import { listUsers } from "../api/auth.api";
+import { getCurrentUser } from "../auth/currentUser";
 
 const router = useRouter();
 
 const user = ref(getCurrentUser());
-const canCreate = computed(() => ["DC", "PMA"].includes(user.value.role));
+const canCreate = computed(() => ["DC", "PMA"].includes(user.value?.role));
+const users = ref([]);
 
 const refNo = ref("");
 const title = ref("");
@@ -147,10 +149,21 @@ const error = ref("");
 const success = ref("");
 
 // Owners dropdown = non-PMA roles (DC/DDC/SC/ASC)
-const ownerOptions = computed(() => getUsers().filter(u => u.role !== "PMA"));
+const ownerOptions = computed(() => users.value.filter(u => u.role !== "PMA"));
 
 // default owner option
 if (ownerOptions.value.length > 0) initialOwner.value = ownerOptions.value[0].id;
+
+(async () => {
+  try {
+    users.value = await listUsers();
+    if (ownerOptions.value.length > 0 && !initialOwner.value) {
+      initialOwner.value = ownerOptions.value[0].id;
+    }
+  } catch {
+    users.value = [];
+  }
+})();
 
 // File handling
 const selectedFile = ref(null);
@@ -195,7 +208,7 @@ async function submit() {
   busy.value = true;
   try {
     // PMA creates on behalf of DC => initial owner forced to DC
-    const dcUser = getUsers().find(u => u.role === "DC");
+    const dcUser = users.value.find(u => u.role === "DC");
     const owner = user.value.role === "PMA" ? dcUser?.id : Number(initialOwner.value);
 
     const payload = {
@@ -204,7 +217,6 @@ async function submit() {
       companyName: companyName.value.trim(),
       receivedDate: receivedDate.value,
       priority: priority.value,
-      createdByUserId: user.value.id,
       currentOwnerUserId: owner,
     };
 
@@ -212,7 +224,7 @@ async function submit() {
 
     // If a file selected, upload it as v1 attachment
     if (selectedFile.value) {
-      await uploadAttachment(created.id, user.value.id, selectedFile.value);
+      await uploadAttachment(created.id, selectedFile.value);
     }
 
     success.value = "Document created successfully.";
