@@ -1,8 +1,18 @@
 import axios from "axios";
+import { getAccessToken } from "../auth/currentUser";
 
 const http = axios.create({
   baseURL: "http://localhost:8080/api",
   timeout: 20000,
+});
+
+http.interceptors.request.use((config) => {
+  const token = getAccessToken();
+  if (token) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 function getMsg(e) {
@@ -128,15 +138,13 @@ export async function listAttachments(documentId) {
   }
 }
 
-export async function uploadAttachment(documentId, uploadedByUserId, file) {
+export async function uploadAttachment(documentId, file) {
   try {
     const form = new FormData();
     form.append("file", file);
 
-    // backend expects uploadedByUserId as QUERY PARAM
     return (
       await http.post(`${BASE}/${documentId}/attachments`, form, {
-        params: { uploadedByUserId },
         headers: { "Content-Type": "multipart/form-data" },
       })
     ).data;
@@ -145,21 +153,18 @@ export async function uploadAttachment(documentId, uploadedByUserId, file) {
   }
 }
 
-export async function deleteAttachment(attachmentId, performedByUserId) {
+export async function deleteAttachment(attachmentId) {
   try {
-    // backend expects performedByUserId param
-    return (
-      await http.delete(`/attachments/${attachmentId}`, {
-        params: { performedByUserId },
-      })
-    ).data;
+    return (await http.delete(`/attachments/${attachmentId}`)).data;
   } catch (e) {
     throw new Error(getMsg(e));
   }
 }
 
-export function downloadAttachment(attachmentId, performedByUserId = null) {
+export function buildAttachmentUrl(attachmentId, { inline = false } = {}) {
   const url = new URL(`http://localhost:8080/api/attachments/${attachmentId}/download`);
-  if (performedByUserId) url.searchParams.set("performedByUserId", String(performedByUserId));
-  window.open(url.toString(), "_blank");
+  const token = getAccessToken();
+  if (token) url.searchParams.set("access_token", token);
+  if (inline) url.searchParams.set("inline", "true");
+  return url.toString();
 }

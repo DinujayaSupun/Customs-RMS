@@ -1,11 +1,13 @@
 package lk.customs.rms.controller;
 
 import lk.customs.rms.dto.AttachmentResponse;
+import lk.customs.rms.security.CurrentUserService;
 import lk.customs.rms.service.AttachmentService;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -19,9 +21,11 @@ import java.util.List;
 public class DocumentAttachmentController {
 
     private final AttachmentService attachmentService;
+    private final CurrentUserService currentUserService;
 
-    public DocumentAttachmentController(AttachmentService attachmentService) {
+    public DocumentAttachmentController(AttachmentService attachmentService, CurrentUserService currentUserService) {
         this.attachmentService = attachmentService;
+        this.currentUserService = currentUserService;
     }
 
     // ✅ Upload attachment (versioned)
@@ -29,10 +33,10 @@ public class DocumentAttachmentController {
     @PostMapping("/api/documents/{documentId}/attachments")
     public AttachmentResponse upload(
             @PathVariable Long documentId,
-            @RequestParam Long uploadedByUserId,
-            @RequestParam("file") MultipartFile file
+            @RequestParam("file") MultipartFile file,
+            Authentication authentication
     ) {
-        return attachmentService.upload(documentId, uploadedByUserId, file);
+        return attachmentService.upload(documentId, currentUserService.requireUserId(authentication), file);
     }
 
     // ✅ List attachments for a document
@@ -49,10 +53,10 @@ public class DocumentAttachmentController {
     @GetMapping("/api/attachments/{attachmentId}/download")
     public ResponseEntity<Resource> download(
             @PathVariable Long attachmentId,
-            @RequestParam(required = false) Long performedByUserId,
-            @RequestParam(defaultValue = "false") boolean inline
+            @RequestParam(defaultValue = "false") boolean inline,
+            Authentication authentication
     ) {
-        var result = attachmentService.downloadWithMeta(attachmentId, performedByUserId);
+        var result = attachmentService.downloadWithMeta(attachmentId, currentUserService.requireUserId(authentication));
 
         String safeFileName = (result.fileName() == null || result.fileName().isBlank())
                 ? ("attachment-" + attachmentId)
@@ -99,9 +103,9 @@ public class DocumentAttachmentController {
     @DeleteMapping("/api/attachments/{attachmentId}")
     public ResponseEntity<Void> delete(
             @PathVariable Long attachmentId,
-            @RequestParam Long performedByUserId
+            Authentication authentication
     ) {
-        attachmentService.softDelete(attachmentId, performedByUserId);
+        attachmentService.softDelete(attachmentId, currentUserService.requireUserId(authentication));
         return ResponseEntity.noContent().build();
     }
 }

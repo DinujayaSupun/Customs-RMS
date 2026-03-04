@@ -85,15 +85,15 @@ public class DocumentServiceImpl implements DocumentService {
     // ==========================================================
 
     @Override
-    public DocumentResponse createDocument(CreateDocumentRequest request) {
+    public DocumentResponse createDocument(CreateDocumentRequest request, Long actorUserId) {
 
         // Unique constraint check (business)
         if (documentRepository.existsByRefNoAndDeletedFalse(request.getRefNo())) {
             throw new BadRequestException("Ref No already exists: " + request.getRefNo());
         }
 
-        User createdBy = requireUser(request.getCreatedByUserId());
-        User owner = requireUser(request.getCurrentOwnerUserId());
+        User createdBy = requireUser(actorUserId);
+        User owner = createdBy;
 
         Document doc = new Document();
         doc.setRefNo(request.getRefNo());
@@ -106,7 +106,7 @@ public class DocumentServiceImpl implements DocumentService {
         doc.setStatus(Status.PENDING);
 
         doc.setCreatedByUserId(createdBy.getId());
-        doc.setCurrentOwnerUserId(owner.getId());
+        doc.setCurrentOwnerUserId(createdBy.getId());
         doc.setCreatedAt(LocalDateTime.now());
         doc.setDeleted(false);
 
@@ -156,7 +156,7 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
-    public DocumentResponse updateDocument(Long id, UpdateDocumentRequest request) {
+    public DocumentResponse updateDocument(Long id, UpdateDocumentRequest request, Long actorUserId) {
         Document d = requireDocument(id);
 
         // NOTE: We are not locking "update" by status in this version.
@@ -169,7 +169,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         Document saved = documentRepository.save(d);
 
-        auditLogService.logDocumentUpdate(saved.getId(), request.getPerformedByUserId(), "Document updated");
+        auditLogService.logDocumentUpdate(saved.getId(), actorUserId, "Document updated");
 
         String createdByName = userRepository.findById(saved.getCreatedByUserId()).map(User::getFullName).orElse(null);
         String ownerName = userRepository.findById(saved.getCurrentOwnerUserId()).map(User::getFullName).orElse(null);
@@ -178,15 +178,15 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
-    public void deleteDocument(Long id, Long performedByUserId) {
+    public void deleteDocument(Long id, Long actorUserId) {
         Document d = requireDocument(id);
 
         d.setDeleted(true);
         d.setDeletedAt(LocalDateTime.now());
-        d.setDeletedByUserId(performedByUserId);
+        d.setDeletedByUserId(actorUserId);
         documentRepository.save(d);
 
-        auditLogService.logDocumentDelete(id, performedByUserId, "Document deleted (soft)");
+        auditLogService.logDocumentDelete(id, actorUserId, "Document deleted (soft)");
     }
 
     // ==========================================================
@@ -194,14 +194,14 @@ public class DocumentServiceImpl implements DocumentService {
     // ==========================================================
 
     @Override
-    public void forward(Long documentId, ForwardReturnRequest request) {
+    public void forward(Long documentId, ForwardReturnRequest request, Long actorUserId) {
 
         Document d = requireDocument(documentId);
 
         // FINAL STATE LOCK: cannot forward if already final / approved
         ensureCanForwardOrReturn(d);
 
-        User actionBy = requireUser(request.getActionByUserId());
+        User actionBy = requireUser(actorUserId);
         User toUser = requireUser(request.getToUserId());
 
         // Ownership check
@@ -231,14 +231,14 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
-    public void returns(Long documentId, ForwardReturnRequest request) {
+    public void returns(Long documentId, ForwardReturnRequest request, Long actorUserId) {
 
         Document d = requireDocument(documentId);
 
         // FINAL STATE LOCK
         ensureCanForwardOrReturn(d);
 
-        User actionBy = requireUser(request.getActionByUserId());
+        User actionBy = requireUser(actorUserId);
         User toUser = requireUser(request.getToUserId());
 
         // Ownership check
@@ -268,10 +268,10 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
-    public void approve(Long documentId, DecisionRequest request) {
+    public void approve(Long documentId, DecisionRequest request, Long actorUserId) {
 
         // DC only
-        requireDc(request.getActionByUserId());
+        requireDc(actorUserId);
 
         Document d = requireDocument(documentId);
 
@@ -279,74 +279,74 @@ public class DocumentServiceImpl implements DocumentService {
         ensureCanApproveOrReject(d);
 
         // DC must be current owner
-        if (!d.getCurrentOwnerUserId().equals(request.getActionByUserId())) {
+        if (!d.getCurrentOwnerUserId().equals(actorUserId)) {
             throw new BadRequestException("Only the current owner (DC) can approve this document.");
         }
 
-        saveRemarkIfPresent(d, request.getActionByUserId(), request.getRemarkText(), "Remark added during approve");
+        saveRemarkIfPresent(d, actorUserId, request.getRemarkText(), "Remark added during approve");
 
         d.setStatus(Status.APPROVED);
         d.setCompletedAt(LocalDate.now());
         documentRepository.save(d);
 
-        DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, request.getActionByUserId(), MovementActionType.APPROVE);
+        DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, actorUserId, MovementActionType.APPROVE);
         movementRepository.save(mv);
 
-        auditLogService.logMovement(documentId, request.getActionByUserId(), "APPROVE", "Approved by DC");
+        auditLogService.logMovement(documentId, actorUserId, "APPROVE", "Approved by DC");
     }
 
     @Override
-    public void reject(Long documentId, DecisionRequest request) {
+    public void reject(Long documentId, DecisionRequest request, Long actorUserId) {
 
         // DC only
-        requireDc(request.getActionByUserId());
+        requireDc(actorUserId);
 
         Document d = requireDocument(documentId);
 
         // FINAL STATE + transition guard
         ensureCanApproveOrReject(d);
 
-        if (!d.getCurrentOwnerUserId().equals(request.getActionByUserId())) {
+        if (!d.getCurrentOwnerUserId().equals(actorUserId)) {
             throw new BadRequestException("Only the current owner (DC) can reject this document.");
         }
 
-        saveRemarkIfPresent(d, request.getActionByUserId(), request.getRemarkText(), "Remark added during reject");
+        saveRemarkIfPresent(d, actorUserId, request.getRemarkText(), "Remark added during reject");
 
         d.setStatus(Status.REJECTED);
         d.setCompletedAt(LocalDate.now());
         documentRepository.save(d);
 
-        DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, request.getActionByUserId(), MovementActionType.REJECT);
+        DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, actorUserId, MovementActionType.REJECT);
         movementRepository.save(mv);
 
-        auditLogService.logMovement(documentId, request.getActionByUserId(), "REJECT", "Rejected by DC");
+        auditLogService.logMovement(documentId, actorUserId, "REJECT", "Rejected by DC");
     }
 
     @Override
-    public void issue(Long documentId, DecisionRequest request) {
+    public void issue(Long documentId, DecisionRequest request, Long actorUserId) {
 
         // DC only
-        requireDc(request.getActionByUserId());
+        requireDc(actorUserId);
 
         Document d = requireDocument(documentId);
 
         // ISSUE must happen ONLY after APPROVED
         ensureCanIssue(d);
 
-        if (!d.getCurrentOwnerUserId().equals(request.getActionByUserId())) {
+        if (!d.getCurrentOwnerUserId().equals(actorUserId)) {
             throw new BadRequestException("Only the current owner (DC) can issue this document.");
         }
 
-        saveRemarkIfPresent(d, request.getActionByUserId(), request.getRemarkText(), "Remark added during issue");
+        saveRemarkIfPresent(d, actorUserId, request.getRemarkText(), "Remark added during issue");
 
         d.setStatus(Status.ISSUED);
         d.setIssuedAt(LocalDate.now());
         documentRepository.save(d);
 
-        DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, request.getActionByUserId(), MovementActionType.ISSUE);
+        DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, actorUserId, MovementActionType.ISSUE);
         movementRepository.save(mv);
 
-        auditLogService.logMovement(documentId, request.getActionByUserId(), "ISSUE", "Issued by DC");
+        auditLogService.logMovement(documentId, actorUserId, "ISSUE", "Issued by DC");
     }
 
     // ==========================================================
@@ -354,10 +354,10 @@ public class DocumentServiceImpl implements DocumentService {
     // ==========================================================
 
     @Override
-    public void reopen(Long documentId, DecisionRequest request) {
+    public void reopen(Long documentId, DecisionRequest request, Long actorUserId) {
 
         // DC only
-        requireDc(request.getActionByUserId());
+        requireDc(actorUserId);
 
         Document d = requireDocument(documentId);
 
@@ -372,7 +372,7 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         // DC must also be the current owner (strong integrity)
-        if (!d.getCurrentOwnerUserId().equals(request.getActionByUserId())) {
+        if (!d.getCurrentOwnerUserId().equals(actorUserId)) {
             throw new BadRequestException("Only the current owner (DC) can reopen this document.");
         }
 
@@ -383,7 +383,7 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         // Save reason as remark (security rule inside method = must be current owner)
-        saveRemarkIfPresent(d, request.getActionByUserId(), reason, "Remark added during reopen");
+        saveRemarkIfPresent(d, actorUserId, reason, "Remark added during reopen");
 
         // Move back to active workflow
         d.setStatus(Status.IN_PROGRESS);
@@ -395,10 +395,10 @@ public class DocumentServiceImpl implements DocumentService {
 
         // Movement: REOPEN (owner unchanged; log from->to as same owner)
         Long owner = d.getCurrentOwnerUserId();
-        DocumentMovement mv = DocumentMovement.create(documentId, owner, owner, request.getActionByUserId(), MovementActionType.REOPEN);
+        DocumentMovement mv = DocumentMovement.create(documentId, owner, owner, actorUserId, MovementActionType.REOPEN);
         movementRepository.save(mv);
 
-        auditLogService.logMovement(documentId, request.getActionByUserId(), "REOPEN", "Reopened by DC");
+        auditLogService.logMovement(documentId, actorUserId, "REOPEN", "Reopened by DC");
     }
 
     // ==========================================================

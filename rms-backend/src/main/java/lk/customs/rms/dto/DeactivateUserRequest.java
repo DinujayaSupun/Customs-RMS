@@ -6,11 +6,8 @@ import lombok.Setter;
 
 @Getter
 @Setter
-public class ForwardReturnRequest {
+public class DeactivateUserRequest {
 
     @NotNull
-    private Long toUserId;
-
-    // ✅ Optional remark to save before forward/return
-    private String remarkText;
+    private Long fallbackDcUserId;
 }

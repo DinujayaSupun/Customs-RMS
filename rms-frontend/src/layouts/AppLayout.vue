@@ -7,15 +7,10 @@
       </div>
 
       <div class="user">
-        <span class="user-role">Role: {{ currentUser.role }} (id={{ currentUser.id }})</span>
-
-        <select class="user-select" v-model.number="selectedId" @change="onChange">
-          <option v-for="u in users" :key="u.id" :value="u.id">
-            {{ u.name }} ({{ u.role }}) — id={{ u.id }}
-          </option>
-        </select>
-
-        <button class="logout" type="button" @click="resetUser">Reset</button>
+        <span class="user-role">
+          {{ currentUser?.fullName || currentUser?.name }} • {{ currentUser?.role }} • ID {{ currentUser?.id }}
+        </span>
+        <button class="logout" type="button" @click="logout">Logout</button>
       </div>
     </header>
 
@@ -26,7 +21,7 @@
         <router-link to="/documents" class="nav">Documents</router-link>
         <router-link to="/inbox" class="nav">My Inbox</router-link>
         <router-link to="/logs" class="nav">Logs</router-link>
-        <router-link to="/users" class="nav">Users</router-link>
+        <router-link v-if="currentUser?.role === 'ADMIN'" to="/users" class="nav">Users</router-link>
       </aside>
 
       <main class="content">
@@ -37,27 +32,17 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from "vue";
-import { getUsers, getCurrentUser, setCurrentUser, clearCurrentUser } from "../auth/currentUser";
+import { computed } from "vue";
+import { useRouter } from "vue-router";
+import { clearSession, getCurrentUser } from "../auth/currentUser";
 
-const users = getUsers();
-const selectedId = ref(users[0].id);
-
+const router = useRouter();
 const currentUser = computed(() => getCurrentUser());
 
-function onChange() {
-  const u = users.find((x) => x.id === Number(selectedId.value));
-  if (u) setCurrentUser(u);
+function logout() {
+  clearSession();
+  router.replace("/login");
 }
-
-function resetUser() {
-  clearCurrentUser();
-  selectedId.value = getCurrentUser().id;
-}
-
-onMounted(() => {
-  selectedId.value = getCurrentUser().id;
-});
 </script>
 
 <style scoped>
@@ -79,16 +64,6 @@ onMounted(() => {
 
 .user { display: flex; align-items: center; gap: 12px; }
 .user-role { font-size: 12px; opacity: 0.95; }
-
-.user-select {
-  height: 34px;
-  border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.35);
-  background: rgba(255,255,255,0.08);
-  color: #fff;
-  padding: 0 10px;
-  outline: none;
-}
 
 .logout {
   background: transparent;

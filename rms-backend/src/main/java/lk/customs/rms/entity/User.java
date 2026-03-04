@@ -21,6 +21,15 @@ public class User {
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
+    @Column(name = "email", length = 150)
+    private String email;
+
+    @Column(name = "phone", length = 30)
+    private String phone;
+
+    @Column(name = "department", length = 120)
+    private String department;
+
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "role_id", nullable = false)
     private Role role;
@@ -58,6 +67,18 @@ public class User {
         return passwordHash;
     }
 
+    public String getEmail() {
+        return email;
+    }
+
+    public String getPhone() {
+        return phone;
+    }
+
+    public String getDepartment() {
+        return department;
+    }
+
     public Role getRole() {
         return role;
     }
@@ -84,6 +105,18 @@ public class User {
 
     public void setPasswordHash(String passwordHash) {
         this.passwordHash = passwordHash;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public void setPhone(String phone) {
+        this.phone = phone;
+    }
+
+    public void setDepartment(String department) {
+        this.department = department;
     }
 
     public void setRole(Role role) {
