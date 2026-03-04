@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from "vue-router";
-import { isAuthenticated } from "../auth/currentUser";
+import { getCurrentUser, isAuthenticated } from "../auth/currentUser";
 
 import DocumentsPage from "../pages/DocumentsPage.vue";
 import DocumentDetailsPage from "../pages/DocumentDetailsPage.vue";
@@ -22,7 +22,7 @@ const routes = [
 
   { path: "/inbox", component: InboxPage },
   { path: "/logs", component: LogsPage },
-  { path: "/users", component: UsersPage },
+  { path: "/users", component: UsersPage, meta: { adminOnly: true } },
 
   // ✅ Backward compatibility: old REPORT routes still work
   { path: "/reports", redirect: "/documents" },
@@ -46,6 +46,13 @@ router.beforeEach((to) => {
     path: "/login",
     query: { redirect: to.fullPath },
   };
+});
+
+router.beforeEach((to) => {
+  if (!to.meta?.adminOnly) return true;
+  const user = getCurrentUser();
+  if (user?.role === "ADMIN") return true;
+  return { path: "/documents" };
 });
 
 export default router;

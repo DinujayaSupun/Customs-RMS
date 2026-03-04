@@ -40,16 +40,6 @@
           </select>
         </div>
 
-        <div>
-          <div class="labelTop">Initial Owner</div>
-          <select v-model.number="initialOwner" class="input">
-            <option v-for="u in ownerOptions" :key="u.id" :value="u.id">
-              {{ u.role }} (id={{ u.id }})
-            </option>
-          </select>
-          <div class="hint">If PMA creates, initial owner will be forced to DC.</div>
-        </div>
-
         <!-- Main file upload -->
         <div class="span2">
           <div class="labelTop">Main Document File (optional)</div>
@@ -128,42 +118,22 @@ import { ref, computed, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import AppLayout from "../layouts/AppLayout.vue";
 import { createDocument, uploadAttachment } from "../api/documents.api";
-import { listUsers } from "../api/auth.api";
 import { getCurrentUser } from "../auth/currentUser";
 
 const router = useRouter();
 
 const user = ref(getCurrentUser());
 const canCreate = computed(() => ["DC", "PMA"].includes(user.value?.role));
-const users = ref([]);
 
 const refNo = ref("");
 const title = ref("");
 const companyName = ref("");
 const receivedDate = ref("");
 const priority = ref("MEDIUM");
-const initialOwner = ref(null);
 
 const busy = ref(false);
 const error = ref("");
 const success = ref("");
-
-// Owners dropdown = non-PMA roles (DC/DDC/SC/ASC)
-const ownerOptions = computed(() => users.value.filter(u => u.role !== "PMA"));
-
-// default owner option
-if (ownerOptions.value.length > 0) initialOwner.value = ownerOptions.value[0].id;
-
-(async () => {
-  try {
-    users.value = await listUsers();
-    if (ownerOptions.value.length > 0 && !initialOwner.value) {
-      initialOwner.value = ownerOptions.value[0].id;
-    }
-  } catch {
-    users.value = [];
-  }
-})();
 
 // File handling
 const selectedFile = ref(null);
@@ -207,17 +177,12 @@ async function submit() {
 
   busy.value = true;
   try {
-    // PMA creates on behalf of DC => initial owner forced to DC
-    const dcUser = users.value.find(u => u.role === "DC");
-    const owner = user.value.role === "PMA" ? dcUser?.id : Number(initialOwner.value);
-
     const payload = {
       refNo: refNo.value.trim(),
       title: title.value.trim(),
       companyName: companyName.value.trim(),
       receivedDate: receivedDate.value,
       priority: priority.value,
-      currentOwnerUserId: owner,
     };
 
     const created = await createDocument(payload);

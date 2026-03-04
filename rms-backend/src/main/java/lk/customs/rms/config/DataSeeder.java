@@ -22,6 +22,7 @@ public class DataSeeder {
             Role sc = ensureRole(roleRepository, "SC");
             Role asc = ensureRole(roleRepository, "ASC");
             Role pma = ensureRole(roleRepository, "PMA");
+            Role admin = ensureRole(roleRepository, "ADMIN");
 
             String defaultPasswordHash = passwordEncoder.encode("Pass@123");
 
@@ -30,6 +31,7 @@ public class DataSeeder {
             ensureUser(userRepository, "sc", "Senior Superintendent", defaultPasswordHash, sc);
             ensureUser(userRepository, "asc", "Assistant Superintendent", defaultPasswordHash, asc);
             ensureUser(userRepository, "pma", "Personal Management Assistant", defaultPasswordHash, pma);
+            ensureUser(userRepository, "admin", "System Administrator", passwordEncoder.encode("Admin@123"), admin);
         };
     }
 

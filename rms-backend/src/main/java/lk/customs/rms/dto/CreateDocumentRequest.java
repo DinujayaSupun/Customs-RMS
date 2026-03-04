@@ -25,7 +25,4 @@ public class CreateDocumentRequest {
 
     @NotNull
     private Priority priority;
-
-    @NotNull
-    private Long currentOwnerUserId;
 }

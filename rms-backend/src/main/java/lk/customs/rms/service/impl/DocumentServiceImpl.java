@@ -93,7 +93,7 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         User createdBy = requireUser(actorUserId);
-        User owner = requireUser(request.getCurrentOwnerUserId());
+        User owner = createdBy;
 
         Document doc = new Document();
         doc.setRefNo(request.getRefNo());
@@ -106,7 +106,7 @@ public class DocumentServiceImpl implements DocumentService {
         doc.setStatus(Status.PENDING);
 
         doc.setCreatedByUserId(createdBy.getId());
-        doc.setCurrentOwnerUserId(owner.getId());
+        doc.setCurrentOwnerUserId(createdBy.getId());
         doc.setCreatedAt(LocalDateTime.now());
         doc.setDeleted(false);
 

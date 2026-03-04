@@ -61,7 +61,7 @@
             <td><span class="pill" :class="'pill-'+d.priority">{{ d.priority }}</span></td>
             <td><span class="pill" :class="'pill-'+d.status">{{ d.status }}</span></td>
 
-            <td>{{ d.currentOwnerUserId }}</td>
+            <td>{{ ownerLabel(d.currentOwnerUserId) }}</td>
 
             <td>
               <button
@@ -99,7 +99,7 @@
             <div><span class="label">Received:</span> {{ previewDoc?.receivedDate }}</div>
             <div><span class="label">Priority:</span> {{ previewDoc?.priority }}</div>
             <div><span class="label">Status:</span> {{ previewDoc?.status }}</div>
-            <div><span class="label">Owner:</span> {{ previewDoc?.currentOwnerUserId }}</div>
+            <div><span class="label">Owner:</span> {{ ownerLabel(previewDoc?.currentOwnerUserId) }}</div>
           </div>
 
           <div class="note">
@@ -121,7 +121,9 @@ import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import AppLayout from "../layouts/AppLayout.vue";
 import { listDocuments } from "../api/documents.api";
+import { listUsers } from "../api/auth.api";
 import { getCurrentUser } from "../auth/currentUser";
+import { formatUserLabelById } from "../auth/userLabel";
 
 const router = useRouter();
 
@@ -136,6 +138,7 @@ const loading = ref(false);
 const error = ref("");
 const all = ref([]);
 const rows = ref([]);
+const users = ref([]);
 
 const previewOpen = ref(false);
 const previewDoc = ref(null);
@@ -148,6 +151,10 @@ function canPreview(doc) {
 function openPreview(doc) {
   previewDoc.value = doc;
   previewOpen.value = true;
+}
+
+function ownerLabel(userId) {
+  return formatUserLabelById(userId, users.value);
 }
 
 function openDetails(id) {
@@ -203,6 +210,11 @@ function onUserChanged() {
 
 onMounted(() => {
   window.addEventListener("rms_auth_changed", onUserChanged);
+  listUsers().then((data) => {
+    users.value = data || [];
+  }).catch(() => {
+    users.value = [];
+  });
   load();
 });
 

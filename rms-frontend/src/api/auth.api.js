@@ -47,3 +47,87 @@ export async function listUsers() {
     throw new Error(getMsg(e));
   }
 }
+
+export async function adminListUsers(params = {}) {
+  try {
+    return (await http.get("/admin/users", { params })).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function adminListRoles() {
+  try {
+    return (await http.get("/admin/users/roles")).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function adminCreateUser(payload) {
+  try {
+    return (await http.post("/admin/users", payload)).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function adminUpdateUser(userId, payload) {
+  try {
+    return (await http.put(`/admin/users/${userId}`, payload)).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function adminActivateUser(userId) {
+  try {
+    return (await http.patch(`/admin/users/${userId}/activate`)).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function adminDeactivateUser(userId, fallbackDcUserId) {
+  try {
+    return (await http.patch(`/admin/users/${userId}/deactivate`, { fallbackDcUserId })).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function adminResetPassword(userId, newPassword) {
+  try {
+    await http.patch(`/admin/users/${userId}/reset-password`, { newPassword });
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function adminListDuplicateUsers() {
+  try {
+    return (await http.get("/admin/users/duplicates")).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function adminMergeUsers(sourceUserId, targetUserId) {
+  try {
+    await http.post("/admin/users/merge", { sourceUserId, targetUserId });
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export function adminExportUsersUrl({ search = "", role = "", active = "" } = {}) {
+  const url = new URL("http://localhost:8080/api/admin/users/export");
+  if (search) url.searchParams.set("search", search);
+  if (role) url.searchParams.set("role", role);
+  if (active !== "" && active !== null && active !== undefined) {
+    url.searchParams.set("active", String(active));
+  }
+  const token = getAccessToken();
+  if (token) url.searchParams.set("access_token", token);
+  return url.toString();
+}

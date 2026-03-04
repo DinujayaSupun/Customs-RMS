@@ -68,17 +68,25 @@ public class AuthController {
                 .id(u.getId())
                 .username(u.getUsername())
                 .fullName(u.getFullName())
+            .email(u.getEmail())
+            .phone(u.getPhone())
+            .department(u.getDepartment())
+            .active(u.getIsActive())
                 .role(u.getRole() == null ? null : u.getRole().getRoleName())
                 .build();
     }
 
     @GetMapping("/users")
     public List<UserSummaryResponse> users() {
-        return userRepository.findByIsActiveTrueOrderByFullNameAsc().stream()
+        return userRepository.findByIsActiveTrueAndRole_RoleNameNotOrderByFullNameAsc("ADMIN").stream()
                 .map(u -> UserSummaryResponse.builder()
                         .id(u.getId())
                         .username(u.getUsername())
                         .fullName(u.getFullName())
+                .email(u.getEmail())
+                .phone(u.getPhone())
+                .department(u.getDepartment())
+                .active(u.getIsActive())
                         .role(u.getRole() == null ? null : u.getRole().getRoleName())
                         .build())
                 .toList();

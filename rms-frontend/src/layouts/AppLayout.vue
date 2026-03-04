@@ -8,7 +8,7 @@
 
       <div class="user">
         <span class="user-role">
-          {{ currentUser?.fullName || currentUser?.name }} ({{ currentUser?.role }})
+          {{ currentUser?.fullName || currentUser?.name }} • {{ currentUser?.role }} • ID {{ currentUser?.id }}
         </span>
         <button class="logout" type="button" @click="logout">Logout</button>
       </div>
@@ -21,7 +21,7 @@
         <router-link to="/documents" class="nav">Documents</router-link>
         <router-link to="/inbox" class="nav">My Inbox</router-link>
         <router-link to="/logs" class="nav">Logs</router-link>
-        <router-link to="/users" class="nav">Users</router-link>
+        <router-link v-if="currentUser?.role === 'ADMIN'" to="/users" class="nav">Users</router-link>
       </aside>
 
       <main class="content">

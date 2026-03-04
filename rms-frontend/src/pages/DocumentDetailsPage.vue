@@ -85,7 +85,7 @@
 
           <div class="hint">
             Current User:
-            <b>{{ currentUser.role }}</b> (id={{ currentUser.id }})
+            <b>{{ formatUserLabel(currentUser) }}</b>
             <span class="dot">•</span>
             Owner:
             <b :style="{ color: isOwner ? '#065f46' : '#991b1b' }">
@@ -129,7 +129,7 @@
             <select class="input" v-model="toUserId" :disabled="busy || !canForward">
               <option :value="null">-- Select user --</option>
               <option v-for="u in forwardTargets" :key="u.id" :value="Number(u.id)">
-                {{ u.fullName }} ({{ u.role }}) — id={{ u.id }}
+                {{ formatUserLabel(u) }}
               </option>
             </select>
 
@@ -170,7 +170,7 @@
             <div v-for="r in remarks" :key="r.id" class="item">
               <div class="itemTop">
                 <span class="who">
-                  By <b>{{ r.remarkedByName || ("ID " + r.remarkedByUserId) }}</b>
+                  By <b>{{ formatUserLabelById(r.remarkedByUserId, users) }}</b>
                 </span>
                 <span class="when mono">{{ formatDateTime(r.remarkedAt) }}</span>
               </div>
@@ -270,12 +270,12 @@
                 <div class="itemTop">
                   <span class="who">
                     <b>{{ m.actionType }}</b>
-                    <span v-if="m.fromUserId"> | from {{ m.fromUserId }}</span>
-                    <span v-if="m.toUserId"> → to {{ m.toUserId }}</span>
+                    <span v-if="m.fromUserId"> | from {{ formatUserLabelById(m.fromUserId, users) }}</span>
+                    <span v-if="m.toUserId"> → to {{ formatUserLabelById(m.toUserId, users) }}</span>
                   </span>
                   <span class="when mono">{{ formatDateTime(m.actionAt) }}</span>
                 </div>
-                <div class="smallHint">Action by: {{ m.actionByUserId }}</div>
+                <div class="smallHint">Action by: {{ formatUserLabelById(m.actionByUserId, users) }}</div>
               </div>
             </div>
           </template>
@@ -354,6 +354,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import AppLayout from "../layouts/AppLayout.vue";
 import { getCurrentUser } from "../auth/currentUser";
+import { formatUserLabel, formatUserLabelById } from "../auth/userLabel";
 import { listUsers } from "../api/auth.api";
 import {
   getDocument,
@@ -426,7 +427,7 @@ const canTypeRemark = computed(() => canAddRemark.value || canForward.value || c
 const forwardTargets = computed(() => {
   const all = users.value.filter((u) => Number(u.id) !== Number(currentUser.value.id));
   if (currentUser.value.role === "PMA") return all.filter((u) => u.role === "DC");
-  return all.filter((u) => u.role !== "PMA");
+  return all;
 });
 
 // ✅ Keep toUserId valid
@@ -462,12 +463,12 @@ const filteredViewerFiles = computed(() => {
 
 const createdByLabel = computed(() => {
   if (!doc.value) return "-";
-  return doc.value.createdByName || (doc.value.createdByUserId != null ? `ID ${doc.value.createdByUserId}` : "-");
+  return formatUserLabelById(doc.value.createdByUserId, users.value);
 });
 
 const ownerLabel = computed(() => {
   if (!doc.value) return "-";
-  return doc.value.currentOwnerName || (doc.value.currentOwnerUserId != null ? `ID ${doc.value.currentOwnerUserId}` : "-");
+  return formatUserLabelById(doc.value.currentOwnerUserId, users.value);
 });
 
 function isPdf(name) {
