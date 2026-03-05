@@ -17,6 +17,7 @@ import lk.customs.rms.service.AuditLogService;
 import lk.customs.rms.service.DocumentService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -129,7 +130,11 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     public Page<DocumentResponse> getDocuments(int page, int size, String search) {
-        var pageable = PageRequest.of(page, size);
+        var pageable = PageRequest.of(
+            page,
+            size,
+            Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"))
+        );
 
         Page<Document> docs;
         if (search == null || search.isBlank()) {
