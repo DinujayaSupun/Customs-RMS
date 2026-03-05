@@ -8,6 +8,7 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @Configuration
 public class DataSeeder {
@@ -15,8 +16,11 @@ public class DataSeeder {
     @Bean
     CommandLineRunner seedUsers(RoleRepository roleRepository,
                                 UserRepository userRepository,
-                                PasswordEncoder passwordEncoder) {
+                                PasswordEncoder passwordEncoder,
+                                JdbcTemplate jdbcTemplate) {
         return args -> {
+            migrateDocumentDateColumns(jdbcTemplate);
+
             Role dc = ensureRole(roleRepository, "DC");
             Role ddc = ensureRole(roleRepository, "DDC");
             Role sc = ensureRole(roleRepository, "SC");
@@ -33,6 +37,11 @@ public class DataSeeder {
             ensureUser(userRepository, "pma", "Personal Management Assistant", defaultPasswordHash, pma);
             ensureUser(userRepository, "admin", "System Administrator", passwordEncoder.encode("Admin@123"), admin);
         };
+    }
+
+    private void migrateDocumentDateColumns(JdbcTemplate jdbcTemplate) {
+        jdbcTemplate.execute("ALTER TABLE documents MODIFY COLUMN completed_at DATETIME(6) NULL");
+        jdbcTemplate.execute("ALTER TABLE documents MODIFY COLUMN issued_at DATETIME(6) NULL");
     }
 
     private Role ensureRole(RoleRepository roleRepository, String roleName) {

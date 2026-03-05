@@ -72,10 +72,10 @@
             <div class="v mono">{{ formatDateTime(doc.createdAt) }}</div>
 
             <div class="k">Completed At</div>
-            <div class="v mono">{{ doc.completedAt ? formatDateTime(doc.completedAt) : "-" }}</div>
+            <div class="v mono">{{ completedAtDisplay }}</div>
 
             <div class="k">Issued At</div>
-            <div class="v mono">{{ doc.issuedAt ? formatDateTime(doc.issuedAt) : "-" }}</div>
+            <div class="v mono">{{ issuedAtDisplay }}</div>
           </div>
         </div>
 
@@ -217,7 +217,23 @@
             </template>
 
             <div class="attachRow">
-              <input type="file" @change="onFilePick" :disabled="!canUploadAttachments" />
+              <input
+                id="attachmentFileInput"
+                ref="fileInputRef"
+                class="hiddenFileInput"
+                type="file"
+                @change="onFilePick"
+                :disabled="!canUploadAttachments"
+              />
+              <button
+                class="btn"
+                type="button"
+                :disabled="!canUploadAttachments"
+                @click="openFilePicker"
+              >
+                Choose File
+              </button>
+              <span class="filePickLabel">{{ pickedFile ? pickedFile.name : "No file chosen" }}</span>
               <button
                 class="btn btn-primary"
                 :disabled="busy || !pickedFile || !canUploadAttachments"
@@ -394,6 +410,7 @@ const toUserId = ref(null);
 const remarkDraft = ref("");
 
 const pickedFile = ref(null);
+const fileInputRef = ref(null);
 
 const viewerOpen = ref(false);
 const selectedFile = ref(null);
@@ -417,6 +434,30 @@ const canApprove = computed(() => doc.value && !isIssued.value && isOwner.value 
 const canReject  = computed(() => doc.value && !isIssued.value && isOwner.value && isDC.value && doc.value.status !== "REJECTED");
 const canIssue   = computed(() => doc.value && isOwner.value && isDC.value && doc.value.status === "APPROVED" && !doc.value.issuedAt);
 const canReopen  = computed(() => doc.value && !isIssued.value && isOwner.value && isDC.value && ["APPROVED","REJECTED"].includes(doc.value.status));
+
+const completedAtDisplay = computed(() => {
+  if (!doc.value?.completedAt) return "-";
+
+  if (isDateOnlyValue(doc.value.completedAt)) {
+    const movementTime = findLatestMovementTime(["APPROVE", "REJECT"]);
+    if (movementTime) return formatDateTime(movementTime);
+    return formatDate(doc.value.completedAt);
+  }
+
+  return formatDateTime(doc.value.completedAt);
+});
+
+const issuedAtDisplay = computed(() => {
+  if (!doc.value?.issuedAt) return "-";
+
+  if (isDateOnlyValue(doc.value.issuedAt)) {
+    const movementTime = findLatestMovementTime(["ISSUE"]);
+    if (movementTime) return formatDateTime(movementTime);
+    return formatDate(doc.value.issuedAt);
+  }
+
+  return formatDateTime(doc.value.issuedAt);
+});
 
 // Manual add remark: only current owner
 const canAddRemark = computed(() => !!doc.value && isOwner.value && !isIssued.value);
@@ -493,12 +534,28 @@ function formatDate(d) {
 function formatDateTime(d) {
   if (!d) return "-";
   try {
+    if (isDateOnlyValue(d)) return formatDate(d);
     const dt = new Date(d);
     if (isNaN(dt.getTime())) return String(d);
     return dt.toLocaleString();
   } catch {
     return String(d);
   }
+}
+
+function isDateOnlyValue(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+}
+
+function findLatestMovementTime(actionTypes) {
+  const wanted = new Set(actionTypes);
+  const matches = movements.value
+    .filter((m) => wanted.has(String(m.actionType || "").toUpperCase()))
+    .map((m) => m.actionAt)
+    .filter(Boolean)
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+
+  return matches[0] || null;
 }
 
 function previewUrl(attachmentId) {
@@ -684,6 +741,12 @@ async function doReopen() {
 function onFilePick(e) {
   pickedFile.value = e.target.files?.[0] ?? null;
 }
+
+function openFilePicker() {
+  if (!canUploadAttachments.value) return;
+  fileInputRef.value?.click();
+}
+
 async function uploadPicked() {
   error.value = "";
   if (!pickedFile.value) return;
@@ -692,6 +755,7 @@ async function uploadPicked() {
   try {
     await uploadAttachment(documentId, pickedFile.value);
     pickedFile.value = null;
+    if (fileInputRef.value) fileInputRef.value.value = "";
     await reloadAll();
   } catch (e) {
     error.value = e?.message || "Upload failed.";
@@ -770,6 +834,15 @@ async function removeAttachment(a) {
 .text { margin-top:8px; font-size:13px; color:#111827; white-space:pre-wrap; }
 
 .attachRow { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px; }
+.hiddenFileInput { display:none; }
+.filePickLabel {
+  font-size:13px;
+  color:#374151;
+  max-width:280px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
 
 .fileRow { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 .fileName { font-size:14px; }

@@ -20,7 +20,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /*
@@ -291,7 +290,7 @@ public class DocumentServiceImpl implements DocumentService {
         saveRemarkIfPresent(d, actorUserId, request.getRemarkText(), "Remark added during approve");
 
         d.setStatus(Status.APPROVED);
-        d.setCompletedAt(LocalDate.now());
+        d.setCompletedAt(LocalDateTime.now());
         documentRepository.save(d);
 
         DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, actorUserId, MovementActionType.APPROVE);
@@ -318,7 +317,7 @@ public class DocumentServiceImpl implements DocumentService {
         saveRemarkIfPresent(d, actorUserId, request.getRemarkText(), "Remark added during reject");
 
         d.setStatus(Status.REJECTED);
-        d.setCompletedAt(LocalDate.now());
+        d.setCompletedAt(LocalDateTime.now());
         documentRepository.save(d);
 
         DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, actorUserId, MovementActionType.REJECT);
@@ -345,7 +344,7 @@ public class DocumentServiceImpl implements DocumentService {
         saveRemarkIfPresent(d, actorUserId, request.getRemarkText(), "Remark added during issue");
 
         d.setStatus(Status.ISSUED);
-        d.setIssuedAt(LocalDate.now());
+        d.setIssuedAt(LocalDateTime.now());
         documentRepository.save(d);
 
         DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, actorUserId, MovementActionType.ISSUE);
