@@ -1,8 +1,10 @@
 import axios from "axios";
 import { getAccessToken } from "../auth/currentUser";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+
 const http = axios.create({
-  baseURL: "http://localhost:8080/api",
+  baseURL: API_BASE_URL,
   timeout: 20000,
 });
 
@@ -121,7 +123,11 @@ export async function adminMergeUsers(sourceUserId, targetUserId) {
 }
 
 export function adminExportUsersUrl({ search = "", role = "", active = "" } = {}) {
-  const url = new URL("http://localhost:8080/api/admin/users/export");
+  const base = API_BASE_URL.startsWith("http") ? API_BASE_URL : window.location.origin;
+  const path = API_BASE_URL.startsWith("http")
+    ? `${API_BASE_URL.replace(/\/$/, "")}/admin/users/export`
+    : `${API_BASE_URL}/admin/users/export`;
+  const url = new URL(path, base);
   if (search) url.searchParams.set("search", search);
   if (role) url.searchParams.set("role", role);
   if (active !== "" && active !== null && active !== undefined) {

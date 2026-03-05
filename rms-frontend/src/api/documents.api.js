@@ -1,8 +1,10 @@
 import axios from "axios";
 import { getAccessToken } from "../auth/currentUser";
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+
 const http = axios.create({
-  baseURL: "http://localhost:8080/api",
+  baseURL: API_BASE_URL,
   timeout: 20000,
 });
 
@@ -162,7 +164,11 @@ export async function deleteAttachment(attachmentId) {
 }
 
 export function buildAttachmentUrl(attachmentId, { inline = false } = {}) {
-  const url = new URL(`http://localhost:8080/api/attachments/${attachmentId}/download`);
+  const base = API_BASE_URL.startsWith("http") ? API_BASE_URL : window.location.origin;
+  const path = API_BASE_URL.startsWith("http")
+    ? `${API_BASE_URL.replace(/\/$/, "")}/attachments/${attachmentId}/download`
+    : `${API_BASE_URL}/attachments/${attachmentId}/download`;
+  const url = new URL(path, base);
   const token = getAccessToken();
   if (token) url.searchParams.set("access_token", token);
   if (inline) url.searchParams.set("inline", "true");
