@@ -33,7 +33,12 @@ const BASE = "/documents";
 // ===================== DOCUMENTS =====================
 export async function listDocuments() {
   try {
-    return (await http.get(BASE)).data;
+    return (await http.get(BASE, {
+      params: {
+        page: 0,
+        size: 100,
+      },
+    })).data;
   } catch (e) {
     throw new Error(getMsg(e));
   }

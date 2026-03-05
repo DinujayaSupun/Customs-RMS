@@ -45,7 +45,7 @@ public class DataSeeder {
                             String fullName,
                             String passwordHash,
                             Role role) {
-        if (userRepository.findByUsernameAndIsActiveTrue(username).isPresent()) {
+        if (userRepository.existsByUsernameIgnoreCase(username)) {
             return;
         }
 
