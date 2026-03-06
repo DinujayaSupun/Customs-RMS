@@ -52,6 +52,14 @@ export async function getDocument(id) {
   }
 }
 
+export async function updateDocument(id, payload) {
+  try {
+    return (await http.put(`${BASE}/${id}`, payload)).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
 export async function createDocument(payload) {
   try {
     return (await http.post(BASE, payload)).data;

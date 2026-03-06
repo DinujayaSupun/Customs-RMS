@@ -163,13 +163,29 @@ public class DocumentServiceImpl implements DocumentService {
     public DocumentResponse updateDocument(Long id, UpdateDocumentRequest request, Long actorUserId) {
         Document d = requireDocument(id);
 
-        // NOTE: We are not locking "update" by status in this version.
-        // If Customs wants, we can block edits after APPROVED/ISSUED later.
+        // Only the current owner can edit details
+        if (!d.getCurrentOwnerUserId().equals(actorUserId)) {
+            throw new BadRequestException("Only the current owner can edit document details.");
+        }
 
-        if (request.getTitle() != null) d.setTitle(request.getTitle());
-        if (request.getCompanyName() != null) d.setCompanyName(request.getCompanyName());
-        if (request.getReceivedDate() != null) d.setReceivedDate(request.getReceivedDate());
-        if (request.getPriority() != null) d.setPriority(request.getPriority());
+        // Lock editing after completion/issue
+        if (d.getCompletedAt() != null || d.getStatus() == Status.ISSUED) {
+            throw new BadRequestException("Cannot edit details after document is COMPLETED or ISSUED.");
+        }
+
+        String newRefNo = request.getRefNo() == null ? "" : request.getRefNo().trim();
+        if (newRefNo.isEmpty()) {
+            throw new BadRequestException("Ref No is required.");
+        }
+
+        if (documentRepository.existsByRefNoAndDeletedFalseAndIdNot(newRefNo, d.getId())) {
+            throw new BadRequestException("Ref No already exists: " + newRefNo);
+        }
+
+        d.setRefNo(newRefNo);
+        d.setTitle(request.getTitle().trim());
+        d.setCompanyName(request.getCompanyName().trim());
+        d.setPriority(request.getPriority());
 
         Document saved = documentRepository.save(d);
 
