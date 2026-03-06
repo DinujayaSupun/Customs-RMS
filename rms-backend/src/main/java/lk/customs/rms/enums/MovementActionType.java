@@ -8,6 +8,7 @@ package lk.customs.rms.enums;
  */
 public enum MovementActionType {
     CREATE,
+    UPDATE,
     FORWARD,
     RETURN,
     APPROVE,

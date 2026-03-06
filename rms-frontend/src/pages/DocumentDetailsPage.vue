@@ -36,6 +36,10 @@
       <b>Error:</b> {{ error }}
     </div>
 
+    <div v-if="successMessage" class="successBox">
+      <b>Success:</b> {{ successMessage }}
+    </div>
+
     <!-- LOADING OVERLAY -->
     <div v-if="busy" class="busyOverlay">
       <div class="busyCard">
@@ -53,14 +57,38 @@
       <div class="col">
         <!-- DETAILS -->
         <div class="card">
-          <div class="cardTitle">Details</div>
+          <div class="cardHead">
+            <div class="cardTitle">Details</div>
+            <div class="btnRow" style="margin-top:0;">
+              <button
+                v-if="canEditDetails && !isEditingDetails"
+                class="btn"
+                :disabled="busy"
+                @click="startEditDetails"
+              >
+                Edit Details
+              </button>
+              <template v-if="isEditingDetails">
+                <button class="btn" :disabled="busy" @click="cancelEditDetails">Cancel</button>
+                <button class="btn btn-primary" :disabled="busy" @click="saveDetails">
+                  {{ busy ? "Saving..." : "Save Details" }}
+                </button>
+              </template>
+            </div>
+          </div>
 
-          <div class="kv">
+          <div v-if="!isEditingDetails" class="kv">
+            <div class="k">Ref No</div>
+            <div class="v">{{ doc.refNo }}</div>
+
             <div class="k">Title</div>
             <div class="v">{{ doc.title }}</div>
 
             <div class="k">Company</div>
             <div class="v">{{ doc.companyName }}</div>
+
+            <div class="k">Priority</div>
+            <div class="v">{{ doc.priority }}</div>
 
             <div class="k">Received Date</div>
             <div class="v">{{ formatDate(doc.receivedDate) }}</div>
@@ -72,10 +100,42 @@
             <div class="v mono">{{ formatDateTime(doc.createdAt) }}</div>
 
             <div class="k">Completed At</div>
-            <div class="v mono">{{ doc.completedAt ? formatDateTime(doc.completedAt) : "-" }}</div>
+            <div class="v mono">{{ completedAtDisplay }}</div>
 
             <div class="k">Issued At</div>
-            <div class="v mono">{{ doc.issuedAt ? formatDateTime(doc.issuedAt) : "-" }}</div>
+            <div class="v mono">{{ issuedAtDisplay }}</div>
+          </div>
+
+          <div v-else>
+            <div class="formRow">
+              <div class="label">Ref No</div>
+              <input class="input" v-model="detailsForm.refNo" :disabled="busy" />
+            </div>
+
+            <div class="formRow">
+              <div class="label">Title</div>
+              <input class="input" v-model="detailsForm.title" :disabled="busy" />
+            </div>
+
+            <div class="formRow">
+              <div class="label">Company</div>
+              <input class="input" v-model="detailsForm.companyName" :disabled="busy" />
+            </div>
+
+            <div class="formRow">
+              <div class="label">Priority</div>
+              <select class="input" v-model="detailsForm.priority" :disabled="busy">
+                <option value="LOW">LOW</option>
+                <option value="MEDIUM">MEDIUM</option>
+                <option value="HIGH">HIGH</option>
+                <option value="URGENT">URGENT</option>
+              </select>
+            </div>
+
+            <div class="formRow">
+              <div class="label">Received Date (Read Only)</div>
+              <input class="input" :value="formatDate(doc.receivedDate)" disabled />
+            </div>
           </div>
         </div>
 
@@ -217,7 +277,23 @@
             </template>
 
             <div class="attachRow">
-              <input type="file" @change="onFilePick" :disabled="!canUploadAttachments" />
+              <input
+                id="attachmentFileInput"
+                ref="fileInputRef"
+                class="hiddenFileInput"
+                type="file"
+                @change="onFilePick"
+                :disabled="!canUploadAttachments"
+              />
+              <button
+                class="btn"
+                type="button"
+                :disabled="!canUploadAttachments"
+                @click="openFilePicker"
+              >
+                Choose File
+              </button>
+              <span class="filePickLabel">{{ pickedFile ? pickedFile.name : "No file chosen" }}</span>
               <button
                 class="btn btn-primary"
                 :disabled="busy || !pickedFile || !canUploadAttachments"
@@ -358,6 +434,7 @@ import { formatUserLabel, formatUserLabelById } from "../auth/userLabel";
 import { listUsers } from "../api/auth.api";
 import {
   getDocument,
+  updateDocument,
   listMovements,
   listRemarks,
   addRemark,
@@ -386,7 +463,16 @@ const remarks = ref([]);
 const attachments = ref([]);
 
 const error = ref("");
+const successMessage = ref("");
 const busy = ref(false);
+
+const isEditingDetails = ref(false);
+const detailsForm = ref({
+  refNo: "",
+  title: "",
+  companyName: "",
+  priority: "MEDIUM",
+});
 
 const toUserId = ref(null);
 
@@ -394,6 +480,7 @@ const toUserId = ref(null);
 const remarkDraft = ref("");
 
 const pickedFile = ref(null);
+const fileInputRef = ref(null);
 
 const viewerOpen = ref(false);
 const selectedFile = ref(null);
@@ -402,6 +489,8 @@ const viewerSearch = ref("");
 const isOwner = computed(() => !!doc.value && Number(doc.value.currentOwnerUserId) === Number(currentUser.value.id));
 const isDC = computed(() => currentUser.value.role === "DC");
 const isIssued = computed(() => !!doc.value && doc.value.status === "ISSUED");
+const isEditLocked = computed(() => !!doc.value && (!!doc.value.completedAt || isIssued.value));
+const canEditDetails = computed(() => !!doc.value && isOwner.value && !isEditLocked.value);
 
 // Keep your existing “history” rule for files/movements
 const canViewHistory = computed(() => !!doc.value && (isOwner.value || isDC.value));
@@ -417,6 +506,30 @@ const canApprove = computed(() => doc.value && !isIssued.value && isOwner.value 
 const canReject  = computed(() => doc.value && !isIssued.value && isOwner.value && isDC.value && doc.value.status !== "REJECTED");
 const canIssue   = computed(() => doc.value && isOwner.value && isDC.value && doc.value.status === "APPROVED" && !doc.value.issuedAt);
 const canReopen  = computed(() => doc.value && !isIssued.value && isOwner.value && isDC.value && ["APPROVED","REJECTED"].includes(doc.value.status));
+
+const completedAtDisplay = computed(() => {
+  if (!doc.value?.completedAt) return "-";
+
+  if (isDateOnlyValue(doc.value.completedAt)) {
+    const movementTime = findLatestMovementTime(["APPROVE", "REJECT"]);
+    if (movementTime) return formatDateTime(movementTime);
+    return formatDate(doc.value.completedAt);
+  }
+
+  return formatDateTime(doc.value.completedAt);
+});
+
+const issuedAtDisplay = computed(() => {
+  if (!doc.value?.issuedAt) return "-";
+
+  if (isDateOnlyValue(doc.value.issuedAt)) {
+    const movementTime = findLatestMovementTime(["ISSUE"]);
+    if (movementTime) return formatDateTime(movementTime);
+    return formatDate(doc.value.issuedAt);
+  }
+
+  return formatDateTime(doc.value.issuedAt);
+});
 
 // Manual add remark: only current owner
 const canAddRemark = computed(() => !!doc.value && isOwner.value && !isIssued.value);
@@ -493,12 +606,28 @@ function formatDate(d) {
 function formatDateTime(d) {
   if (!d) return "-";
   try {
+    if (isDateOnlyValue(d)) return formatDate(d);
     const dt = new Date(d);
     if (isNaN(dt.getTime())) return String(d);
     return dt.toLocaleString();
   } catch {
     return String(d);
   }
+}
+
+function isDateOnlyValue(value) {
+  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+}
+
+function findLatestMovementTime(actionTypes) {
+  const wanted = new Set(actionTypes);
+  const matches = movements.value
+    .filter((m) => wanted.has(String(m.actionType || "").toUpperCase()))
+    .map((m) => m.actionAt)
+    .filter(Boolean)
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+
+  return matches[0] || null;
 }
 
 function previewUrl(attachmentId) {
@@ -564,6 +693,58 @@ onMounted(async () => {
 
 function goBack() {
   router.push("/documents");
+}
+
+function startEditDetails() {
+  if (!doc.value) return;
+  successMessage.value = "";
+  error.value = "";
+  detailsForm.value = {
+    refNo: doc.value.refNo || "",
+    title: doc.value.title || "",
+    companyName: doc.value.companyName || "",
+    priority: doc.value.priority || "MEDIUM",
+  };
+  isEditingDetails.value = true;
+}
+
+function cancelEditDetails() {
+  isEditingDetails.value = false;
+  error.value = "";
+}
+
+async function saveDetails() {
+  error.value = "";
+  successMessage.value = "";
+
+  if (!canEditDetails.value) {
+    error.value = "You are not allowed to edit these details.";
+    return;
+  }
+
+  const payload = {
+    refNo: String(detailsForm.value.refNo || "").trim(),
+    title: String(detailsForm.value.title || "").trim(),
+    companyName: String(detailsForm.value.companyName || "").trim(),
+    priority: detailsForm.value.priority,
+  };
+
+  if (!payload.refNo) return (error.value = "Ref No is required.");
+  if (!payload.title) return (error.value = "Title is required.");
+  if (!payload.companyName) return (error.value = "Company is required.");
+  if (!payload.priority) return (error.value = "Priority is required.");
+
+  busy.value = true;
+  try {
+    await updateDocument(documentId, payload);
+    isEditingDetails.value = false;
+    await reloadAll();
+    successMessage.value = "Document details updated successfully.";
+  } catch (e) {
+    error.value = e?.message || "Failed to update details.";
+  } finally {
+    busy.value = false;
+  }
 }
 
 // ✅ manual save remark only
@@ -684,6 +865,12 @@ async function doReopen() {
 function onFilePick(e) {
   pickedFile.value = e.target.files?.[0] ?? null;
 }
+
+function openFilePicker() {
+  if (!canUploadAttachments.value) return;
+  fileInputRef.value?.click();
+}
+
 async function uploadPicked() {
   error.value = "";
   if (!pickedFile.value) return;
@@ -692,6 +879,7 @@ async function uploadPicked() {
   try {
     await uploadAttachment(documentId, pickedFile.value);
     pickedFile.value = null;
+    if (fileInputRef.value) fileInputRef.value.value = "";
     await reloadAll();
   } catch (e) {
     error.value = e?.message || "Upload failed.";
@@ -732,6 +920,7 @@ async function removeAttachment(a) {
 
 .card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:14px; }
 .cardTitle { font-weight:800; margin-bottom:10px; }
+.cardHead { display:flex; justify-content:space-between; align-items:center; gap:10px; }
 
 .kv { display:grid; grid-template-columns: 150px 1fr; gap:8px 12px; }
 .k { font-size:12px; color:#6b7280; font-weight:700; }
@@ -758,6 +947,7 @@ async function removeAttachment(a) {
 .rules { margin-top:10px; font-size:12px; color:#6b7280; }
 
 .errorBox { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:10px 12px; border-radius:8px; margin-bottom:12px; }
+.successBox { background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; padding:10px 12px; border-radius:8px; margin-bottom:12px; }
 .lockBox { background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; padding:10px 12px; border-radius:8px; }
 
 .empty { font-size:13px; color:#6b7280; padding:8px 0; }
@@ -770,6 +960,15 @@ async function removeAttachment(a) {
 .text { margin-top:8px; font-size:13px; color:#111827; white-space:pre-wrap; }
 
 .attachRow { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px; }
+.hiddenFileInput { display:none; }
+.filePickLabel {
+  font-size:13px;
+  color:#374151;
+  max-width:280px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
 
 .fileRow { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 .fileName { font-size:14px; }

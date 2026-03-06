@@ -28,8 +28,8 @@ public class DocumentResponse {
     private String currentOwnerName;
 
     private LocalDateTime createdAt;
-    private LocalDate completedAt;
-    private LocalDate issuedAt;
+    private LocalDateTime completedAt;
+    private LocalDateTime issuedAt;
 
     public static DocumentResponse from(Document d, String createdByName, String ownerName) {
         return DocumentResponse.builder()

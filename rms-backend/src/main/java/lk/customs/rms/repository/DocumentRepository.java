@@ -16,6 +16,15 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     @Query("select case when count(d) > 0 then true else false end from Document d where d.refNo = :refNo and d.deleted = false")
     boolean existsByRefNoAndDeletedFalse(String refNo);
 
+    @Query("""
+           select case when count(d) > 0 then true else false end
+             from Document d
+            where d.deleted = false
+              and lower(d.refNo) = lower(:refNo)
+              and d.id <> :id
+           """)
+    boolean existsByRefNoAndDeletedFalseAndIdNot(@Param("refNo") String refNo, @Param("id") Long id);
+
     @Query("select d from Document d where d.deleted = false")
     Page<Document> findAllNotDeleted(Pageable pageable);
 

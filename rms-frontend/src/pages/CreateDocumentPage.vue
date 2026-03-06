@@ -43,7 +43,17 @@
         <!-- Main file upload -->
         <div class="span2">
           <div class="labelTop">Main Document File (optional)</div>
-          <input type="file" @change="onFileChange" />
+          <input
+            id="createDocumentFileInput"
+            ref="fileInputRef"
+            class="hiddenFileInput"
+            type="file"
+            @change="onFileChange"
+          />
+          <div class="filePickRow">
+            <button class="btn btn-sm" type="button" @click="openFilePicker">Choose File</button>
+            <span class="filePickLabel">{{ selectedFile ? selectedFile.name : "No file chosen" }}</span>
+          </div>
           <div class="hint">PDF/images will preview here. DOC/DOCX will show as a link.</div>
 
           <div v-if="selectedFile" class="previewBox">
@@ -139,6 +149,7 @@ const success = ref("");
 const selectedFile = ref(null);
 const localUrl = ref("");
 const previewOpen = ref(false);
+const fileInputRef = ref(null);
 
 const isPdf = computed(() => selectedFile.value && selectedFile.value.type === "application/pdf");
 const isImage = computed(() => selectedFile.value && selectedFile.value.type.startsWith("image/"));
@@ -150,6 +161,10 @@ function onFileChange(e) {
 
   if (localUrl.value) URL.revokeObjectURL(localUrl.value);
   localUrl.value = f ? URL.createObjectURL(f) : "";
+}
+
+function openFilePicker() {
+  fileInputRef.value?.click();
 }
 
 function openLocalPreview() {
@@ -219,6 +234,16 @@ h2 { margin:0; }
 .span2 { grid-column: span 2; }
 
 .labelTop { font-size:12px; font-weight:800; color:#374151; margin-bottom:6px; }
+.hiddenFileInput { display:none; }
+.filePickRow { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.filePickLabel {
+  font-size:13px;
+  color:#374151;
+  max-width:340px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
 .hint { margin-top:6px; font-size:12px; color:#6b7280; }
 
 .input {

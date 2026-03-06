@@ -49,10 +49,10 @@ public class Document {
     private LocalDateTime createdAt;
 
     @Column(name="completed_at")
-    private LocalDate completedAt;
+    private LocalDateTime completedAt;
 
     @Column(name="issued_at")
-    private LocalDate issuedAt;
+    private LocalDateTime issuedAt;
 
     // soft delete
     @Column(name="is_deleted", nullable = false)

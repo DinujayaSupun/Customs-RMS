@@ -20,7 +20,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /*
@@ -164,13 +163,29 @@ public class DocumentServiceImpl implements DocumentService {
     public DocumentResponse updateDocument(Long id, UpdateDocumentRequest request, Long actorUserId) {
         Document d = requireDocument(id);
 
-        // NOTE: We are not locking "update" by status in this version.
-        // If Customs wants, we can block edits after APPROVED/ISSUED later.
+        // Only the current owner can edit details
+        if (!d.getCurrentOwnerUserId().equals(actorUserId)) {
+            throw new BadRequestException("Only the current owner can edit document details.");
+        }
 
-        if (request.getTitle() != null) d.setTitle(request.getTitle());
-        if (request.getCompanyName() != null) d.setCompanyName(request.getCompanyName());
-        if (request.getReceivedDate() != null) d.setReceivedDate(request.getReceivedDate());
-        if (request.getPriority() != null) d.setPriority(request.getPriority());
+        // Lock editing after completion/issue
+        if (d.getCompletedAt() != null || d.getStatus() == Status.ISSUED) {
+            throw new BadRequestException("Cannot edit details after document is COMPLETED or ISSUED.");
+        }
+
+        String newRefNo = request.getRefNo() == null ? "" : request.getRefNo().trim();
+        if (newRefNo.isEmpty()) {
+            throw new BadRequestException("Ref No is required.");
+        }
+
+        if (documentRepository.existsByRefNoAndDeletedFalseAndIdNot(newRefNo, d.getId())) {
+            throw new BadRequestException("Ref No already exists: " + newRefNo);
+        }
+
+        d.setRefNo(newRefNo);
+        d.setTitle(request.getTitle().trim());
+        d.setCompanyName(request.getCompanyName().trim());
+        d.setPriority(request.getPriority());
 
         Document saved = documentRepository.save(d);
 
@@ -291,7 +306,7 @@ public class DocumentServiceImpl implements DocumentService {
         saveRemarkIfPresent(d, actorUserId, request.getRemarkText(), "Remark added during approve");
 
         d.setStatus(Status.APPROVED);
-        d.setCompletedAt(LocalDate.now());
+        d.setCompletedAt(LocalDateTime.now());
         documentRepository.save(d);
 
         DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, actorUserId, MovementActionType.APPROVE);
@@ -318,7 +333,7 @@ public class DocumentServiceImpl implements DocumentService {
         saveRemarkIfPresent(d, actorUserId, request.getRemarkText(), "Remark added during reject");
 
         d.setStatus(Status.REJECTED);
-        d.setCompletedAt(LocalDate.now());
+        d.setCompletedAt(LocalDateTime.now());
         documentRepository.save(d);
 
         DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, actorUserId, MovementActionType.REJECT);
@@ -345,7 +360,7 @@ public class DocumentServiceImpl implements DocumentService {
         saveRemarkIfPresent(d, actorUserId, request.getRemarkText(), "Remark added during issue");
 
         d.setStatus(Status.ISSUED);
-        d.setIssuedAt(LocalDate.now());
+        d.setIssuedAt(LocalDateTime.now());
         documentRepository.save(d);
 
         DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, actorUserId, MovementActionType.ISSUE);
