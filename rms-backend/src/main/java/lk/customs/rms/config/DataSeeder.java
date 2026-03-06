@@ -6,6 +6,7 @@ import lk.customs.rms.repository.RoleRepository;
 import lk.customs.rms.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -106,6 +107,12 @@ public class DataSeeder {
         user.setPasswordHash(passwordHash);
         user.setRole(role);
         user.setIsActive(true);
-        userRepository.save(user);
+
+        try {
+            userRepository.save(user);
+        } catch (DataIntegrityViolationException ex) {
+            // Another run may have inserted the same username in parallel; do not fail startup.
+            log.warn("Skipping seed user '{}': {}", username, ex.getMostSpecificCause().getMessage());
+        }
     }
 }
