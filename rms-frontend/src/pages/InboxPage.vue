@@ -6,15 +6,51 @@
         <p class="pageSub">Items currently assigned to you and awaiting action.</p>
       </div>
       <div class="headActions">
-        <select v-model="sortBy" class="input sortInput">
-          <option value="recent">Most Recent</option>
-          <option value="ref_asc">Ref No (A-Z)</option>
-          <option value="ref_desc">Ref No (Z-A)</option>
-          <option value="title_asc">Title (A-Z)</option>
-          <option value="priority_desc">Priority (High-Low)</option>
-          <option value="status_asc">Status (Workflow)</option>
-        </select>
         <button class="btn" @click="load">Refresh</button>
+      </div>
+    </div>
+
+    <div class="card filtersCard">
+      <div class="filters">
+        <div class="control">
+          <label class="controlLabel">Search</label>
+          <input v-model="q" class="input" placeholder="Search ref/title/company..." />
+        </div>
+
+        <div class="control">
+          <label class="controlLabel">Status</label>
+          <select v-model="status" class="input">
+            <option value="">All Status</option>
+            <option>PENDING</option>
+            <option>IN_PROGRESS</option>
+            <option>APPROVED</option>
+            <option>REJECTED</option>
+            <option>ISSUED</option>
+          </select>
+        </div>
+
+        <div class="control">
+          <label class="controlLabel">Priority</label>
+          <select v-model="priority" class="input">
+            <option value="">All Priority</option>
+            <option>LOW</option>
+            <option>MEDIUM</option>
+            <option>HIGH</option>
+            <option>URGENT</option>
+          </select>
+        </div>
+
+        <div class="control">
+          <label class="controlLabel">Sort By</label>
+          <select v-model="sortBy" class="input">
+            <option value="recent">Most Recent</option>
+            <option value="ref_asc">Ref No (A-Z)</option>
+            <option value="ref_desc">Ref No (Z-A)</option>
+            <option value="title_asc">Title (A-Z)</option>
+            <option value="priority_desc">Priority (High-Low)</option>
+            <option value="status_asc">Status (Workflow)</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -26,7 +62,7 @@
           <span class="tableTitle">Inbox Documents</span>
           <span class="tableMeta">{{ rows.length }} item{{ rows.length === 1 ? '' : 's' }}</span>
         </div>
-        <span class="tableHint">Only active assignments are shown</span>
+        <span class="tableHint">{{ sortHint }} • Showing only active assignments assigned to you</span>
       </div>
 
       <div class="tableWrap">
@@ -49,7 +85,18 @@
               <td colspan="6" class="muted">No inbox items.</td>
             </tr>
             <tr v-else v-for="d in rows" :key="d.id">
-              <td class="refCell"><b>{{ d.refNo }}</b></td>
+              <td class="refCell">
+                <div class="refWrap">
+                  <span
+                    class="docTypeBadge"
+                    :class="'docType-' + docTypeClass(d.mainAttachmentType)"
+                    :title="attachmentTypeLabel(d.mainAttachmentType)"
+                  >
+                    {{ attachmentToken(d.mainAttachmentType) }}
+                  </span>
+                  <b>{{ d.refNo }}</b>
+                </div>
+              </td>
               <td>{{ d.title }}</td>
               <td>{{ d.companyName }}</td>
               <td><span class="pill" :class="'pill-'+d.priority">{{ d.priority }}</span></td>
@@ -68,7 +115,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import AppLayout from "../layouts/AppLayout.vue";
 import { listDocuments } from "../api/documents.api";
@@ -80,13 +127,48 @@ const loading = ref(false);
 const error = ref("");
 const allRows = ref([]);
 const rows = ref([]);
+const q = ref("");
+const status = ref("");
+const priority = ref("");
 const sortBy = ref("recent");
+
+const sortHint = computed(() => {
+  switch (sortBy.value) {
+    case "ref_asc":
+      return "Sorted by Ref No (A-Z)";
+    case "ref_desc":
+      return "Sorted by Ref No (Z-A)";
+    case "title_asc":
+      return "Sorted by Title (A-Z)";
+    case "priority_desc":
+      return "Sorted by Priority (High-Low)";
+    case "status_asc":
+      return "Sorted by Status (Workflow)";
+    case "recent":
+    default:
+      return "Sorted by Most Recent";
+  }
+});
 
 const PRIORITY_ORDER = { LOW: 1, MEDIUM: 2, HIGH: 3, URGENT: 4 };
 const STATUS_ORDER = { PENDING: 1, IN_PROGRESS: 2, APPROVED: 3, ISSUED: 4, REJECTED: 5 };
 
 function toText(value) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function docTypeClass(type) {
+  const t = String(type ?? "FILE").toUpperCase();
+  if (["PDF", "DOC", "XLS", "IMG", "TXT", "ZIP"].includes(t)) return t;
+  return "FILE";
+}
+
+function attachmentToken(type) {
+  return docTypeClass(type);
+}
+
+function attachmentTypeLabel(type) {
+  return `Main attachment type: ${docTypeClass(type)}`;
 }
 
 function toRecentScore(doc) {
@@ -116,11 +198,27 @@ function sortDocuments(list) {
   }
 }
 
-function applyNow() {
-  rows.value = sortDocuments(allRows.value);
+function applyFilters(list) {
+  const qq = q.value.trim().toLowerCase();
+  return list.filter((d) => {
+    const matchQ =
+      !qq ||
+      String(d.refNo ?? "").toLowerCase().includes(qq) ||
+      String(d.title ?? "").toLowerCase().includes(qq) ||
+      String(d.companyName ?? "").toLowerCase().includes(qq);
+
+    const matchStatus = !status.value || d.status === status.value;
+    const matchPriority = !priority.value || d.priority === priority.value;
+
+    return matchQ && matchStatus && matchPriority;
+  });
 }
 
-watch(sortBy, () => {
+function applyNow() {
+  rows.value = sortDocuments(applyFilters(allRows.value));
+}
+
+watch([q, status, priority, sortBy], () => {
   applyNow();
 });
 
@@ -179,7 +277,16 @@ h2 { margin:0; line-height:1.15; }
 }
 .input:hover { border-color:#d1d5db; }
 .input:focus { border-color:#9ca3af; box-shadow:0 0 0 3px rgba(229, 231, 235, 0.9); }
-.sortInput { min-width:200px; }
+
+.filtersCard { margin-bottom:14px; }
+.filters {
+  display:grid;
+  grid-template-columns: 1.6fr 1fr 1fr 1fr;
+  gap:12px;
+  align-items:end;
+}
+.control { display:flex; flex-direction:column; gap:6px; }
+.controlLabel { font-size:12px; font-weight:700; color:#374151; }
 
 .card {
   background:#fff;
@@ -237,6 +344,33 @@ h2 { margin:0; line-height:1.15; }
   color:#111827;
   font-variant-numeric:tabular-nums;
 }
+.refWrap {
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.docTypeBadge {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:36px;
+  height:24px;
+  padding:0 8px;
+  border-radius:999px;
+  border:1px solid #d1d5db;
+  background:#f9fafb;
+  color:#374151;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:0.03em;
+}
+.docType-PDF { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
+.docType-DOC { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+.docType-XLS { background:#ecfdf5; border-color:#a7f3d0; color:#047857; }
+.docType-IMG { background:#fff7ed; border-color:#fed7aa; color:#9a3412; }
+.docType-TXT { background:#eef2ff; border-color:#c7d2fe; color:#3730a3; }
+.docType-ZIP { background:#fffbeb; border-color:#fde68a; color:#92400e; }
+.docType-FILE { background:#f3f4f6; border-color:#e5e7eb; color:#4b5563; }
 .muted { color:#6b7280; padding:20px; }
 
 .btn { padding:10px 12px; border-radius:10px; border:1px solid #e5e7eb; background:#fff; cursor:pointer; }
@@ -270,6 +404,10 @@ h2 { margin:0; line-height:1.15; }
 }
 
 @media (max-width: 900px) {
+  .filters {
+    grid-template-columns:1fr 1fr;
+  }
+
   .tableHead {
     flex-direction:column;
     align-items:flex-start;
@@ -288,9 +426,8 @@ h2 { margin:0; line-height:1.15; }
     align-items:stretch;
   }
 
-  .sortInput {
-    min-width:0;
-    width:100%;
+  .filters {
+    grid-template-columns:1fr;
   }
 
   .btn,

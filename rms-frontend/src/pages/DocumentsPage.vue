@@ -59,7 +59,7 @@
           <span class="tableTitle">Document List</span>
           <span class="tableMeta">{{ rows.length }} result{{ rows.length === 1 ? '' : 's' }}</span>
         </div>
-        <span class="tableHint">Latest first by current source order</span>
+        <span class="tableHint">{{ sortHint }}</span>
       </div>
 
       <div class="tableWrap">
@@ -86,7 +86,18 @@
             </tr>
 
             <tr v-else v-for="d in rows" :key="d.id">
-              <td class="refCell"><b>{{ d.refNo }}</b></td>
+              <td class="refCell">
+                <div class="refWrap">
+                  <span
+                    class="docTypeBadge"
+                    :class="'docType-' + docTypeClass(d.mainAttachmentType)"
+                    :title="attachmentTypeLabel(d.mainAttachmentType)"
+                  >
+                    {{ attachmentToken(d.mainAttachmentType) }}
+                  </span>
+                  <b>{{ d.refNo }}</b>
+                </div>
+              </td>
               <td>{{ d.title }}</td>
               <td>{{ d.companyName }}</td>
 
@@ -170,6 +181,24 @@ const status = ref("");
 const priority = ref("");
 const sortBy = ref("recent");
 
+const sortHint = computed(() => {
+  switch (sortBy.value) {
+    case "ref_asc":
+      return "Sorted by Ref No (A-Z)";
+    case "ref_desc":
+      return "Sorted by Ref No (Z-A)";
+    case "title_asc":
+      return "Sorted by Title (A-Z)";
+    case "priority_desc":
+      return "Sorted by Priority (High-Low)";
+    case "status_asc":
+      return "Sorted by Status (Workflow)";
+    case "recent":
+    default:
+      return "Sorted by Most Recent";
+  }
+});
+
 const loading = ref(false);
 const error = ref("");
 const all = ref([]);
@@ -223,6 +252,20 @@ function applyFilters(list) {
 
 function toText(value) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function docTypeClass(type) {
+  const t = String(type ?? "FILE").toUpperCase();
+  if (["PDF", "DOC", "XLS", "IMG", "TXT", "ZIP"].includes(t)) return t;
+  return "FILE";
+}
+
+function attachmentToken(type) {
+  return docTypeClass(type);
+}
+
+function attachmentTypeLabel(type) {
+  return `Main attachment type: ${docTypeClass(type)}`;
 }
 
 function toRecentScore(doc) {
@@ -390,6 +433,33 @@ h2 { margin:0; line-height:1.15; }
   color:#111827;
   font-variant-numeric:tabular-nums;
 }
+.refWrap {
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.docTypeBadge {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:36px;
+  height:24px;
+  padding:0 8px;
+  border-radius:999px;
+  border:1px solid #d1d5db;
+  background:#f9fafb;
+  color:#374151;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:0.03em;
+}
+.docType-PDF { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
+.docType-DOC { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+.docType-XLS { background:#ecfdf5; border-color:#a7f3d0; color:#047857; }
+.docType-IMG { background:#fff7ed; border-color:#fed7aa; color:#9a3412; }
+.docType-TXT { background:#eef2ff; border-color:#c7d2fe; color:#3730a3; }
+.docType-ZIP { background:#fffbeb; border-color:#fde68a; color:#92400e; }
+.docType-FILE { background:#f3f4f6; border-color:#e5e7eb; color:#4b5563; }
 .ownerCell {
   font-weight:600;
   color:#1f2937;

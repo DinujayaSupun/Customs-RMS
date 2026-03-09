@@ -2,6 +2,7 @@ package lk.customs.rms.service.impl;
 
 import lk.customs.rms.dto.*;
 import lk.customs.rms.entity.Document;
+import lk.customs.rms.entity.DocumentAttachment;
 import lk.customs.rms.entity.DocumentMovement;
 import lk.customs.rms.entity.DocumentRemark;
 import lk.customs.rms.entity.User;
@@ -10,6 +11,7 @@ import lk.customs.rms.enums.Status;
 import lk.customs.rms.exception.BadRequestException;
 import lk.customs.rms.exception.ResourceNotFoundException;
 import lk.customs.rms.repository.DocumentMovementRepository;
+import lk.customs.rms.repository.DocumentAttachmentRepository;
 import lk.customs.rms.repository.DocumentRemarkRepository;
 import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.UserRepository;
@@ -21,6 +23,9 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /*
  * ==========================================================
@@ -61,6 +66,7 @@ import java.time.LocalDateTime;
 public class DocumentServiceImpl implements DocumentService {
 
     private final DocumentRepository documentRepository;
+    private final DocumentAttachmentRepository attachmentRepository;
     private final DocumentMovementRepository movementRepository;
     private final DocumentRemarkRepository remarkRepository;
     private final UserRepository userRepository;
@@ -68,12 +74,14 @@ public class DocumentServiceImpl implements DocumentService {
 
     public DocumentServiceImpl(
             DocumentRepository documentRepository,
+            DocumentAttachmentRepository attachmentRepository,
             DocumentMovementRepository movementRepository,
             DocumentRemarkRepository remarkRepository,
             UserRepository userRepository,
             AuditLogService auditLogService
     ) {
         this.documentRepository = documentRepository;
+        this.attachmentRepository = attachmentRepository;
         this.movementRepository = movementRepository;
         this.remarkRepository = remarkRepository;
         this.userRepository = userRepository;
@@ -124,7 +132,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         auditLogService.logDocumentCreate(saved.getId(), createdBy.getId(), "Document created");
 
-        return DocumentResponse.from(saved, createdBy.getFullName(), owner.getFullName());
+        return DocumentResponse.from(saved, createdBy.getFullName(), owner.getFullName(), null);
     }
 
     @Override
@@ -142,10 +150,22 @@ public class DocumentServiceImpl implements DocumentService {
             docs = documentRepository.searchNotDeleted(search.trim(), pageable);
         }
 
+        List<Long> docIds = docs.getContent().stream().map(Document::getId).toList();
+        Map<Long, String> mainAttachmentTypes = docIds.isEmpty()
+            ? Map.of()
+            : attachmentRepository
+                .findByDocumentIdInAndDeletedFalseAndIsLatestTrue(docIds)
+                .stream()
+                .collect(Collectors.toMap(
+                    DocumentAttachment::getDocumentId,
+                    a -> resolveAttachmentTypeFromFileName(a.getFileName()),
+                    (first, second) -> first
+                ));
+
         return docs.map(d -> {
             String createdByName = userRepository.findById(d.getCreatedByUserId()).map(User::getFullName).orElse(null);
             String ownerName = userRepository.findById(d.getCurrentOwnerUserId()).map(User::getFullName).orElse(null);
-            return DocumentResponse.from(d, createdByName, ownerName);
+            return DocumentResponse.from(d, createdByName, ownerName, mainAttachmentTypes.get(d.getId()));
         });
     }
 
@@ -155,8 +175,9 @@ public class DocumentServiceImpl implements DocumentService {
 
         String createdByName = userRepository.findById(d.getCreatedByUserId()).map(User::getFullName).orElse(null);
         String ownerName = userRepository.findById(d.getCurrentOwnerUserId()).map(User::getFullName).orElse(null);
+        String mainAttachmentType = resolveMainAttachmentType(d.getId());
 
-        return DocumentResponse.from(d, createdByName, ownerName);
+        return DocumentResponse.from(d, createdByName, ownerName, mainAttachmentType);
     }
 
     @Override
@@ -193,8 +214,34 @@ public class DocumentServiceImpl implements DocumentService {
 
         String createdByName = userRepository.findById(saved.getCreatedByUserId()).map(User::getFullName).orElse(null);
         String ownerName = userRepository.findById(saved.getCurrentOwnerUserId()).map(User::getFullName).orElse(null);
+        String mainAttachmentType = resolveMainAttachmentType(saved.getId());
 
-        return DocumentResponse.from(saved, createdByName, ownerName);
+        return DocumentResponse.from(saved, createdByName, ownerName, mainAttachmentType);
+    }
+
+    private String resolveMainAttachmentType(Long documentId) {
+        return attachmentRepository
+                .findFirstByDocumentIdAndDeletedFalseAndIsLatestTrue(documentId)
+                .map(DocumentAttachment::getFileName)
+                .map(this::resolveAttachmentTypeFromFileName)
+                .orElse(null);
+    }
+
+    private String resolveAttachmentTypeFromFileName(String fileName) {
+        if (fileName == null || fileName.isBlank()) return null;
+        int dot = fileName.lastIndexOf('.');
+        if (dot < 0 || dot == fileName.length() - 1) return "FILE";
+
+        String ext = fileName.substring(dot + 1).toLowerCase();
+        return switch (ext) {
+            case "pdf" -> "PDF";
+            case "doc", "docx" -> "DOC";
+            case "xls", "xlsx", "csv" -> "XLS";
+            case "png", "jpg", "jpeg", "gif", "bmp", "webp" -> "IMG";
+            case "txt" -> "TXT";
+            case "zip", "rar", "7z" -> "ZIP";
+            default -> "FILE";
+        };
     }
 
     @Override
