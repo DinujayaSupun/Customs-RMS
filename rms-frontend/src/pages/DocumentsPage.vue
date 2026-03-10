@@ -21,6 +21,7 @@
             <option value="">All Status</option>
             <option>PENDING</option>
             <option>IN_PROGRESS</option>
+            <option>RETURNED</option>
             <option>APPROVED</option>
             <option>REJECTED</option>
             <option>ISSUED</option>
