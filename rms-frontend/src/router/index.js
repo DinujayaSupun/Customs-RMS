@@ -21,7 +21,7 @@ const routes = [
   { path: "/documents/:id", component: DocumentDetailsPage },
 
   { path: "/inbox", component: InboxPage },
-  { path: "/logs", component: LogsPage },
+  { path: "/logs", component: LogsPage, meta: { logsOnly: true } },
   { path: "/users", component: UsersPage, meta: { adminOnly: true } },
 
   // ✅ Backward compatibility: old REPORT routes still work
@@ -52,6 +52,13 @@ router.beforeEach((to) => {
   if (!to.meta?.adminOnly) return true;
   const user = getCurrentUser();
   if (user?.role === "ADMIN") return true;
+  return { path: "/documents" };
+});
+
+router.beforeEach((to) => {
+  if (!to.meta?.logsOnly) return true;
+  const user = getCurrentUser();
+  if (user?.role === "ADMIN" || user?.role === "DC") return true;
   return { path: "/documents" };
 });
 

@@ -6,6 +6,7 @@ import lk.customs.rms.dto.LoginResponse;
 import lk.customs.rms.dto.UserSummaryResponse;
 import lk.customs.rms.exception.BadRequestException;
 import lk.customs.rms.repository.UserRepository;
+import lk.customs.rms.service.AuditLogService;
 import lk.customs.rms.security.CurrentUserService;
 import lk.customs.rms.security.JwtService;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -25,15 +26,18 @@ public class AuthController {
     private final JwtService jwtService;
     private final UserRepository userRepository;
     private final CurrentUserService currentUserService;
+    private final AuditLogService auditLogService;
 
     public AuthController(AuthenticationManager authenticationManager,
                           JwtService jwtService,
                           UserRepository userRepository,
-                          CurrentUserService currentUserService) {
+                          CurrentUserService currentUserService,
+                          AuditLogService auditLogService) {
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
         this.userRepository = userRepository;
         this.currentUserService = currentUserService;
+        this.auditLogService = auditLogService;
     }
 
     @PostMapping("/login")
@@ -43,6 +47,17 @@ public class AuthController {
                     new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword())
             );
         } catch (BadCredentialsException ex) {
+            Long actorId = userRepository.findByUsernameIgnoreCase(request.getUsername())
+                .map(u -> u.getId())
+                .orElse(0L);
+            auditLogService.logEvent(
+                "AUTH",
+                actorId,
+                "LOGIN_FAILED",
+                actorId,
+                "Login failed",
+                "{\"username\":\"" + request.getUsername() + "\"}"
+            );
             throw new BadRequestException("Invalid username or password.");
         }
 
@@ -51,6 +66,15 @@ public class AuthController {
 
         String role = user.getRole() == null ? "USER" : user.getRole().getRoleName();
         String token = jwtService.generateToken(user.getId(), user.getUsername(), role);
+
+        auditLogService.logEvent(
+            "AUTH",
+            user.getId(),
+            "LOGIN_SUCCESS",
+            user.getId(),
+            "User logged in",
+            "{\"username\":\"" + user.getUsername() + "\",\"role\":\"" + role + "\"}"
+        );
 
         return LoginResponse.builder()
                 .accessToken(token)

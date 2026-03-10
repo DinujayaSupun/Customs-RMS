@@ -3,7 +3,10 @@ package lk.customs.rms.controller;
 import lk.customs.rms.dto.AuditLogResponse;
 import lk.customs.rms.entity.AuditLog;
 import lk.customs.rms.repository.AuditLogRepository;
+import lk.customs.rms.repository.DocumentAttachmentRepository;
+import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.UserRepository;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -26,14 +29,22 @@ import java.util.List;
 @RestController
 @CrossOrigin
 @RequestMapping("/api/audit-logs")
+@PreAuthorize("hasAnyRole('ADMIN','DC')")
 public class LogsController {
 
     private final AuditLogRepository auditLogRepository;
     private final UserRepository userRepository;
+    private final DocumentRepository documentRepository;
+    private final DocumentAttachmentRepository documentAttachmentRepository;
 
-    public LogsController(AuditLogRepository auditLogRepository, UserRepository userRepository) {
+    public LogsController(AuditLogRepository auditLogRepository,
+                          UserRepository userRepository,
+                          DocumentRepository documentRepository,
+                          DocumentAttachmentRepository documentAttachmentRepository) {
         this.auditLogRepository = auditLogRepository;
         this.userRepository = userRepository;
+        this.documentRepository = documentRepository;
+        this.documentAttachmentRepository = documentAttachmentRepository;
     }
 
     @GetMapping
@@ -119,6 +130,7 @@ public class LogsController {
                 .id(log.getId())
                 .entityType(log.getEntityType())
                 .entityId(log.getEntityId())
+                .documentRef(resolveDocumentRef(log))
                 .actionType(log.getActionType())
                 .performedByUserId(log.getPerformedByUserId())
                 .performedByUserName(userRepository.findById(log.getPerformedByUserId()).map(u -> u.getFullName()).orElse(null))
@@ -150,5 +162,48 @@ public class LogsController {
             return "\"" + escaped + "\"";
         }
         return escaped;
+    }
+
+    private String resolveDocumentRef(AuditLog log) {
+        Long documentId = resolveDocumentId(log);
+        if (documentId == null) return null;
+        return documentRepository.findByIdAndDeletedFalse(documentId).map(d -> d.getRefNo()).orElse(null);
+    }
+
+    private Long resolveDocumentId(AuditLog log) {
+        String entityType = String.valueOf(log.getEntityType()).toUpperCase();
+        if ("DOCUMENT".equals(entityType) || "MOVEMENT".equals(entityType)) {
+            return log.getEntityId();
+        }
+
+        if ("ATTACHMENT".equals(entityType)) {
+            Long fromDetails = extractDocumentIdFromDetails(log.getDetailsJson());
+            if (fromDetails != null) return fromDetails;
+            return documentAttachmentRepository.findByIdAndDeletedFalse(log.getEntityId())
+                    .map(a -> a.getDocumentId())
+                    .orElse(null);
+        }
+
+        return null;
+    }
+
+    private Long extractDocumentIdFromDetails(String detailsJson) {
+        if (detailsJson == null || detailsJson.isBlank()) return null;
+        String marker = "\"documentId\":";
+        int idx = detailsJson.indexOf(marker);
+        if (idx < 0) return null;
+
+        int start = idx + marker.length();
+        int end = start;
+        while (end < detailsJson.length() && Character.isDigit(detailsJson.charAt(end))) {
+            end++;
+        }
+
+        if (end <= start) return null;
+        try {
+            return Long.parseLong(detailsJson.substring(start, end));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 }

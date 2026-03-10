@@ -2,6 +2,13 @@ package lk.customs.rms.service;
 
 public interface AuditLogService {
 
+    void logEvent(String entityType,
+                  Long entityId,
+                  String actionType,
+                  Long userId,
+                  String message,
+                  String detailsJson);
+
     void logDocumentCreate(Long documentId, Long userId, String message);
 
     void logDocumentUpdate(Long documentId, Long userId, String message);
