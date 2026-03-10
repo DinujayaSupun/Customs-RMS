@@ -20,7 +20,7 @@
 
         <router-link to="/inbox" class="nav">My Inbox</router-link>
         <router-link to="/documents" class="nav">Documents</router-link>
-        <router-link to="/logs" class="nav">Logs</router-link>
+        <router-link v-if="canViewLogs" to="/logs" class="nav">Logs</router-link>
         <router-link v-if="currentUser?.role === 'ADMIN'" to="/users" class="nav">Users</router-link>
       </aside>
 
@@ -38,6 +38,7 @@ import { clearSession, getCurrentUser } from "../auth/currentUser";
 
 const router = useRouter();
 const currentUser = computed(() => getCurrentUser());
+const canViewLogs = computed(() => ["ADMIN", "DC"].includes(currentUser.value?.role));
 
 function logout() {
   clearSession();

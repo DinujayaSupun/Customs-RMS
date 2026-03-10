@@ -11,6 +11,7 @@ public class AuditLogResponse {
     private Long id;
     private String entityType;
     private Long entityId;
+    private String documentRef;
     private String actionType;
 
     private Long performedByUserId;

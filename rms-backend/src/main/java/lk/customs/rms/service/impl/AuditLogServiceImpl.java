@@ -17,6 +17,16 @@ public class AuditLogServiceImpl implements AuditLogService {
     }
 
     @Override
+    public void logEvent(String entityType,
+                         Long entityId,
+                         String actionType,
+                         Long userId,
+                         String message,
+                         String detailsJson) {
+        save(entityType, entityId, actionType, userId, message, detailsJson);
+    }
+
+    @Override
     public void logDocumentCreate(Long documentId, Long userId, String message) {
         save("DOCUMENT", documentId, "CREATE", userId, message, null);
     }
