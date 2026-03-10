@@ -17,4 +17,8 @@ public interface DocumentAttachmentRepository extends JpaRepository<DocumentAtta
     Integer findMaxVersionNo(Long documentId);
 
     List<DocumentAttachment> findByDocumentIdAndDeletedFalseOrderByVersionNoAsc(Long documentId);
+
+    List<DocumentAttachment> findByDocumentIdInAndDeletedFalseAndIsLatestTrue(List<Long> documentIds);
+
+    Optional<DocumentAttachment> findFirstByDocumentIdAndDeletedFalseAndIsLatestTrue(Long documentId);
 }

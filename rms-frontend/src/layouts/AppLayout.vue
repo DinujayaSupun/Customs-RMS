@@ -18,8 +18,8 @@
       <aside class="sidebar">
         <div class="sidebar-title">Navigation</div>
 
-        <router-link to="/documents" class="nav">Documents</router-link>
         <router-link to="/inbox" class="nav">My Inbox</router-link>
+        <router-link to="/documents" class="nav">Documents</router-link>
         <router-link to="/logs" class="nav">Logs</router-link>
         <router-link v-if="currentUser?.role === 'ADMIN'" to="/users" class="nav">Users</router-link>
       </aside>

@@ -31,7 +31,13 @@ public class DocumentResponse {
     private LocalDateTime completedAt;
     private LocalDateTime issuedAt;
 
+    private String mainAttachmentType;
+
     public static DocumentResponse from(Document d, String createdByName, String ownerName) {
+        return from(d, createdByName, ownerName, null);
+    }
+
+    public static DocumentResponse from(Document d, String createdByName, String ownerName, String mainAttachmentType) {
         return DocumentResponse.builder()
                 .id(d.getId())
                 .refNo(d.getRefNo())
@@ -47,6 +53,7 @@ public class DocumentResponse {
                 .createdAt(d.getCreatedAt())
                 .completedAt(d.getCompletedAt())
                 .issuedAt(d.getIssuedAt())
+                .mainAttachmentType(mainAttachmentType)
                 .build();
     }
 }

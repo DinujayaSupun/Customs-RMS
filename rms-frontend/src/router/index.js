@@ -11,7 +11,7 @@ import LoginPage from "../pages/LoginPage.vue";
 
 const routes = [
   // default
-  { path: "/", redirect: "/documents" },
+  { path: "/", redirect: "/inbox" },
 
   { path: "/login", component: LoginPage, meta: { public: true } },
 
@@ -30,7 +30,7 @@ const routes = [
   { path: "/reports/:id", redirect: (to) => `/documents/${to.params.id}` },
 
   // fallback
-  { path: "/:pathMatch(.*)*", redirect: "/documents" },
+  { path: "/:pathMatch(.*)*", redirect: "/inbox" },
 ];
 
 const router = createRouter({

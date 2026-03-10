@@ -90,8 +90,19 @@
             <div class="k">Priority</div>
             <div class="v">{{ doc.priority }}</div>
 
+            <div class="k">Main Attachment Type</div>
+            <div class="v">
+              <span class="docTypeBadge" :class="'docType-' + docTypeClass(mainAttachmentType)">
+                <component :is="attachmentIconComponent(mainAttachmentType)" class="docIcon" aria-hidden="true" />
+              </span>
+              <span class="typeLabel">{{ mainAttachmentType }}</span>
+            </div>
+
             <div class="k">Received Date</div>
             <div class="v">{{ formatDate(doc.receivedDate) }}</div>
+
+            <div class="k">Days Open</div>
+            <div class="v">{{ daysOpenDisplay }}</div>
 
             <div class="k">Created By</div>
             <div class="v">{{ createdByLabel }}</div>
@@ -258,7 +269,11 @@
               <div class="fileRow">
                 <div>
                   <div class="fileName">
-                    <b>Main:</b> {{ mainFile.fileName }}
+                    <b>Main:</b>
+                    <span class="docTypeBadge" :class="'docType-' + docTypeClass(mainAttachmentType)">
+                      <component :is="attachmentIconComponent(mainAttachmentType)" class="docIcon" aria-hidden="true" />
+                    </span>
+                    {{ mainFile.fileName }}
                     <span class="ver">(v{{ mainFile.versionNo }})</span>
                   </div>
                   <div class="smallHint">Main file is the first uploaded file (v1).</div>
@@ -313,7 +328,19 @@
               <div v-for="a in attachmentsSorted" :key="a.id" class="item">
                 <div class="itemTop">
                   <span class="who">
-                    <b>v{{ a.versionNo }}</b> — {{ a.fileName }}
+                    <b>v{{ a.versionNo }}</b> —
+                    <span
+                      class="docTypeBadge docTypeInline"
+                      :class="'docType-' + docTypeClass(resolveAttachmentTypeFromName(a.fileName))"
+                      :title="`Attachment type: ${resolveAttachmentTypeFromName(a.fileName)}`"
+                    >
+                      <component
+                        :is="attachmentIconComponent(resolveAttachmentTypeFromName(a.fileName))"
+                        class="docIcon"
+                        aria-hidden="true"
+                      />
+                    </span>
+                    {{ a.fileName }}
                     <span v-if="Number(a.versionNo) === 1" class="tag">MAIN</span>
                   </span>
                   <span class="when mono">{{ formatDateTime(a.uploadedAt) }}</span>
@@ -391,7 +418,21 @@
               @click="selectFile(f)"
             >
               <div class="viewerItemTop">
-                <span><b>v{{ f.versionNo }}</b> {{ f.fileName }}</span>
+                <span>
+                  <b>v{{ f.versionNo }}</b>
+                  <span
+                    class="docTypeBadge docTypeInline"
+                    :class="'docType-' + docTypeClass(resolveAttachmentTypeFromName(f.fileName))"
+                    :title="`Attachment type: ${resolveAttachmentTypeFromName(f.fileName)}`"
+                  >
+                    <component
+                      :is="attachmentIconComponent(resolveAttachmentTypeFromName(f.fileName))"
+                      class="docIcon"
+                      aria-hidden="true"
+                    />
+                  </span>
+                  {{ f.fileName }}
+                </span>
                 <span v-if="Number(f.versionNo) === 1" class="tagSmall">MAIN</span>
               </div>
               <div class="viewerItemSub">{{ formatDateTime(f.uploadedAt) }}</div>
@@ -428,7 +469,9 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { File, FileText, FileSpreadsheet, Image, Archive } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
+import { useToast } from "../composables/useToast";
 import { getCurrentUser } from "../auth/currentUser";
 import { formatUserLabel, formatUserLabelById } from "../auth/userLabel";
 import { listUsers } from "../api/auth.api";
@@ -452,6 +495,7 @@ import {
 
 const route = useRoute();
 const router = useRouter();
+const toast = useToast();
 const documentId = Number(route.params.id);
 
 const currentUser = ref(getCurrentUser());
@@ -506,6 +550,18 @@ const canApprove = computed(() => doc.value && !isIssued.value && isOwner.value 
 const canReject  = computed(() => doc.value && !isIssued.value && isOwner.value && isDC.value && doc.value.status !== "REJECTED");
 const canIssue   = computed(() => doc.value && isOwner.value && isDC.value && doc.value.status === "APPROVED" && !doc.value.issuedAt);
 const canReopen  = computed(() => doc.value && !isIssued.value && isOwner.value && isDC.value && ["APPROVED","REJECTED"].includes(doc.value.status));
+
+const daysOpenDisplay = computed(() => {
+  const received = doc.value?.receivedDate;
+  if (!received) return "-";
+
+  const start = new Date(received);
+  if (Number.isNaN(start.getTime())) return "-";
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  const diff = Math.floor((Date.now() - start.getTime()) / dayMs);
+  return String(Math.max(0, diff));
+});
 
 const completedAtDisplay = computed(() => {
   if (!doc.value?.completedAt) return "-";
@@ -565,6 +621,15 @@ const mainFile = computed(() => {
   return attachmentsSorted.value.find(a => Number(a.versionNo) === 1) || attachmentsSorted.value[0];
 });
 
+const mainAttachmentType = computed(() => {
+  if (mainFile.value?.fileName) {
+    return resolveAttachmentTypeFromName(mainFile.value.fileName);
+  }
+
+  const fallback = String(doc.value?.mainAttachmentType || "FILE").toUpperCase();
+  return ["PDF", "DOC", "XLS", "IMG", "TXT", "ZIP"].includes(fallback) ? fallback : "FILE";
+});
+
 const filteredViewerFiles = computed(() => {
   const q = viewerSearch.value.trim().toLowerCase();
   if (!q) return attachmentsSorted.value;
@@ -590,6 +655,41 @@ function isPdf(name) {
 function isImage(name) {
   const n = (name || "").toLowerCase();
   return n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".gif") || n.endsWith(".webp");
+}
+
+function resolveAttachmentTypeFromName(fileName) {
+  const lower = String(fileName || "").toLowerCase();
+  if (lower.endsWith(".pdf")) return "PDF";
+  if (lower.endsWith(".doc") || lower.endsWith(".docx")) return "DOC";
+  if (lower.endsWith(".xls") || lower.endsWith(".xlsx") || lower.endsWith(".csv")) return "XLS";
+  if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".gif") || lower.endsWith(".bmp") || lower.endsWith(".webp")) return "IMG";
+  if (lower.endsWith(".txt")) return "TXT";
+  if (lower.endsWith(".zip") || lower.endsWith(".rar") || lower.endsWith(".7z")) return "ZIP";
+  return "FILE";
+}
+
+function docTypeClass(type) {
+  const t = String(type ?? "FILE").toUpperCase();
+  if (["PDF", "DOC", "XLS", "IMG", "TXT", "ZIP"].includes(t)) return t;
+  return "FILE";
+}
+
+function attachmentIconComponent(type) {
+  switch (docTypeClass(type)) {
+    case "PDF":
+    case "DOC":
+    case "TXT":
+      return FileText;
+    case "XLS":
+      return FileSpreadsheet;
+    case "IMG":
+      return Image;
+    case "ZIP":
+      return Archive;
+    case "FILE":
+    default:
+      return File;
+  }
 }
 
 function formatDate(d) {
@@ -719,6 +819,7 @@ async function saveDetails() {
 
   if (!canEditDetails.value) {
     error.value = "You are not allowed to edit these details.";
+    toast.error(error.value);
     return;
   }
 
@@ -729,10 +830,26 @@ async function saveDetails() {
     priority: detailsForm.value.priority,
   };
 
-  if (!payload.refNo) return (error.value = "Ref No is required.");
-  if (!payload.title) return (error.value = "Title is required.");
-  if (!payload.companyName) return (error.value = "Company is required.");
-  if (!payload.priority) return (error.value = "Priority is required.");
+  if (!payload.refNo) {
+    error.value = "Ref No is required.";
+    toast.warning(error.value);
+    return;
+  }
+  if (!payload.title) {
+    error.value = "Title is required.";
+    toast.warning(error.value);
+    return;
+  }
+  if (!payload.companyName) {
+    error.value = "Company is required.";
+    toast.warning(error.value);
+    return;
+  }
+  if (!payload.priority) {
+    error.value = "Priority is required.";
+    toast.warning(error.value);
+    return;
+  }
 
   busy.value = true;
   try {
@@ -740,8 +857,10 @@ async function saveDetails() {
     isEditingDetails.value = false;
     await reloadAll();
     successMessage.value = "Document details updated successfully.";
+    toast.success(successMessage.value);
   } catch (e) {
     error.value = e?.message || "Failed to update details.";
+    toast.error(error.value);
   } finally {
     busy.value = false;
   }
@@ -751,7 +870,10 @@ async function saveDetails() {
 async function saveRemarkOnly() {
   error.value = "";
   const text = remarkDraft.value.trim();
-  if (!text) return;
+  if (!text) {
+    toast.warning("Type a remark before saving.");
+    return;
+  }
 
   busy.value = true;
   try {
@@ -760,8 +882,11 @@ async function saveRemarkOnly() {
     });
     remarkDraft.value = "";
     await reloadAll();
+    successMessage.value = "Remark saved successfully.";
+    toast.success(successMessage.value);
   } catch (e) {
     error.value = e?.message || "Save remark failed.";
+    toast.error(error.value);
   } finally {
     busy.value = false;
   }
@@ -769,7 +894,11 @@ async function saveRemarkOnly() {
 
 async function doForward() {
   error.value = "";
-  if (!toUserId.value) return (error.value = "Please select a user to forward.");
+  if (!toUserId.value) {
+    error.value = "Please select a user to forward.";
+    toast.warning(error.value);
+    return;
+  }
 
   busy.value = true;
   try {
@@ -779,8 +908,11 @@ async function doForward() {
     });
     remarkDraft.value = "";
     await reloadAll();
+    successMessage.value = "Document forwarded successfully.";
+    toast.success(successMessage.value);
   } catch (e) {
     error.value = e?.message || "Forward failed.";
+    toast.error(error.value);
   } finally {
     busy.value = false;
   }
@@ -796,8 +928,11 @@ async function doReturn() {
     });
     remarkDraft.value = "";
     await reloadAll();
+    successMessage.value = "Document returned successfully.";
+    toast.success(successMessage.value);
   } catch (e) {
     error.value = e?.message || "Return failed.";
+    toast.error(error.value);
   } finally {
     busy.value = false;
   }
@@ -810,8 +945,11 @@ async function doApprove() {
     await approveDocument(documentId, { remarkText: remarkOrNull() });
     remarkDraft.value = "";
     await reloadAll();
+    successMessage.value = "Document approved successfully.";
+    toast.success(successMessage.value);
   } catch (e) {
     error.value = e?.message || "Approve failed.";
+    toast.error(error.value);
   } finally {
     busy.value = false;
   }
@@ -824,8 +962,11 @@ async function doReject() {
     await rejectDocument(documentId, { remarkText: remarkOrNull() });
     remarkDraft.value = "";
     await reloadAll();
+    successMessage.value = "Document rejected successfully.";
+    toast.success(successMessage.value);
   } catch (e) {
     error.value = e?.message || "Reject failed.";
+    toast.error(error.value);
   } finally {
     busy.value = false;
   }
@@ -838,8 +979,11 @@ async function doIssue() {
     await issueDocument(documentId, { remarkText: remarkOrNull() });
     remarkDraft.value = "";
     await reloadAll();
+    successMessage.value = "Document issued successfully.";
+    toast.success(successMessage.value);
   } catch (e) {
     error.value = e?.message || "Issue failed.";
+    toast.error(error.value);
   } finally {
     busy.value = false;
   }
@@ -848,15 +992,22 @@ async function doIssue() {
 async function doReopen() {
   error.value = "";
   const txt = remarkDraft.value.trim();
-  if (!txt) return (error.value = "Reopen requires a reason. Type it in the Remark box first.");
+  if (!txt) {
+    error.value = "Reopen requires a reason. Type it in the Remark box first.";
+    toast.warning(error.value);
+    return;
+  }
 
   busy.value = true;
   try {
     await reopenDocument(documentId, { remarkText: txt });
     remarkDraft.value = "";
     await reloadAll();
+    successMessage.value = "Document reopened successfully.";
+    toast.success(successMessage.value);
   } catch (e) {
     error.value = e?.message || "Reopen failed.";
+    toast.error(error.value);
   } finally {
     busy.value = false;
   }
@@ -873,7 +1024,10 @@ function openFilePicker() {
 
 async function uploadPicked() {
   error.value = "";
-  if (!pickedFile.value) return;
+  if (!pickedFile.value) {
+    toast.warning("Choose a file before uploading.");
+    return;
+  }
 
   busy.value = true;
   try {
@@ -881,8 +1035,11 @@ async function uploadPicked() {
     pickedFile.value = null;
     if (fileInputRef.value) fileInputRef.value.value = "";
     await reloadAll();
+    successMessage.value = "Attachment uploaded successfully.";
+    toast.success(successMessage.value);
   } catch (e) {
     error.value = e?.message || "Upload failed.";
+    toast.error(error.value);
   } finally {
     busy.value = false;
   }
@@ -896,8 +1053,11 @@ async function removeAttachment(a) {
   try {
     await deleteAttachment(a.id);
     await reloadAll();
+    successMessage.value = "Attachment deleted successfully.";
+    toast.success(successMessage.value);
   } catch (e) {
     error.value = e?.message || "Delete failed.";
+    toast.error(error.value);
   } finally {
     busy.value = false;
   }
@@ -926,6 +1086,7 @@ async function removeAttachment(a) {
 .k { font-size:12px; color:#6b7280; font-weight:700; }
 .v { font-size:14px; color:#111827; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:12px; }
+.typeLabel { margin-left:8px; font-weight:700; font-size:12px; color:#374151; }
 
 .formRow { margin-top:10px; }
 .label { font-size:12px; font-weight:800; margin-bottom:6px; color:#374151; }
@@ -979,6 +1140,33 @@ async function removeAttachment(a) {
 .noPreview { font-size:13px; color:#6b7280; padding:10px; background:#fff; border:1px solid #e5e7eb; border-radius:8px; }
 
 .tag { margin-left:8px; font-size:11px; padding:2px 8px; border-radius:999px; background:#dbeafe; color:#1e40af; border:1px solid #bfdbfe; }
+
+.docTypeBadge {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:28px;
+  height:24px;
+  padding:0;
+  border-radius:999px;
+  border:1px solid #d1d5db;
+  background:#f9fafb;
+  color:#374151;
+  vertical-align:middle;
+}
+.docTypeInline { margin:0 6px; }
+.docIcon {
+  width:14px;
+  height:14px;
+  stroke-width:2.1;
+}
+.docType-PDF { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
+.docType-DOC { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+.docType-XLS { background:#ecfdf5; border-color:#a7f3d0; color:#047857; }
+.docType-IMG { background:#fff7ed; border-color:#fed7aa; color:#9a3412; }
+.docType-TXT { background:#eef2ff; border-color:#c7d2fe; color:#3730a3; }
+.docType-ZIP { background:#fffbeb; border-color:#fde68a; color:#92400e; }
+.docType-FILE { background:#f3f4f6; border-color:#e5e7eb; color:#4b5563; }
 
 /* Busy overlay */
 .busyOverlay {
