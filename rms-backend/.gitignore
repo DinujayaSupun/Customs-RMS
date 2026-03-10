@@ -46,6 +46,7 @@ target/
 # Environment files
 .env
 .env.*
+src/main/resources/application-local.properties
 
 # OS
 .DS_Store
