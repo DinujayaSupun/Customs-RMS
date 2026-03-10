@@ -92,7 +92,11 @@
                     :class="'docType-' + docTypeClass(d.mainAttachmentType)"
                     :title="attachmentTypeLabel(d.mainAttachmentType)"
                   >
-                    {{ attachmentToken(d.mainAttachmentType) }}
+                    <component
+                      :is="attachmentIconComponent(d.mainAttachmentType)"
+                      class="docIcon"
+                      aria-hidden="true"
+                    />
                   </span>
                   <b>{{ d.refNo }}</b>
                 </div>
@@ -117,6 +121,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
+import { File, FileText, FileSpreadsheet, Image, Archive } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
 import { listDocuments } from "../api/documents.api";
 import { getCurrentUser } from "../auth/currentUser";
@@ -163,8 +168,22 @@ function docTypeClass(type) {
   return "FILE";
 }
 
-function attachmentToken(type) {
-  return docTypeClass(type);
+function attachmentIconComponent(type) {
+  switch (docTypeClass(type)) {
+    case "PDF":
+    case "DOC":
+    case "TXT":
+      return FileText;
+    case "XLS":
+      return FileSpreadsheet;
+    case "IMG":
+      return Image;
+    case "ZIP":
+      return Archive;
+    case "FILE":
+    default:
+      return File;
+  }
 }
 
 function attachmentTypeLabel(type) {
@@ -296,7 +315,13 @@ h2 { margin:0; line-height:1.15; }
   box-shadow:0 6px 18px rgba(17, 24, 39, 0.05);
 }
 
-.tableCard { padding:0; overflow:hidden; }
+.tableCard {
+  padding:0;
+  overflow:hidden;
+  position:relative;
+  z-index:0;
+  isolation:isolate;
+}
 .tableHead {
   padding:14px 16px;
   border-bottom:1px solid #e5e7eb;
@@ -310,7 +335,11 @@ h2 { margin:0; line-height:1.15; }
 .tableMeta { font-size:12px; color:#6b7280; }
 .tableHint { font-size:12px; color:#9ca3af; }
 
-.tableWrap { overflow:auto; }
+.tableWrap {
+  overflow:auto;
+  position:relative;
+  z-index:0;
+}
 
 .table {
   width:100%;
@@ -353,9 +382,9 @@ h2 { margin:0; line-height:1.15; }
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  min-width:36px;
+  width:28px;
   height:24px;
-  padding:0 8px;
+  padding:0;
   border-radius:999px;
   border:1px solid #d1d5db;
   background:#f9fafb;
@@ -363,6 +392,11 @@ h2 { margin:0; line-height:1.15; }
   font-size:10px;
   font-weight:800;
   letter-spacing:0.03em;
+}
+.docIcon {
+  width:14px;
+  height:14px;
+  stroke-width:2.1;
 }
 .docType-PDF { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
 .docType-DOC { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
