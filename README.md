@@ -26,19 +26,6 @@ Customs RMS is an internal web application for managing customs-related document
 
 ---
 
-## Roles
-
-| Role | Description |
-|------|-------------|
-| `ADMIN` | Full system access, user management |
-| `DC` | Director of Customs |
-| `DDC` | Deputy Director of Customs |
-| `SC` | Superintendent of Customs |
-| `ASC` | Assistant Superintendent of Customs |
-| `PMA` | Port Management Officer |
-
----
-
 ## Tech Stack
 
 | Layer | Technology |
