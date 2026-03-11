@@ -2,8 +2,7 @@
     "chat.tools.terminal.autoApprove": {
         "npm run build": true,
         "mvn spring-boot:run": true,
-        "npm run dev": true,
-        "Get-NetTCPConnection": true
+        "npm run dev": true
     },
     "java.configuration.updateBuildConfiguration": "interactive",
     "files.exclude": {
