@@ -2,7 +2,18 @@
     "chat.tools.terminal.autoApprove": {
         "npm run build": true,
         "mvn spring-boot:run": true,
-        "npm run dev": true
+        "npm run dev": true,
+        "Get-NetTCPConnection": true
     },
-    "java.configuration.updateBuildConfiguration": "interactive"
+    "java.configuration.updateBuildConfiguration": "interactive",
+    "files.exclude": {
+        "**/node_modules": true,
+        "rms-backend/target": true,
+        "rms-frontend/dist": true
+    },
+    "search.exclude": {
+        "**/node_modules": true,
+        "rms-backend/target": true,
+        "rms-frontend/dist": true
+    }
 }
