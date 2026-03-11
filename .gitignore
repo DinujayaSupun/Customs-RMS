@@ -1,0 +1,17 @@
+# Root workspace ignores
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Root-level local envs
+.env
+.env.*
+
+# VS Code workspace files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
