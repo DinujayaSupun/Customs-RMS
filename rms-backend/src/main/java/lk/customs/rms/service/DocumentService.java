@@ -32,7 +32,7 @@ public interface DocumentService {
 
     /**
      * NEW: REOPEN (controlled)
-     * Only DC can reopen a document that is APPROVED or REJECTED.
+     * Only users with reopen permission can reopen a document that is APPROVED or REJECTED.
      * Not allowed for ISSUED.
      * Requires a reason (remarkText must not be empty).
      */

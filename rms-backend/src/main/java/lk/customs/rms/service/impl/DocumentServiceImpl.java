@@ -6,6 +6,7 @@ import lk.customs.rms.entity.DocumentAttachment;
 import lk.customs.rms.entity.DocumentMovement;
 import lk.customs.rms.entity.DocumentRemark;
 import lk.customs.rms.entity.User;
+import lk.customs.rms.enums.AppPermission;
 import lk.customs.rms.enums.MovementActionType;
 import lk.customs.rms.enums.Status;
 import lk.customs.rms.exception.BadRequestException;
@@ -17,6 +18,7 @@ import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.service.AuditLogService;
 import lk.customs.rms.service.DocumentService;
+import lk.customs.rms.service.PermissionService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -41,9 +43,9 @@ import java.util.stream.Collectors;
  *   2) PMA restriction:
  *      - PMA can forward/return ONLY to DC.
  *
- *   3) DC-only decisions:
- *      - Only DC can APPROVE / REJECT / ISSUE.
- *      - DC must be current owner to do those actions.
+ *   3) Permission-controlled decisions:
+ *      - Approve / Reject / Issue / Reopen depend on the assigned role permissions.
+ *      - User must still be the current owner to do those actions.
  *
  *   4) FINAL STATE LOCK (critical):
  *      - Once ISSUED or REJECTED => NO further workflow actions allowed.
@@ -51,7 +53,7 @@ import java.util.stream.Collectors;
  *      - ISSUE allowed ONLY when status == APPROVED.
  *
  *   5) REOPEN (NEW):
- *      - Only DC can REOPEN an APPROVED or REJECTED document.
+ *      - Only users with reopen permission can REOPEN an APPROVED or REJECTED document.
  *      - Not allowed if ISSUED (final).
  *      - Requires a reason (remarkText must not be empty).
  *      - Sets status back to IN_PROGRESS and clears completedAt.
@@ -71,6 +73,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentRemarkRepository remarkRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
+    private final PermissionService permissionService;
 
     public DocumentServiceImpl(
             DocumentRepository documentRepository,
@@ -78,7 +81,8 @@ public class DocumentServiceImpl implements DocumentService {
             DocumentMovementRepository movementRepository,
             DocumentRemarkRepository remarkRepository,
             UserRepository userRepository,
-            AuditLogService auditLogService
+            AuditLogService auditLogService,
+            PermissionService permissionService
     ) {
         this.documentRepository = documentRepository;
         this.attachmentRepository = attachmentRepository;
@@ -86,6 +90,7 @@ public class DocumentServiceImpl implements DocumentService {
         this.remarkRepository = remarkRepository;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
+        this.permissionService = permissionService;
     }
 
     // ==========================================================
@@ -94,6 +99,7 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     public DocumentResponse createDocument(CreateDocumentRequest request, Long actorUserId) {
+        permissionService.ensurePermission(actorUserId, AppPermission.CREATE_DOCUMENT, "You are not allowed to create documents.");
 
         // Unique constraint check (business)
         if (documentRepository.existsByRefNoAndDeletedFalse(request.getRefNo())) {
@@ -184,6 +190,8 @@ public class DocumentServiceImpl implements DocumentService {
     public DocumentResponse updateDocument(Long id, UpdateDocumentRequest request, Long actorUserId) {
         Document d = requireDocument(id);
 
+        permissionService.ensurePermission(actorUserId, AppPermission.EDIT_DOCUMENT_DETAILS, "You are not allowed to edit document details.");
+
         // Only the current owner can edit details
         if (!d.getCurrentOwnerUserId().equals(actorUserId)) {
             throw new BadRequestException("Only the current owner can edit document details.");
@@ -262,6 +270,7 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     public void forward(Long documentId, ForwardReturnRequest request, Long actorUserId) {
+        permissionService.ensurePermission(actorUserId, AppPermission.FORWARD_DOCUMENT, "You are not allowed to forward documents.");
 
         Document d = requireDocument(documentId);
 
@@ -281,6 +290,13 @@ public class DocumentServiceImpl implements DocumentService {
             throw new BadRequestException("PMA can forward ONLY to DC.");
         }
 
+        String forwardVisibility = normalizeForwardVisibility(request.getForwardVisibility());
+        if ("PRIVATE".equals(forwardVisibility)) {
+            permissionService.ensurePermission(actorUserId, AppPermission.FORWARD_PRIVATE, "You are not allowed to forward as PRIVATE.");
+        } else {
+            permissionService.ensurePermission(actorUserId, AppPermission.FORWARD_PUBLIC, "You are not allowed to forward as PUBLIC.");
+        }
+
         // IMPORTANT: remark must be saved BEFORE ownership changes
         saveRemarkIfPresent(d, actionBy.getId(), request.getRemarkText(), "Remark added during forward");
 
@@ -291,14 +307,15 @@ public class DocumentServiceImpl implements DocumentService {
         d.setStatus(Status.IN_PROGRESS);
         documentRepository.save(d);
 
-        DocumentMovement mv = DocumentMovement.create(documentId, from, to, actionBy.getId(), MovementActionType.FORWARD);
+        DocumentMovement mv = DocumentMovement.create(documentId, from, to, actionBy.getId(), MovementActionType.FORWARD, forwardVisibility);
         movementRepository.save(mv);
 
-        auditLogService.logMovement(documentId, actionBy.getId(), "FORWARD", "Forwarded to userId=" + to);
+        auditLogService.logMovement(documentId, actionBy.getId(), "FORWARD", "Forwarded to userId=" + to + " with visibility=" + forwardVisibility);
     }
 
     @Override
     public void returns(Long documentId, ForwardReturnRequest request, Long actorUserId) {
+        permissionService.ensurePermission(actorUserId, AppPermission.RETURN_DOCUMENT, "You are not allowed to return documents.");
 
         Document d = requireDocument(documentId);
 
@@ -336,9 +353,7 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     public void approve(Long documentId, DecisionRequest request, Long actorUserId) {
-
-        // DC only
-        requireDc(actorUserId);
+        permissionService.ensurePermission(actorUserId, AppPermission.APPROVE_DOCUMENT, "You are not allowed to approve documents.");
 
         Document d = requireDocument(documentId);
 
@@ -347,7 +362,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         // DC must be current owner
         if (!d.getCurrentOwnerUserId().equals(actorUserId)) {
-            throw new BadRequestException("Only the current owner (DC) can approve this document.");
+            throw new BadRequestException("Only the current owner can approve this document.");
         }
 
         saveRemarkIfPresent(d, actorUserId, request.getRemarkText(), "Remark added during approve");
@@ -364,9 +379,7 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     public void reject(Long documentId, DecisionRequest request, Long actorUserId) {
-
-        // DC only
-        requireDc(actorUserId);
+        permissionService.ensurePermission(actorUserId, AppPermission.REJECT_DOCUMENT, "You are not allowed to reject documents.");
 
         Document d = requireDocument(documentId);
 
@@ -374,7 +387,7 @@ public class DocumentServiceImpl implements DocumentService {
         ensureCanApproveOrReject(d);
 
         if (!d.getCurrentOwnerUserId().equals(actorUserId)) {
-            throw new BadRequestException("Only the current owner (DC) can reject this document.");
+            throw new BadRequestException("Only the current owner can reject this document.");
         }
 
         saveRemarkIfPresent(d, actorUserId, request.getRemarkText(), "Remark added during reject");
@@ -391,9 +404,7 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     public void issue(Long documentId, DecisionRequest request, Long actorUserId) {
-
-        // DC only
-        requireDc(actorUserId);
+        permissionService.ensurePermission(actorUserId, AppPermission.ISSUE_DOCUMENT, "You are not allowed to complete documents.");
 
         Document d = requireDocument(documentId);
 
@@ -401,7 +412,7 @@ public class DocumentServiceImpl implements DocumentService {
         ensureCanIssue(d);
 
         if (!d.getCurrentOwnerUserId().equals(actorUserId)) {
-            throw new BadRequestException("Only the current owner (DC) can issue this document.");
+            throw new BadRequestException("Only the current owner can complete this document.");
         }
 
         saveRemarkIfPresent(d, actorUserId, request.getRemarkText(), "Remark added during issue");
@@ -422,9 +433,7 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     public void reopen(Long documentId, DecisionRequest request, Long actorUserId) {
-
-        // DC only
-        requireDc(actorUserId);
+        permissionService.ensurePermission(actorUserId, AppPermission.REOPEN_DOCUMENT, "You are not allowed to reopen documents.");
 
         Document d = requireDocument(documentId);
 
@@ -440,7 +449,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         // DC must also be the current owner (strong integrity)
         if (!d.getCurrentOwnerUserId().equals(actorUserId)) {
-            throw new BadRequestException("Only the current owner (DC) can reopen this document.");
+            throw new BadRequestException("Only the current owner can reopen this document.");
         }
 
         // Reason required
@@ -515,6 +524,8 @@ public class DocumentServiceImpl implements DocumentService {
     private void saveRemarkIfPresent(Document doc, Long actionByUserId, String remarkText, String auditMessage) {
         if (remarkText == null) return;
 
+        permissionService.ensurePermission(actionByUserId, AppPermission.ADD_REMARK, "You are not allowed to add minutes.");
+
         String text = remarkText.trim();
         if (text.isEmpty()) return;
 
@@ -553,10 +564,12 @@ public class DocumentServiceImpl implements DocumentService {
         return user.getRole() != null && roleName.equalsIgnoreCase(user.getRole().getRoleName());
     }
 
-    private void requireDc(Long userId) {
-        User user = requireUser(userId);
-        if (user.getRole() == null || !"DC".equalsIgnoreCase(user.getRole().getRoleName())) {
-            throw new BadRequestException("Only DC can perform this action.");
+    private String normalizeForwardVisibility(String visibility) {
+        String value = visibility == null ? "" : visibility.trim().toUpperCase();
+        if (!"PRIVATE".equals(value) && !"PUBLIC".equals(value)) {
+            throw new BadRequestException("forwardVisibility must be PRIVATE or PUBLIC.");
         }
+        return value;
     }
+
 }

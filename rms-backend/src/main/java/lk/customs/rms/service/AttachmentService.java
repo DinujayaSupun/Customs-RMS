@@ -10,7 +10,7 @@ public interface AttachmentService {
 
     AttachmentResponse upload(Long documentId, Long actorUserId, MultipartFile file);
 
-    List<AttachmentResponse> listForDocument(Long documentId);
+    List<AttachmentResponse> listForDocument(Long documentId, Long actorUserId);
 
     // ✅ download with filename (optional audit logging using performedByUserId)
     AttachmentDownloadResult downloadWithMeta(Long attachmentId, Long actorUserId);

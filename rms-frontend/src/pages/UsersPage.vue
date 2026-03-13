@@ -211,7 +211,7 @@ async function loadRoles() {
   try {
     roles.value = await adminListRoles();
   } catch {
-    roles.value = ["ADMIN", "DC", "DDC", "SC", "ASC", "PMA"];
+    roles.value = ["ADMIN", "DC", "DDC", "SDDC", "SC", "ASC", "PMA"];
   }
 }
 

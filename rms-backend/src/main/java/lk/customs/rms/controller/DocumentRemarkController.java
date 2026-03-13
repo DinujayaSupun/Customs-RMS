@@ -5,6 +5,7 @@ import lk.customs.rms.dto.CreateRemarkRequest;
 import lk.customs.rms.dto.RemarkResponse;
 import lk.customs.rms.entity.Document;
 import lk.customs.rms.entity.DocumentRemark;
+import lk.customs.rms.enums.AppPermission;
 import lk.customs.rms.exception.BadRequestException;
 import lk.customs.rms.exception.ResourceNotFoundException;
 import lk.customs.rms.repository.DocumentRemarkRepository;
@@ -12,6 +13,7 @@ import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.security.CurrentUserService;
 import lk.customs.rms.service.AuditLogService;
+import lk.customs.rms.service.PermissionService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -29,19 +31,22 @@ public class DocumentRemarkController {
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
         private final CurrentUserService currentUserService;
+        private final PermissionService permissionService;
 
     public DocumentRemarkController(
             DocumentRepository documentRepository,
             DocumentRemarkRepository remarkRepository,
             UserRepository userRepository,
                         AuditLogService auditLogService,
-                        CurrentUserService currentUserService
+                        CurrentUserService currentUserService,
+                        PermissionService permissionService
     ) {
         this.documentRepository = documentRepository;
         this.remarkRepository = remarkRepository;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
                 this.currentUserService = currentUserService;
+                this.permissionService = permissionService;
     }
 
     // ✅ ADD REMARK (ONLY CURRENT OWNER)
@@ -56,6 +61,7 @@ public class DocumentRemarkController {
                 .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
 
         Long actorUserId = currentUserService.requireUserId(authentication);
+        permissionService.ensurePermission(actorUserId, AppPermission.ADD_REMARK, "You are not allowed to add minutes.");
 
         // 🔒 Only current owner can add remark
         if (!doc.getCurrentOwnerUserId().equals(actorUserId)) {

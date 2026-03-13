@@ -53,6 +53,7 @@ async function submit() {
       username: res.username,
       fullName: res.fullName,
       role: res.role,
+      permissions: res.permissions || [],
       name: res.fullName,
     });
 

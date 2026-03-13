@@ -120,6 +120,22 @@ export async function adminMergeUsers(sourceUserId, targetUserId) {
   }
 }
 
+export async function adminGetPermissionsMatrix() {
+  try {
+    return (await http.get("/admin/permissions")).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function adminUpdatePermissionsMatrix(entries) {
+  try {
+    return (await http.put("/admin/permissions", { entries })).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
 export function adminExportUsersUrl({ search = "", role = "", active = "" } = {}) {
   const url = new URL("http://localhost:8080/api/admin/users/export");
   if (search) url.searchParams.set("search", search);

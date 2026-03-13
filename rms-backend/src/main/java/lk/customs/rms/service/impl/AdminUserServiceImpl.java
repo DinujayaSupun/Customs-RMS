@@ -28,7 +28,7 @@ import java.util.stream.Collectors;
 @Service
 public class AdminUserServiceImpl implements AdminUserService {
 
-    private static final List<String> ALL_ALLOWED_ROLES = List.of("ADMIN", "DC", "DDC", "SC", "ASC", "PMA");
+    private static final List<String> ALL_ALLOWED_ROLES = List.of("ADMIN", "DC", "DDC", "SDDC", "SC", "ASC", "PMA");
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;

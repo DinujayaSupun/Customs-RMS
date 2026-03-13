@@ -128,12 +128,12 @@ import { ref, computed, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import AppLayout from "../layouts/AppLayout.vue";
 import { createDocument, uploadAttachment } from "../api/documents.api";
-import { getCurrentUser } from "../auth/currentUser";
+import { getCurrentUser, hasPermission } from "../auth/currentUser";
 
 const router = useRouter();
 
 const user = ref(getCurrentUser());
-const canCreate = computed(() => ["DC", "PMA"].includes(user.value?.role));
+const canCreate = computed(() => hasPermission(user.value, "CREATE_DOCUMENT"));
 
 const refNo = ref("");
 const title = ref("");

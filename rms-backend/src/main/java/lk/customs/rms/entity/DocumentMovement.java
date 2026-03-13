@@ -36,7 +36,14 @@ public class DocumentMovement {
     @Column(name="action_at", nullable = false)
     private LocalDateTime actionAt;
 
+    @Column(name = "forward_visibility", length = 10)
+    private String forwardVisibility;
+
     public static DocumentMovement create(Long docId, Long from, Long to, Long by, MovementActionType type) {
+        return create(docId, from, to, by, type, null);
+    }
+
+    public static DocumentMovement create(Long docId, Long from, Long to, Long by, MovementActionType type, String forwardVisibility) {
         DocumentMovement m = new DocumentMovement();
         m.setDocumentId(docId);
         m.setFromUserId(from);
@@ -44,6 +51,7 @@ public class DocumentMovement {
         m.setActionByUserId(by);
         m.setActionType(type);
         m.setActionAt(LocalDateTime.now());
+        m.setForwardVisibility(forwardVisibility);
         return m;
     }
 }

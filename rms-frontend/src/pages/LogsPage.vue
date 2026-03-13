@@ -8,7 +8,7 @@
       <button class="btn" :disabled="loading" @click="downloadCsv">Export CSV</button>
     </div>
 
-    <div v-if="!canViewLogs" class="errorBox">Only DC and ADMIN can access logs.</div>
+    <div v-if="!canViewLogs" class="errorBox">You do not have permission to access logs.</div>
 
     <div v-else class="card">
       <div class="filters">
@@ -174,12 +174,12 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
 import AppLayout from "../layouts/AppLayout.vue";
-import { getCurrentUser } from "../auth/currentUser";
+import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { getDocument } from "../api/documents.api";
 import { buildAuditLogsExportUrl, listAuditLogs } from "../api/logs.api";
 
 const currentUser = ref(getCurrentUser());
-const canViewLogs = computed(() => ["ADMIN", "DC"].includes(currentUser.value?.role));
+const canViewLogs = computed(() => hasPermission(currentUser.value, "VIEW_LOGS"));
 
 const loading = ref(false);
 const error = ref("");

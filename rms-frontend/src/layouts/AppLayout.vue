@@ -22,6 +22,7 @@
         <router-link to="/documents" class="nav">Documents</router-link>
         <router-link v-if="canViewLogs" to="/logs" class="nav">Logs</router-link>
         <router-link v-if="currentUser?.role === 'ADMIN'" to="/users" class="nav">Users</router-link>
+        <router-link v-if="currentUser?.role === 'ADMIN'" to="/permissions" class="nav">Permissions</router-link>
       </aside>
 
       <main class="content">
@@ -34,11 +35,11 @@
 <script setup>
 import { computed } from "vue";
 import { useRouter } from "vue-router";
-import { clearSession, getCurrentUser } from "../auth/currentUser";
+import { clearSession, getCurrentUser, hasPermission } from "../auth/currentUser";
 
 const router = useRouter();
 const currentUser = computed(() => getCurrentUser());
-const canViewLogs = computed(() => ["ADMIN", "DC"].includes(currentUser.value?.role));
+const canViewLogs = computed(() => hasPermission(currentUser.value, "VIEW_LOGS"));
 
 function logout() {
   clearSession();

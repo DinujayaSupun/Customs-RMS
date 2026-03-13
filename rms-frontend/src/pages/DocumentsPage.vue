@@ -204,13 +204,13 @@ import { File, FileText, FileSpreadsheet, Image, Archive, Eye } from "lucide-vue
 import AppLayout from "../layouts/AppLayout.vue";
 import { listDocuments, listMovements, listRemarks, listAttachments } from "../api/documents.api";
 import { listUsers } from "../api/auth.api";
-import { getCurrentUser } from "../auth/currentUser";
+import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabelById } from "../auth/userLabel";
 
 const router = useRouter();
 
 const currentUser = ref(getCurrentUser());
-const canCreate = computed(() => ["DC", "PMA"].includes(currentUser.value?.role));
+const canCreate = computed(() => hasPermission(currentUser.value, "CREATE_DOCUMENT"));
 
 const q = ref("");
 const status = ref("");
@@ -253,7 +253,7 @@ const PRIORITY_ORDER = { LOW: 1, MEDIUM: 2, HIGH: 3, URGENT: 4 };
 const STATUS_ORDER = { PENDING: 1, IN_PROGRESS: 2, APPROVED: 3, ISSUED: 4, REJECTED: 5 };
 
 function canPreview(doc) {
-  if (currentUser.value?.role === "DC") return true;
+  if (hasPermission(currentUser.value, "VIEW_ALL_HISTORY")) return true;
   return doc.currentOwnerUserId === currentUser.value.id;
 }
 
@@ -308,7 +308,7 @@ const previewIsOwner = computed(() => {
 
 const previewCanSeeOperational = computed(() => {
   if (!previewDoc.value || !currentUser.value) return false;
-  return currentUser.value.role === "DC" || previewIsOwner.value;
+  return hasPermission(currentUser.value, "VIEW_ALL_HISTORY") || previewIsOwner.value;
 });
 
 const previewLastMovement = computed(() => {

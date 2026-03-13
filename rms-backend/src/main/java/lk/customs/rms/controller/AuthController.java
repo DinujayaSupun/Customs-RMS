@@ -7,6 +7,7 @@ import lk.customs.rms.dto.UserSummaryResponse;
 import lk.customs.rms.exception.BadRequestException;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.service.AuditLogService;
+import lk.customs.rms.service.PermissionService;
 import lk.customs.rms.security.CurrentUserService;
 import lk.customs.rms.security.JwtService;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -27,17 +28,20 @@ public class AuthController {
     private final UserRepository userRepository;
     private final CurrentUserService currentUserService;
     private final AuditLogService auditLogService;
+    private final PermissionService permissionService;
 
     public AuthController(AuthenticationManager authenticationManager,
                           JwtService jwtService,
                           UserRepository userRepository,
                           CurrentUserService currentUserService,
-                          AuditLogService auditLogService) {
+                          AuditLogService auditLogService,
+                          PermissionService permissionService) {
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
         this.userRepository = userRepository;
         this.currentUserService = currentUserService;
         this.auditLogService = auditLogService;
+        this.permissionService = permissionService;
     }
 
     @PostMapping("/login")
@@ -82,6 +86,7 @@ public class AuthController {
                 .username(user.getUsername())
                 .fullName(user.getFullName())
                 .role(role)
+            .permissions(permissionService.permissionNamesForUser(user))
                 .build();
     }
 
@@ -97,6 +102,7 @@ public class AuthController {
             .department(u.getDepartment())
             .active(u.getIsActive())
                 .role(u.getRole() == null ? null : u.getRole().getRoleName())
+                .permissions(permissionService.permissionNamesForUser(u))
                 .build();
     }
 
@@ -112,6 +118,7 @@ public class AuthController {
                 .department(u.getDepartment())
                 .active(u.getIsActive())
                         .role(u.getRole() == null ? null : u.getRole().getRoleName())
+                        .permissions(permissionService.permissionNamesForUser(u))
                         .build())
                 .toList();
     }

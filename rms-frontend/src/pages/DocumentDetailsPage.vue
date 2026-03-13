@@ -166,19 +166,19 @@
 
           <!-- ✅ ONE remark box (used for forward + manual save) -->
           <div class="formRow">
-            <div class="label">Remark (optional)</div>
+            <div class="label">Minute (optional)</div>
 
             <textarea
               class="textarea"
               v-model="remarkDraft"
               :disabled="busy || !canTypeRemark"
-              placeholder="Type remark..."
+              placeholder="Type minute..."
             ></textarea>
 
             <div class="smallHint">
               {{ canAddRemark
-                ? "This remark will be saved when you Forward/Return/Approve/Reject/Issue/Reopen. You can also Save Remark only."
-                : "You can view all remarks, but only the current owner can add/save remarks."
+                ? "This minute will be saved when you Forward/Return/Approve/Reject/Issue/Reopen. You can also Save Minute only."
+                : "You can view all minutes, but only the current owner can add/save minutes."
               }}
             </div>
 
@@ -188,7 +188,7 @@
                 :disabled="busy || !canAddRemark || !remarkDraft.trim()"
                 @click="saveRemarkOnly"
               >
-                Save Remark
+                Save Minute
               </button>
             </div>
           </div>
@@ -209,6 +209,21 @@
             </div>
           </div>
 
+          <div class="formRow">
+            <div class="label">Forward Visibility</div>
+
+            <select class="input" v-model="forwardVisibility" :disabled="busy || !canForward">
+              <option v-for="opt in availableForwardVisibilities" :key="opt" :value="opt">
+                {{ opt.charAt(0) + opt.slice(1).toLowerCase() }}
+              </option>
+            </select>
+
+            <div class="smallHint">
+              Select whether this forward action is marked as public or private.
+              Allowed by your permissions: {{ availableForwardVisibilities.join(", ") || "None" }}.
+            </div>
+          </div>
+
           <div class="btnRow">
             <button class="btn btn-primary" :disabled="busy || !canForward" @click="doForward">
               Forward
@@ -221,7 +236,7 @@
 
             <button class="btn" :disabled="busy || !canApprove" @click="doApprove">Approve</button>
             <button class="btn" :disabled="busy || !canReject" @click="doReject">Reject</button>
-            <button class="btn" :disabled="busy || !canIssue" @click="doIssue">Done</button>
+            <button class="btn" :disabled="busy || !canIssue" @click="doIssue">Issue</button>
             <button class="btn" :disabled="busy || !canReopen" @click="doReopen">Reopen</button>
           </div>
 
@@ -232,9 +247,9 @@
 
         <!-- ✅ REMARKS LIST (ALWAYS VISIBLE) -->
         <div class="card">
-          <div class="cardTitle">Remarks</div>
+          <div class="cardTitle">Minutes</div>
 
-          <div v-if="remarks.length === 0" class="empty">No remarks yet.</div>
+          <div v-if="remarks.length === 0" class="empty">No minutes yet.</div>
 
           <div v-else class="list">
             <!-- ✅ correct backend fields -->
@@ -369,7 +384,13 @@
           <template v-else>
             <div v-if="movements.length === 0" class="empty">No movements yet.</div>
             <div v-else class="list">
-              <div v-for="m in movements" :key="m.id" class="item">
+              <div
+                v-for="m in movements"
+                :key="m.id"
+                class="item movementItem"
+                :class="{ active: selectedMovementId === m.id }"
+                @click="toggleMovement(m.id)"
+              >
                 <div class="itemTop">
                   <span class="who">
                     <b>{{ m.actionType }}</b>
@@ -379,6 +400,27 @@
                   <span class="when mono">{{ formatDateTime(m.actionAt) }}</span>
                 </div>
                 <div class="smallHint">Action by: {{ formatUserLabelById(m.actionByUserId, users) }}</div>
+                <div v-if="String(m.actionType).toUpperCase() === 'FORWARD'" class="smallHint">
+                  Visibility: <b>{{ m.forwardVisibility || "PUBLIC" }}</b>
+                </div>
+
+                <div v-if="selectedMovementId === m.id" class="timelineRemarks">
+                  <div class="timelineRemarksTitle">Minutes for this movement</div>
+
+                  <div v-if="getRemarksForMovement(m.id).length === 0" class="smallHint">
+                    No remark linked to this movement.
+                  </div>
+
+                  <div v-else class="list timelineRemarksList">
+                    <div v-for="r in getRemarksForMovement(m.id)" :key="r.id" class="item timelineRemarkItem">
+                      <div class="itemTop">
+                        <span class="who">By <b>{{ formatUserLabelById(r.remarkedByUserId, users) }}</b></span>
+                        <span class="when mono">{{ formatDateTime(r.remarkedAt) }}</span>
+                      </div>
+                      <div class="text">{{ r.remarkText }}</div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </template>
@@ -472,7 +514,7 @@ import { useRoute, useRouter } from "vue-router";
 import { File, FileText, FileSpreadsheet, Image, Archive } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
 import { useToast } from "../composables/useToast";
-import { getCurrentUser } from "../auth/currentUser";
+import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabel, formatUserLabelById } from "../auth/userLabel";
 import { listUsers } from "../api/auth.api";
 import {
@@ -505,6 +547,7 @@ const doc = ref(null);
 const movements = ref([]);
 const remarks = ref([]);
 const attachments = ref([]);
+const selectedMovementId = ref(null);
 
 const error = ref("");
 const successMessage = ref("");
@@ -519,6 +562,7 @@ const detailsForm = ref({
 });
 
 const toUserId = ref(null);
+const forwardVisibility = ref("PUBLIC");
 
 // ✅ ONE remark box
 const remarkDraft = ref("");
@@ -531,25 +575,33 @@ const selectedFile = ref(null);
 const viewerSearch = ref("");
 
 const isOwner = computed(() => !!doc.value && Number(doc.value.currentOwnerUserId) === Number(currentUser.value.id));
-const isDC = computed(() => currentUser.value.role === "DC");
+const canViewAllHistory = computed(() => hasPermission(currentUser.value, "VIEW_ALL_HISTORY"));
 const isIssued = computed(() => !!doc.value && doc.value.status === "ISSUED");
 const isEditLocked = computed(() => !!doc.value && (!!doc.value.completedAt || isIssued.value));
-const canEditDetails = computed(() => !!doc.value && isOwner.value && !isEditLocked.value);
+const canEditDetails = computed(() => !!doc.value && isOwner.value && !isEditLocked.value && hasPermission(currentUser.value, "EDIT_DOCUMENT_DETAILS"));
 
 // Keep your existing “history” rule for files/movements
-const canViewHistory = computed(() => !!doc.value && (isOwner.value || isDC.value));
+const canViewHistory = computed(() => !!doc.value && (isOwner.value || canViewAllHistory.value));
 
 // Upload: only current owner
-const canUploadAttachments = computed(() => !!doc.value && isOwner.value && !isIssued.value);
+const canUploadAttachments = computed(() => !!doc.value && isOwner.value && !isIssued.value && hasPermission(currentUser.value, "UPLOAD_ATTACHMENT"));
 
 // Actions
-const canForward = computed(() => !!doc.value && !isIssued.value && isOwner.value);
-const canReturn  = computed(() => !!doc.value && !isIssued.value && isOwner.value);
+const canForwardPublic = computed(() => hasPermission(currentUser.value, "FORWARD_PUBLIC"));
+const canForwardPrivate = computed(() => hasPermission(currentUser.value, "FORWARD_PRIVATE"));
+const availableForwardVisibilities = computed(() => {
+  const options = [];
+  if (canForwardPublic.value) options.push("PUBLIC");
+  if (canForwardPrivate.value) options.push("PRIVATE");
+  return options;
+});
+const canForward = computed(() => !!doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "FORWARD_DOCUMENT") && availableForwardVisibilities.value.length > 0);
+const canReturn  = computed(() => !!doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "RETURN_DOCUMENT"));
 
-const canApprove = computed(() => doc.value && !isIssued.value && isOwner.value && isDC.value && doc.value.status !== "APPROVED");
-const canReject  = computed(() => doc.value && !isIssued.value && isOwner.value && isDC.value && doc.value.status !== "REJECTED");
-const canIssue   = computed(() => doc.value && isOwner.value && isDC.value && doc.value.status === "APPROVED" && !doc.value.issuedAt);
-const canReopen  = computed(() => doc.value && !isIssued.value && isOwner.value && isDC.value && ["APPROVED","REJECTED"].includes(doc.value.status));
+const canApprove = computed(() => doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "APPROVE_DOCUMENT") && doc.value.status !== "APPROVED");
+const canReject  = computed(() => doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "REJECT_DOCUMENT") && doc.value.status !== "REJECTED");
+const canIssue   = computed(() => doc.value && isOwner.value && hasPermission(currentUser.value, "ISSUE_DOCUMENT") && doc.value.status === "APPROVED" && !doc.value.issuedAt);
+const canReopen  = computed(() => doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "REOPEN_DOCUMENT") && ["APPROVED","REJECTED"].includes(doc.value.status));
 
 const daysOpenDisplay = computed(() => {
   const received = doc.value?.receivedDate;
@@ -588,7 +640,7 @@ const issuedAtDisplay = computed(() => {
 });
 
 // Manual add remark: only current owner
-const canAddRemark = computed(() => !!doc.value && isOwner.value && !isIssued.value);
+const canAddRemark = computed(() => !!doc.value && isOwner.value && !isIssued.value && hasPermission(currentUser.value, "ADD_REMARK"));
 
 // textarea allowed if owner can act/save
 const canTypeRemark = computed(() => canAddRemark.value || canForward.value || canReturn.value || canApprove.value || canReject.value || canIssue.value || canReopen.value);
@@ -609,6 +661,17 @@ watch(
       toUserId.value = list[0] ? Number(list[0].id) : null;
     } else {
       toUserId.value = Number(cur);
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  availableForwardVisibilities,
+  (list) => {
+    const current = String(forwardVisibility.value || "").toUpperCase();
+    if (!list.includes(current)) {
+      forwardVisibility.value = list[0] || "PUBLIC";
     }
   },
   { immediate: true }
@@ -647,6 +710,42 @@ const createdByLabel = computed(() => {
 const ownerLabel = computed(() => {
   if (!doc.value) return "-";
   return formatUserLabelById(doc.value.currentOwnerUserId, users.value);
+});
+
+const movementRemarksById = computed(() => {
+  const result = new Map();
+  for (const m of movements.value) {
+    result.set(m.id, []);
+  }
+
+  for (const r of remarks.value) {
+    const remarkTime = parseDateMs(r.remarkedAt);
+    if (remarkTime == null) continue;
+
+    let bestMovement = null;
+    let bestDelta = Number.POSITIVE_INFINITY;
+
+    for (const m of movements.value) {
+      if (Number(m.actionByUserId) !== Number(r.remarkedByUserId)) continue;
+
+      const actionTime = parseDateMs(m.actionAt);
+      if (actionTime == null) continue;
+
+      const delta = actionTime - remarkTime;
+      if (delta < 0) continue;
+
+      if (delta <= 10 * 60 * 1000 && delta < bestDelta) {
+        bestDelta = delta;
+        bestMovement = m;
+      }
+    }
+
+    if (bestMovement) {
+      result.get(bestMovement.id).push(r);
+    }
+  }
+
+  return result;
 });
 
 function isPdf(name) {
@@ -719,6 +818,12 @@ function isDateOnlyValue(value) {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
 }
 
+function parseDateMs(value) {
+  if (!value) return null;
+  const t = new Date(value).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
 function findLatestMovementTime(actionTypes) {
   const wanted = new Set(actionTypes);
   const matches = movements.value
@@ -748,6 +853,14 @@ function openViewer(file) {
   viewerOpen.value = true;
 }
 
+function toggleMovement(movementId) {
+  selectedMovementId.value = selectedMovementId.value === movementId ? null : movementId;
+}
+
+function getRemarksForMovement(movementId) {
+  return movementRemarksById.value.get(movementId) || [];
+}
+
 function remarkOrNull() {
   const t = remarkDraft.value.trim();
   return t ? t : null;
@@ -766,9 +879,15 @@ async function reloadAll() {
     if (canViewHistory.value) {
       movements.value = await listMovements(documentId);
       attachments.value = await listAttachments(documentId);
+
+      const movementIds = new Set(movements.value.map((m) => m.id));
+      if (!movementIds.has(selectedMovementId.value)) {
+        selectedMovementId.value = null;
+      }
     } else {
       movements.value = [];
       attachments.value = [];
+      selectedMovementId.value = null;
     }
 
     if (viewerOpen.value) {
@@ -899,11 +1018,23 @@ async function doForward() {
     toast.warning(error.value);
     return;
   }
+  const selectedVisibility = String(forwardVisibility.value || "").toUpperCase();
+  if (!["PRIVATE", "PUBLIC"].includes(selectedVisibility)) {
+    error.value = "Please select a valid forward visibility.";
+    toast.warning(error.value);
+    return;
+  }
+  if (!availableForwardVisibilities.value.includes(selectedVisibility)) {
+    error.value = "You do not have permission for selected forward visibility.";
+    toast.warning(error.value);
+    return;
+  }
 
   busy.value = true;
   try {
     await forwardDocument(documentId, {
       toUserId: Number(toUserId.value),
+      forwardVisibility: selectedVisibility,
       remarkText: remarkOrNull(), // ✅ this is what backend expects
     });
     remarkDraft.value = "";
@@ -1066,6 +1197,128 @@ async function removeAttachment(a) {
 
 <style scoped>
 /* Base */
+.topbar { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:12px; }
+.title { margin:0; font-size:22px; font-weight:800; }
+.meta { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.pill { font-size:12px; padding:6px 10px; border-radius:999px; background:#eef2ff; border:1px solid #e5e7eb; }
+.rightBtns { display:flex; gap:10px; flex-wrap:wrap; }
+
+.subMeta { display:flex; align-items:center; gap:10px; margin-top:8px; }
+.dot { color:#9ca3af; }
+
+.grid { display:grid; grid-template-columns: 1.15fr 0.85fr; gap:14px; }
+.col { display:flex; flex-direction:column; gap:14px; }
+
+.card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:14px; }
+.cardTitle { font-weight:800; margin-bottom:10px; }
+.cardHead { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+
+.kv { display:grid; grid-template-columns: 150px 1fr; gap:8px 12px; }
+.k { font-size:12px; color:#6b7280; font-weight:700; }
+.v { font-size:14px; color:#111827; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:12px; }
+.typeLabel { margin-left:8px; font-weight:700; font-size:12px; color:#374151; }
+
+.formRow { margin-top:10px; }
+.label { font-size:12px; font-weight:800; margin-bottom:6px; color:#374151; }
+.input { height:38px; width:100%; border:1px solid #e5e7eb; border-radius:8px; padding:0 10px; outline:none; }
+.textarea { width:100%; min-height:80px; border:1px solid #e5e7eb; border-radius:8px; padding:10px; outline:none; resize:vertical; }
+.smallHint { margin-top:6px; font-size:12px; color:#6b7280; }
+
+.btnRow { display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+.spacer { flex:1; }
+
+.btn { padding:10px 12px; border-radius:8px; border:1px solid #e5e7eb; background:#fff; cursor:pointer; }
+.btn:hover { background:#f9fafb; }
+.btn-primary { background:#2563eb; border-color:#2563eb; color:#fff; }
+.btn-primary:hover { background:#1d4ed8; }
+.btn:disabled { opacity:0.6; cursor:not-allowed; }
+.danger { border-color:#fecaca; background:#fff; color:#991b1b; }
+.danger:hover { background:#fef2f2; }
+
+.rules { margin-top:10px; font-size:12px; color:#6b7280; }
+
+.errorBox { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:10px 12px; border-radius:8px; margin-bottom:12px; }
+.successBox { background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; padding:10px 12px; border-radius:8px; margin-bottom:12px; }
+.lockBox { background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; padding:10px 12px; border-radius:8px; }
+
+.empty { font-size:13px; color:#6b7280; padding:8px 0; }
+
+.list { display:flex; flex-direction:column; gap:10px; margin-top:10px; }
+.item { border:1px solid #e5e7eb; border-radius:10px; padding:10px; background:#fafafa; }
+.itemTop { display:flex; justify-content:space-between; gap:10px; }
+.who { font-size:13px; color:#111827; }
+.when { color:#6b7280; font-size:12px; }
+.text { margin-top:8px; font-size:13px; color:#111827; white-space:pre-wrap; }
+
+.movementItem { cursor:pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease; }
+.movementItem:hover { border-color:#cbd5e1; background:#f8fafc; }
+.movementItem.active { border-color:#93c5fd; background:#eff6ff; box-shadow:0 0 0 2px rgba(59,130,246,0.14); }
+
+.timelineRemarks {
+  margin-top:10px;
+  padding-top:10px;
+  border-top:1px dashed #bfdbfe;
+}
+.timelineRemarksTitle {
+  font-size:12px;
+  font-weight:800;
+  color:#1d4ed8;
+  margin-bottom:6px;
+}
+.timelineRemarksList { margin-top:6px; }
+.timelineRemarkItem {
+  background:#fff;
+  border-color:#dbeafe;
+}
+
+.attachRow { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px; }
+.hiddenFileInput { display:none; }
+.filePickLabel {
+  font-size:13px;
+  color:#374151;
+  max-width:280px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.fileRow { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.fileName { font-size:14px; }
+.ver { color:#6b7280; font-size:12px; margin-left:6px; }
+.miniPreview { margin-top:10px; }
+.miniFrame { width:100%; height:220px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; }
+.miniImg { max-width:100%; max-height:220px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; display:block; }
+.noPreview { font-size:13px; color:#6b7280; padding:10px; background:#fff; border:1px solid #e5e7eb; border-radius:8px; }
+
+.tag { margin-left:8px; font-size:11px; padding:2px 8px; border-radius:999px; background:#dbeafe; color:#1e40af; border:1px solid #bfdbfe; }
+
+.docTypeBadge {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:28px;
+  height:24px;
+  padding:0;
+  border-radius:999px;
+  border:1px solid #d1d5db;
+  background:#f9fafb;
+  color:#374151;
+  vertical-align:middle;
+}
+.docTypeInline { margin:0 6px; }
+.docIcon {
+  width:14px;
+  height:14px;
+  stroke-width:2.1;
+}
+.docType-PDF { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
+.docType-DOC { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+.docType-XLS { background:#ecfdf5; border-color:#a7f3d0; color:#047857; }
+.docType-IMG { background:#fff7ed; border-color:#fed7aa; color:#9a3412; }
+.docType-TXT { background:#eef2ff; border-color:#c7d2fe; color:#3730a3; }
+.docType-ZIP { background:#fffbeb; border-color:#fde68a; color:#92400e; }
+.docType-FILE { background:#f3f4f6; border-color:#e5e7eb; color:#4b5563; }
 .topbar { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:12px; }
 .title { margin:0; font-size:22px; font-weight:800; }
 .meta { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }

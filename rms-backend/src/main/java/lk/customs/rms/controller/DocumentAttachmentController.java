@@ -42,8 +42,8 @@ public class DocumentAttachmentController {
     // ✅ List attachments for a document
     // GET /api/documents/{documentId}/attachments
     @GetMapping("/api/documents/{documentId}/attachments")
-    public List<AttachmentResponse> list(@PathVariable Long documentId) {
-        return attachmentService.listForDocument(documentId);
+    public List<AttachmentResponse> list(@PathVariable Long documentId, Authentication authentication) {
+        return attachmentService.listForDocument(documentId, currentUserService.requireUserId(authentication));
     }
 
     // ✅ Download any attachment version
