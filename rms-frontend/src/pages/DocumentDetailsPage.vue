@@ -221,7 +221,7 @@
 
             <button class="btn" :disabled="busy || !canApprove" @click="doApprove">Approve</button>
             <button class="btn" :disabled="busy || !canReject" @click="doReject">Reject</button>
-            <button class="btn" :disabled="busy || !canIssue" @click="doIssue">Issue</button>
+            <button class="btn" :disabled="busy || !canIssue" @click="doIssue">Done</button>
             <button class="btn" :disabled="busy || !canReopen" @click="doReopen">Reopen</button>
           </div>
 
