@@ -74,7 +74,8 @@ public class DataSeeder {
             AppPermission.CHANGE_DOCUMENT_VISIBILITY,
                 AppPermission.RETURN_DOCUMENT,
                 AppPermission.UPLOAD_ATTACHMENT,
-                AppPermission.DELETE_ATTACHMENT
+                AppPermission.DELETE_ATTACHMENT,
+                AppPermission.VIEW_SENT_MESSAGES
         );
 
         seedRolePermissions(rolePermissionRepository, dc, EnumSet.of(
@@ -97,7 +98,8 @@ public class DataSeeder {
                 AppPermission.UPLOAD_ATTACHMENT,
                 AppPermission.DELETE_ATTACHMENT,
                 AppPermission.VIEW_ALL_HISTORY,
-                AppPermission.VIEW_LOGS
+                AppPermission.VIEW_LOGS,
+                AppPermission.VIEW_SENT_MESSAGES
         ));
         seedRolePermissions(rolePermissionRepository, ddc, allWorkflow);
         seedRolePermissions(rolePermissionRepository, sddc, allWorkflow);
@@ -116,7 +118,8 @@ public class DataSeeder {
             AppPermission.CHANGE_DOCUMENT_VISIBILITY,
                 AppPermission.RETURN_DOCUMENT,
                 AppPermission.UPLOAD_ATTACHMENT,
-                AppPermission.DELETE_ATTACHMENT
+                AppPermission.DELETE_ATTACHMENT,
+                AppPermission.VIEW_SENT_MESSAGES
         ));
         seedRolePermissions(rolePermissionRepository, admin, EnumSet.allOf(AppPermission.class));
     }

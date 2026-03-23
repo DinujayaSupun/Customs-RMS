@@ -29,6 +29,7 @@ public class DocumentResponse {
     private String currentOwnerName;
 
     private LocalDateTime createdAt;
+    private LocalDateTime inboxReceivedAt;
     private LocalDateTime completedAt;
     private LocalDateTime issuedAt;
 
@@ -37,11 +38,11 @@ public class DocumentResponse {
     private Boolean viewedByMe;
 
     public static DocumentResponse from(Document d, String createdByName, String ownerName) {
-        return from(d, createdByName, ownerName, null, null, false);
+        return from(d, createdByName, ownerName, null, null, false, null);
     }
 
     public static DocumentResponse from(Document d, String createdByName, String ownerName, String mainAttachmentType) {
-        return from(d, createdByName, ownerName, mainAttachmentType, null, false);
+        return from(d, createdByName, ownerName, mainAttachmentType, null, false, null);
     }
 
     public static DocumentResponse from(Document d,
@@ -49,7 +50,7 @@ public class DocumentResponse {
                                         String ownerName,
                                         String mainAttachmentType,
                                         boolean viewedByMe) {
-        return from(d, createdByName, ownerName, mainAttachmentType, null, viewedByMe);
+        return from(d, createdByName, ownerName, mainAttachmentType, null, viewedByMe, null);
     }
 
     public static DocumentResponse from(Document d,
@@ -58,6 +59,16 @@ public class DocumentResponse {
                                         String mainAttachmentType,
                                         String latestRemarkPreview,
                                         boolean viewedByMe) {
+        return from(d, createdByName, ownerName, mainAttachmentType, latestRemarkPreview, viewedByMe, null);
+    }
+
+    public static DocumentResponse from(Document d,
+                                        String createdByName,
+                                        String ownerName,
+                                        String mainAttachmentType,
+                                        String latestRemarkPreview,
+                                        boolean viewedByMe,
+                                        LocalDateTime inboxReceivedAt) {
         return DocumentResponse.builder()
                 .id(d.getId())
                 .refNo(d.getRefNo())
@@ -72,6 +83,7 @@ public class DocumentResponse {
                 .currentOwnerUserId(d.getCurrentOwnerUserId())
                 .currentOwnerName(ownerName)
                 .createdAt(d.getCreatedAt())
+                .inboxReceivedAt(inboxReceivedAt)
                 .completedAt(d.getCompletedAt())
                 .issuedAt(d.getIssuedAt())
                 .mainAttachmentType(mainAttachmentType)

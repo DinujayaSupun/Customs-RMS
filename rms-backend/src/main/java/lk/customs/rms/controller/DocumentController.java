@@ -38,6 +38,16 @@ public class DocumentController {
         return documentService.getDocuments(page, size, search, currentUserService.requireUserId(authentication));
     }
 
+    @GetMapping("/sent-messages")
+    public Page<SentMessageResponse> sentMessages(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(required = false) String search,
+            Authentication authentication
+    ) {
+        return documentService.getSentMessages(page, size, search, currentUserService.requireUserId(authentication));
+    }
+
     @GetMapping("/{id}")
     public DocumentResponse getById(@PathVariable Long id, Authentication authentication) {
         return documentService.getDocumentById(id, currentUserService.requireUserId(authentication));

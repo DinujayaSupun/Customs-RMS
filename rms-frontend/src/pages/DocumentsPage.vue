@@ -24,7 +24,7 @@
             <option>RETURNED</option>
             <option>APPROVED</option>
             <option>REJECTED</option>
-            <option>ISSUED</option>
+            <option value="ISSUED">DONE</option>
           </select>
         </div>
 
@@ -110,7 +110,7 @@
               <td>{{ d.companyName }}</td>
 
               <td><span class="pill" :class="'pill-'+d.priority">{{ d.priority }}</span></td>
-              <td><span class="pill" :class="'pill-'+d.status">{{ d.status }}</span></td>
+              <td><span class="pill" :class="'pill-'+d.status">{{ displayStatusLabel(d.status) }}</span></td>
 
               <td class="ownerCell">{{ ownerLabel(d.currentOwnerUserId) }}</td>
 
@@ -150,7 +150,7 @@
 
         <div class="modalBody">
           <div class="previewPills">
-            <span class="pill" :class="'pill-'+previewDoc?.status">{{ previewDoc?.status || '-' }}</span>
+            <span class="pill" :class="'pill-'+previewDoc?.status">{{ displayStatusLabel(previewDoc?.status) || '-' }}</span>
             <span class="pill" :class="'pill-'+previewDoc?.priority">{{ previewDoc?.priority || '-' }}</span>
             <span class="pill pill-PENDING">Owner: {{ ownerLabel(previewDoc?.currentOwnerUserId) }}</span>
           </div>
@@ -255,6 +255,10 @@ const previewAttachments = ref([]);
 
 const PRIORITY_ORDER = { LOW: 1, MEDIUM: 2, HIGH: 3, URGENT: 4 };
 const STATUS_ORDER = { PENDING: 1, IN_PROGRESS: 2, APPROVED: 3, ISSUED: 4, REJECTED: 5 };
+
+function displayStatusLabel(statusValue) {
+  return String(statusValue || "").toUpperCase() === "ISSUED" ? "DONE" : statusValue;
+}
 
 function canPreview(doc) {
   if (hasPermission(currentUser.value, "VIEW_ALL_HISTORY")) return true;

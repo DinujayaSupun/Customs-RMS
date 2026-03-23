@@ -1,6 +1,7 @@
 package lk.customs.rms.repository;
 
 import lk.customs.rms.entity.DocumentRemark;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -11,17 +12,12 @@ import java.util.Optional;
 public interface DocumentRemarkRepository extends JpaRepository<DocumentRemark, Long> {
     List<DocumentRemark> findByDocumentIdOrderByRemarkedAtAsc(Long documentId);
 
-    Optional<DocumentRemark> findFirstByDocumentIdOrderByRemarkedAtDesc(Long documentId);
+  @EntityGraph(attributePaths = {"remarkedBy", "remarkedBy.role"})
+  List<DocumentRemark> findByDocumentIdInAndRemarkedByUserIdOrderByDocumentIdAscRemarkedAtAsc(List<Long> documentIds,
+                                                  Long remarkedByUserId);
 
-    @Query("""
-           select r
-           from DocumentRemark r
-           join fetch r.remarkedBy
-           where r.documentId = :documentId
-           order by r.remarkedAt desc
-           limit 1
-           """)
-    Optional<DocumentRemark> findFirstByDocumentIdOrderByRemarkedAtDescWithUser(@Param("documentId") Long documentId);
+        @EntityGraph(attributePaths = {"remarkedBy", "remarkedBy.role"})
+  Optional<DocumentRemark> findFirstByDocumentIdOrderByRemarkedAtDesc(@Param("documentId") Long documentId);
 
     @Query("""
            select r

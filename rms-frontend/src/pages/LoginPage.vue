@@ -13,16 +13,16 @@
 
         <div class="brand-meta">
           <div class="meta-item">
-            <span class="meta-value">7+</span>
-            <span class="meta-label">Role lanes</span>
+            <span class="meta-value">Secure</span>
+            <span class="meta-label">Authorized access only</span>
           </div>
           <div class="meta-item">
-            <span class="meta-value">Live</span>
-            <span class="meta-label">Visibility control</span>
+            <span class="meta-value">Compliant</span>
+            <span class="meta-label">Customs regulations aligned</span>
           </div>
           <div class="meta-item">
-            <span class="meta-value">Auto</span>
-            <span class="meta-label">DC escalation</span>
+            <span class="meta-value">Tracked</span>
+            <span class="meta-label">Full document audit trail</span>
           </div>
         </div>
       </section>
@@ -53,8 +53,8 @@
           <div v-if="error" class="err">{{ error }}</div>
 
           <div class="hintRow">
-            <span class="hintLabel">Need default credentials?</span>
-            <HoverHint text="Default users: dc, ddc, sc, asc, pma. Default password: Pass@123." />
+            <span class="hintLabel">Need demo credentials?</span>
+            <HoverHint text="Users dc, ddc, sddc, sc, asc, pma use Pass@123. Admin user uses Admin@123." />
           </div>
         </div>
       </section>

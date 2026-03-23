@@ -3,6 +3,7 @@ package lk.customs.rms.service;
 import lk.customs.rms.dto.CreateDocumentRequest;
 import lk.customs.rms.dto.DocumentResponse;
 import lk.customs.rms.dto.MyWorkloadStatsResponse;
+import lk.customs.rms.dto.SentMessageResponse;
 import lk.customs.rms.dto.UpdateDocumentRequest;
 import lk.customs.rms.dto.DecisionRequest;
 import lk.customs.rms.dto.ForwardReturnRequest;
@@ -13,6 +14,8 @@ public interface DocumentService {
     DocumentResponse createDocument(CreateDocumentRequest request, Long actorUserId);
 
     Page<DocumentResponse> getDocuments(int page, int size, String search, Long actorUserId);
+
+    Page<SentMessageResponse> getSentMessages(int page, int size, String search, Long actorUserId);
 
     DocumentResponse getDocumentById(Long id, Long actorUserId);
 

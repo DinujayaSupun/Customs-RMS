@@ -154,7 +154,7 @@
               <div class="kv"><span class="k">Ref No</span><span class="v">{{ selectedDocument.refNo || "-" }}</span></div>
               <div class="kv"><span class="k">Title</span><span class="v">{{ selectedDocument.title || "-" }}</span></div>
               <div class="kv"><span class="k">Company</span><span class="v">{{ selectedDocument.companyName || "-" }}</span></div>
-              <div class="kv"><span class="k">Status</span><span class="v">{{ selectedDocument.status || "-" }}</span></div>
+              <div class="kv"><span class="k">Status</span><span class="v">{{ displayStatusLabel(selectedDocument.status) || "-" }}</span></div>
               <div class="kv"><span class="k">Priority</span><span class="v">{{ selectedDocument.priority || "-" }}</span></div>
               <div class="kv"><span class="k">Received Date</span><span class="v">{{ selectedDocument.receivedDate || "-" }}</span></div>
               <div class="kv"><span class="k">Created By ID</span><span class="v">{{ selectedDocument.createdByUserId ?? "-" }}</span></div>
@@ -349,6 +349,10 @@ function formatDateTime(value) {
   const dt = new Date(value);
   if (Number.isNaN(dt.getTime())) return String(value);
   return dt.toLocaleString();
+}
+
+function displayStatusLabel(statusValue) {
+  return String(statusValue || "").toUpperCase() === "ISSUED" ? "DONE" : statusValue;
 }
 
 function resolveDocumentId(row) {

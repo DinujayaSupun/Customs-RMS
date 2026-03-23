@@ -4,11 +4,26 @@
       <div class="pageHead">
         <div class="titleBlock">
           <h2>My Inbox</h2>
-          <p class="pageSub">Scan assigned documents in a message-style view and open items faster.</p>
+          <p class="pageSub">
+            <template v-if="inboxMode === 'received'">Scan assigned documents in a message-style view and open items faster.</template>
+            <template v-else>Track documents you forwarded and quickly open them again.</template>
+          </p>
         </div>
         <div class="headActions">
           <button class="btn" @click="load">Refresh</button>
         </div>
+      </div>
+
+      <div class="modeTabs card">
+        <button class="modeTab" :class="{ modeTabActive: inboxMode === 'received' }" @click="setMode('received')">Received</button>
+        <button
+          class="modeTab"
+          :class="{ modeTabActive: inboxMode === 'sent' }"
+          :disabled="!canViewSentMessages"
+          @click="setMode('sent')"
+        >
+          Sent
+        </button>
       </div>
 
       <div class="card filtersCard">
@@ -27,7 +42,7 @@
               <option>RETURNED</option>
               <option>APPROVED</option>
               <option>REJECTED</option>
-              <option>ISSUED</option>
+              <option value="ISSUED">DONE</option>
             </select>
           </div>
 
@@ -57,8 +72,22 @@
 
         <div class="chipsRow">
           <button class="chip" :class="{ chipActive: viewFilter === 'all' }" @click="viewFilter = 'all'">All</button>
-          <button class="chip" :class="{ chipActive: viewFilter === 'unopened' }" @click="viewFilter = 'unopened'">Unopened</button>
-          <button class="chip" :class="{ chipActive: viewFilter === 'opened' }" @click="viewFilter = 'opened'">Opened</button>
+          <button
+            v-if="inboxMode === 'received'"
+            class="chip"
+            :class="{ chipActive: viewFilter === 'unopened' }"
+            @click="viewFilter = 'unopened'"
+          >
+            Unopened
+          </button>
+          <button
+            v-if="inboxMode === 'received'"
+            class="chip"
+            :class="{ chipActive: viewFilter === 'opened' }"
+            @click="viewFilter = 'opened'"
+          >
+            Opened
+          </button>
           <button class="chip" :class="{ chipActive: viewFilter === 'urgent' }" @click="viewFilter = 'urgent'">Urgent</button>
         </div>
       </div>
@@ -68,12 +97,14 @@
       <div class="card inboxCard">
         <div class="inboxHead">
           <div class="inboxTitleWrap">
-            <span class="inboxTitle">Inbox Documents</span>
+            <span class="inboxTitle">{{ inboxMode === 'received' ? 'Received Messages' : 'Sent Messages' }}</span>
             <span class="inboxMeta">{{ rows.length }} item{{ rows.length === 1 ? '' : 's' }}</span>
           </div>
           <div class="tableHintWrap">
             <span class="tableHintLabel">Inbox Info</span>
-            <HoverHint :text="`${sortHint}. Unopened means the document has not been opened by you in the current assignment.`" />
+            <HoverHint :text="inboxMode === 'received'
+              ? `${sortHint}. Unopened means the document has not been opened by you in the current assignment.`
+              : `${sortHint}. Sent shows documents forwarded by you.`" />
           </div>
         </div>
 
@@ -83,13 +114,17 @@
         <div v-else class="mailList">
           <article
             v-for="d in rows"
-            :key="d.id"
+            :key="rowKey(d)"
             class="mailRow"
-            :class="{ unopened: !isViewedByMe(d) }"
-            @click="open(d.id)"
+            :class="{ unopened: inboxMode === 'received' && !isViewedByMe(d) }"
+            @click="open(resolveDocumentId(d))"
           >
             <div class="mailLeft">
-              <span class="unreadDot" :class="{ visible: !isViewedByMe(d) }" aria-hidden="true"></span>
+              <span
+                class="unreadDot"
+                :class="{ visible: inboxMode === 'received' && !isViewedByMe(d) }"
+                aria-hidden="true"
+              ></span>
               <span
                 class="docTypeBadge"
                 :class="'docType-' + docTypeClass(d.mainAttachmentType)"
@@ -109,15 +144,31 @@
                 <span class="titleText">{{ d.title }}</span>
               </div>
               <div class="mailPreview">
-                <template v-if="d.latestRemarkPreview">{{ d.latestRemarkPreview }}</template>
-                <template v-else>{{ d.companyName || 'No company' }} • {{ d.status }} • Priority {{ d.priority }}</template>
+                <template v-if="inboxMode === 'sent'">
+                  <template v-if="d.latestRemarkPreview">
+                    Latest minute: {{ d.latestRemarkPreview }}
+                    <br />
+                    <span class="sentMetaLine">
+                      Sent to {{ d.toUserName || `User #${d.toUserId ?? 'N/A'}` }} • {{ String(d.forwardVisibility || 'PRIVATE').toUpperCase() }} • {{ displaySentDate(d) }}
+                    </span>
+                  </template>
+                  <template v-else>
+                    No minute added by you
+                    <br />
+                    <span class="sentMetaLine">
+                      Sent to {{ d.toUserName || `User #${d.toUserId ?? 'N/A'}` }} • {{ String(d.forwardVisibility || 'PRIVATE').toUpperCase() }} • {{ displaySentDate(d) }}
+                    </span>
+                  </template>
+                </template>
+                <template v-else-if="d.latestRemarkPreview">{{ d.latestRemarkPreview }}</template>
+                <template v-else>{{ d.companyName || 'No company' }} • {{ displayStatusLabel(d.status) }} • Priority {{ d.priority }}</template>
               </div>
             </div>
 
             <div class="mailRight">
-              <span class="pill" :class="'pill-'+d.status">{{ d.status }}</span>
+              <span class="pill" :class="'pill-'+d.status">{{ displayStatusLabel(d.status) }}</span>
               <span class="timeText">{{ displayDate(d) }}</span>
-              <button class="btn btn-sm" @click.stop="open(d.id)">Open</button>
+              <button class="btn btn-sm" @click.stop="open(resolveDocumentId(d))">Open</button>
             </div>
           </article>
         </div>
@@ -132,8 +183,8 @@ import { useRouter } from "vue-router";
 import { File, FileText, FileSpreadsheet, Image, Archive } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
-import { listDocuments } from "../api/documents.api";
-import { getCurrentUser } from "../auth/currentUser";
+import { listDocuments, listSentMessages } from "../api/documents.api";
+import { getCurrentUser, hasPermission } from "../auth/currentUser";
 
 const router = useRouter();
 
@@ -146,6 +197,8 @@ const status = ref("");
 const priority = ref("");
 const sortBy = ref("recent");
 const viewFilter = ref("all");
+const inboxMode = ref("received");
+const canViewSentMessages = computed(() => hasPermission(getCurrentUser(), "VIEW_SENT_MESSAGES"));
 
 const sortHint = computed(() => {
   switch (sortBy.value) {
@@ -170,6 +223,10 @@ const STATUS_ORDER = { PENDING: 1, IN_PROGRESS: 2, APPROVED: 3, ISSUED: 4, REJEC
 
 function toText(value) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+function displayStatusLabel(statusValue) {
+  return String(statusValue || "").toUpperCase() === "ISSUED" ? "DONE" : statusValue;
 }
 
 function docTypeClass(type) {
@@ -234,13 +291,14 @@ function applyFilters(list) {
       !qq ||
       String(d.refNo ?? "").toLowerCase().includes(qq) ||
       String(d.title ?? "").toLowerCase().includes(qq) ||
-      String(d.companyName ?? "").toLowerCase().includes(qq);
+      String(d.companyName ?? "").toLowerCase().includes(qq) ||
+      String(d.toUserName ?? "").toLowerCase().includes(qq);
 
     const matchStatus = !status.value || d.status === status.value;
     const matchPriority = !priority.value || d.priority === priority.value;
     const matchView = (() => {
-      if (viewFilter.value === "unopened") return !isViewedByMe(d);
-      if (viewFilter.value === "opened") return isViewedByMe(d);
+      if (inboxMode.value === "received" && viewFilter.value === "unopened") return !isViewedByMe(d);
+      if (inboxMode.value === "received" && viewFilter.value === "opened") return isViewedByMe(d);
       if (viewFilter.value === "urgent") return String(d.priority || "").toUpperCase() === "URGENT";
       return true;
     })();
@@ -258,6 +316,15 @@ watch([q, status, priority, sortBy, viewFilter], () => {
 });
 
 async function load() {
+  if (inboxMode.value === "sent") {
+    await loadSent();
+    return;
+  }
+
+  await loadReceived();
+}
+
+async function loadReceived() {
   loading.value = true;
   error.value = "";
   try {
@@ -275,8 +342,50 @@ async function load() {
   }
 }
 
+async function loadSent() {
+  loading.value = true;
+  error.value = "";
+  try {
+    if (!canViewSentMessages.value) {
+      allRows.value = [];
+      rows.value = [];
+      error.value = "You are not allowed to view sent messages.";
+      return;
+    }
+
+    const data = await listSentMessages({ page: 0, size: 300 });
+    const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
+    allRows.value = list;
+    applyNow();
+  } catch (e) {
+    error.value = e?.message ?? "Failed to load sent messages";
+    allRows.value = [];
+    rows.value = [];
+  } finally {
+    loading.value = false;
+  }
+}
+
 function open(id) {
   router.push(`/documents/${id}`);
+}
+
+function resolveDocumentId(doc) {
+  return doc?.documentId ?? doc?.id;
+}
+
+function rowKey(doc) {
+  return doc?.movementId ?? doc?.id;
+}
+
+function setMode(mode) {
+  if (mode === "sent" && !canViewSentMessages.value) return;
+  if (inboxMode.value === mode) return;
+
+  inboxMode.value = mode;
+  viewFilter.value = "all";
+  error.value = "";
+  load();
 }
 
 function isViewedByMe(doc) {
@@ -284,17 +393,52 @@ function isViewedByMe(doc) {
 }
 
 function displayDate(doc) {
-  const source = doc?.createdAt || doc?.receivedDate;
-  if (!source) return "";
-  const parsed = new Date(source);
-  if (Number.isNaN(parsed.getTime())) return "";
+  if (inboxMode.value === "sent") {
+    const source = doc?.sentAt;
+    if (!source) return "";
+    const parsed = new Date(source);
+    if (Number.isNaN(parsed.getTime())) return "";
 
-  const now = new Date();
-  const sameDay = parsed.toDateString() === now.toDateString();
-  if (sameDay) {
-    return parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const now = new Date();
+    const sameDay = parsed.toDateString() === now.toDateString();
+    if (sameDay) {
+      return parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+    return parsed.toLocaleString([], {
+      month: "2-digit",
+      day: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   }
-  return parsed.toLocaleDateString();
+
+  const receivedSource = doc?.inboxReceivedAt;
+  if (!receivedSource) return "";
+  const received = new Date(receivedSource);
+  if (Number.isNaN(received.getTime())) return "";
+
+  return received.toLocaleString([], {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function displaySentDate(doc) {
+  const source = doc?.sentAt;
+  if (!source) return "Sent time unavailable";
+  const parsed = new Date(source);
+  if (Number.isNaN(parsed.getTime())) return "Sent time unavailable";
+  return parsed.toLocaleString([], {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 onMounted(() => {
@@ -340,6 +484,40 @@ h2 { margin:0; line-height:1.15; }
 .input:focus { border-color:#9ca3af; box-shadow:0 0 0 3px rgba(229, 231, 235, 0.9); }
 
 .filtersCard { margin-bottom:14px; }
+
+.modeTabs {
+  margin-bottom: 14px;
+  display: inline-flex;
+  gap: 8px;
+  padding: 8px;
+}
+
+.modeTab {
+  border: 1px solid #dbe3ef;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.modeTab:hover {
+  background: #eef2f7;
+}
+
+.modeTab:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.modeTabActive {
+  background: #dbeafe;
+  color: #1e3a8a;
+  border-color: #bfdbfe;
+}
+
 .filters {
   display:grid;
   grid-template-columns: 1.8fr 1fr 1fr 1fr;
@@ -519,6 +697,10 @@ h2 { margin:0; line-height:1.15; }
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.sentMetaLine {
+  color: #6b7280;
 }
 
 .mailRight {

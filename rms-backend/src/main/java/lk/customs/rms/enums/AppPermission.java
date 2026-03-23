@@ -20,5 +20,6 @@ public enum AppPermission {
     UPLOAD_ATTACHMENT,
     DELETE_ATTACHMENT,
     VIEW_ALL_HISTORY,
-    VIEW_LOGS
+    VIEW_LOGS,
+    VIEW_SENT_MESSAGES
 }

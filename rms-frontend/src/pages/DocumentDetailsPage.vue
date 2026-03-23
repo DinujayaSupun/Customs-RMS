@@ -6,7 +6,7 @@
         <h2 class="title">Document #{{ doc?.refNo || ("ID " + documentId) }}</h2>
 
         <div class="meta">
-          <span class="pill">Status: {{ doc?.status || "-" }}</span>
+          <span class="pill">Status: {{ displayStatusLabel(doc?.status) || "-" }}</span>
           <span class="pill">Priority: {{ doc?.priority || "-" }}</span>
           <span class="pill">Owner: {{ ownerLabel }}</span>
         </div>
@@ -821,6 +821,10 @@ function formatDateTime(d) {
   }
 }
 
+function displayStatusLabel(statusValue) {
+  return String(statusValue || "").toUpperCase() === "ISSUED" ? "DONE" : statusValue;
+}
+
 function isDateOnlyValue(value) {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
 }
@@ -1044,10 +1048,12 @@ async function doForward() {
       forwardVisibility: selectedVisibility,
       remarkText: remarkOrNull(), // ✅ this is what backend expects
     });
+
+    // Forward succeeded. The document may no longer be viewable by this user after ownership change.
     remarkDraft.value = "";
-    await reloadAll();
     successMessage.value = "Document forwarded successfully.";
     toast.success(successMessage.value);
+    router.push("/inbox");
   } catch (e) {
     error.value = e?.message || "Forward failed.";
     toast.error(error.value);

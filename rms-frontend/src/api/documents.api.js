@@ -52,6 +52,20 @@ export async function getMyWorkloadStats() {
   }
 }
 
+export async function listSentMessages(params = {}) {
+  try {
+    return (await http.get(`${BASE}/sent-messages`, {
+      params: {
+        page: params.page ?? 0,
+        size: params.size ?? 200,
+        search: params.search ?? undefined,
+      },
+    })).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
 export async function getDocument(id) {
   try {
     return (await http.get(`${BASE}/${id}`)).data;
