@@ -1,120 +1,131 @@
 <template>
   <AppLayout>
-    <div class="pageHead">
-      <h2>Users</h2>
-      <div class="headActions">
-        <button class="btn" @click="load" :disabled="loading">Refresh</button>
-        <button class="btn" @click="downloadCsv">Export CSV</button>
-      </div>
-    </div>
+    <div class="usersPage">
+      <div class="pageGlow pageGlowA"></div>
+      <div class="pageGlow pageGlowB"></div>
 
-    <div v-if="!isAdmin" class="errorBox">Only ADMIN can access user management.</div>
-
-    <div v-else class="card">
-      <div class="filters">
-        <input v-model="search" class="input" placeholder="Search name/username/email/phone/department" />
-        <select v-model="role" class="input">
-          <option value="">All Roles</option>
-          <option v-for="r in roles" :key="r" :value="r">{{ r }}</option>
-        </select>
-        <select v-model="active" class="input">
-          <option value="">All Status</option>
-          <option value="true">Active</option>
-          <option value="false">Inactive</option>
-        </select>
-        <button class="btn" @click="load">Apply</button>
-      </div>
-
-      <div class="createBox">
-        <div class="createTitle">Create User</div>
-        <div class="createGrid">
-          <input v-model="createForm.fullName" class="input" placeholder="Full name" />
-          <input v-model="createForm.username" class="input" placeholder="Username" />
-          <input v-model="createForm.email" class="input" placeholder="Email" />
-          <input v-model="createForm.phone" class="input" placeholder="Phone" />
-          <input v-model="createForm.department" class="input" placeholder="Department" />
-          <select v-model="createForm.role" class="input">
-            <option value="">Select role</option>
-            <option v-for="r in roles" :key="`create-${r}`" :value="r">{{ r }}</option>
-          </select>
-          <input v-model="createForm.password" class="input" type="password" placeholder="Password" />
-          <button class="btn btn-primary" :disabled="loading" @click="createUser">Create</button>
+      <div class="pageHead">
+        <div>
+          <h2>Users</h2>
+          <p class="pageSub">Manage staff accounts, lifecycle, and duplicate merges from one workspace.</p>
+        </div>
+        <div class="headActions">
+          <button class="btn" @click="load" :disabled="loading">Refresh</button>
+          <button class="btn btn-primary" @click="downloadCsv">Export CSV</button>
         </div>
       </div>
 
-      <div v-if="error" class="errorBox">{{ error }}</div>
+      <div v-if="!isAdmin" class="errorBox">Only ADMIN can access user management.</div>
 
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Username</th>
-            <th>Role</th>
-            <th>Contact</th>
-            <th>Department</th>
-            <th>Status</th>
-            <th style="width: 260px">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading">
-            <td colspan="7" class="muted">Loading...</td>
-          </tr>
-          <tr v-else-if="rows.length === 0">
-            <td colspan="7" class="muted">No users found.</td>
-          </tr>
-          <tr v-else v-for="u in rows" :key="u.id">
-            <td>{{ u.fullName }} • {{ u.role }} • ID {{ u.id }}</td>
-            <td>{{ u.username }}</td>
-            <td>{{ u.role }}</td>
-            <td>
-              <div>{{ u.email || "-" }}</div>
-              <div class="small">{{ u.phone || "-" }}</div>
-            </td>
-            <td>{{ u.department || "-" }}</td>
-            <td>
-              <span class="pill" :class="u.active ? 'pill-active' : 'pill-inactive'">{{ u.active ? 'ACTIVE' : 'INACTIVE' }}</span>
-            </td>
-            <td>
-              <div class="actions">
-                <button class="btn btn-sm" @click="editUser(u)">Edit</button>
-                <button class="btn btn-sm" @click="resetUserPassword(u)">Reset Password</button>
+      <div v-else class="card">
+        <div class="sectionTitle">Filter Users</div>
+        <div class="filters">
+          <input v-model="search" class="input" placeholder="Search name/username/email/phone/department" />
+          <select v-model="role" class="input">
+            <option value="">All Roles</option>
+            <option v-for="r in roles" :key="r" :value="r">{{ r }}</option>
+          </select>
+          <select v-model="active" class="input">
+            <option value="">All Status</option>
+            <option value="true">Active</option>
+            <option value="false">Inactive</option>
+          </select>
+          <button class="btn" @click="load">Apply</button>
+        </div>
+
+        <div class="createBox">
+          <div class="createTitle">Create User</div>
+          <div class="createGrid">
+            <input v-model="createForm.fullName" class="input" placeholder="Full name" />
+            <input v-model="createForm.username" class="input" placeholder="Username" />
+            <input v-model="createForm.email" class="input" placeholder="Email" />
+            <input v-model="createForm.phone" class="input" placeholder="Phone" />
+            <input v-model="createForm.department" class="input" placeholder="Department" />
+            <select v-model="createForm.role" class="input">
+              <option value="">Select role</option>
+              <option v-for="r in roles" :key="`create-${r}`" :value="r">{{ r }}</option>
+            </select>
+            <input v-model="createForm.password" class="input" type="password" placeholder="Password" />
+            <button class="btn btn-primary" :disabled="loading" @click="createUser">Create</button>
+          </div>
+        </div>
+
+        <div v-if="error" class="errorBox">{{ error }}</div>
+
+        <div class="tableWrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Contact</th>
+                <th>Department</th>
+                <th>Status</th>
+                <th style="width: 260px">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="loading">
+                <td colspan="7" class="muted">Loading...</td>
+              </tr>
+              <tr v-else-if="rows.length === 0">
+                <td colspan="7" class="muted">No users found.</td>
+              </tr>
+              <tr v-else v-for="u in rows" :key="u.id">
+                <td>{{ u.fullName }} • {{ u.role }} • ID {{ u.id }}</td>
+                <td>{{ u.username }}</td>
+                <td>{{ u.role }}</td>
+                <td>
+                  <div>{{ u.email || "-" }}</div>
+                  <div class="small">{{ u.phone || "-" }}</div>
+                </td>
+                <td>{{ u.department || "-" }}</td>
+                <td>
+                  <span class="pill" :class="u.active ? 'pill-active' : 'pill-inactive'">{{ u.active ? 'ACTIVE' : 'INACTIVE' }}</span>
+                </td>
+                <td>
+                  <div class="actions">
+                    <button class="btn btn-sm" @click="editUser(u)">Edit</button>
+                    <button class="btn btn-sm" @click="resetUserPassword(u)">Reset Password</button>
+                    <button
+                      v-if="u.active"
+                      class="btn btn-sm danger"
+                      :disabled="u.role === 'ADMIN'"
+                      @click="deactivateUser(u)"
+                    >Deactivate</button>
+                    <button v-else class="btn btn-sm" @click="activateUser(u)">Activate</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="pager">
+          <button class="btn btn-sm" :disabled="page===0 || loading" @click="page = page - 1; load()">Prev</button>
+          <span>Page {{ page + 1 }}</span>
+          <button class="btn btn-sm" :disabled="last || loading" @click="page = page + 1; load()">Next</button>
+        </div>
+
+        <div class="dupBox">
+          <div class="createTitle">Duplicate Users (same Name + Role)</div>
+          <div v-if="duplicateGroups.length === 0" class="muted">No duplicate candidates found.</div>
+
+          <div v-for="group in duplicateGroups" :key="`${group.fullName}-${group.role}`" class="dupGroup">
+            <div class="dupHead">{{ group.fullName }} • {{ group.role }}</div>
+
+            <div class="dupRows">
+              <div v-for="u in group.users" :key="`dup-${u.id}`" class="dupRow">
+                <span>{{ u.fullName }} • {{ u.role }} • ID {{ u.id }} <small>({{ u.active ? 'ACTIVE' : 'INACTIVE' }})</small></span>
                 <button
-                  v-if="u.active"
-                  class="btn btn-sm danger"
-                  :disabled="u.role === 'ADMIN'"
-                  @click="deactivateUser(u)"
-                >Deactivate</button>
-                <button v-else class="btn btn-sm" @click="activateUser(u)">Activate</button>
+                  class="btn btn-sm"
+                  :disabled="!u.active || !mergeTargetId(group.users, u.id)"
+                  @click="mergeDuplicate(u.id, mergeTargetId(group.users, u.id))"
+                >
+                  Merge Into {{ mergeTargetId(group.users, u.id) ? ('ID ' + mergeTargetId(group.users, u.id)) : '-' }}
+                </button>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      <div class="pager">
-        <button class="btn btn-sm" :disabled="page===0 || loading" @click="page = page - 1; load()">Prev</button>
-        <span>Page {{ page + 1 }}</span>
-        <button class="btn btn-sm" :disabled="last || loading" @click="page = page + 1; load()">Next</button>
-      </div>
-
-      <div class="dupBox">
-        <div class="createTitle">Duplicate Users (same Name + Role)</div>
-        <div v-if="duplicateGroups.length === 0" class="muted">No duplicate candidates found.</div>
-
-        <div v-for="group in duplicateGroups" :key="`${group.fullName}-${group.role}`" class="dupGroup">
-          <div class="dupHead">{{ group.fullName }} • {{ group.role }}</div>
-
-          <div class="dupRows">
-            <div v-for="u in group.users" :key="`dup-${u.id}`" class="dupRow">
-              <span>{{ u.fullName }} • {{ u.role }} • ID {{ u.id }} <small>({{ u.active ? 'ACTIVE' : 'INACTIVE' }})</small></span>
-              <button
-                class="btn btn-sm"
-                :disabled="!u.active || !mergeTargetId(group.users, u.id)"
-                @click="mergeDuplicate(u.id, mergeTargetId(group.users, u.id))"
-              >
-                Merge Into {{ mergeTargetId(group.users, u.id) ? ('ID ' + mergeTargetId(group.users, u.id)) : '-' }}
-              </button>
             </div>
           </div>
         </div>
@@ -387,22 +398,132 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.pageHead { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+.usersPage {
+  position: relative;
+  padding: 4px 2px 0;
+}
+
+.pageGlow {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(44px);
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+.pageGlowA {
+  width: 220px;
+  height: 220px;
+  right: 2%;
+  top: -12px;
+  background: radial-gradient(circle at center, rgba(37, 99, 235, 0.3), rgba(37, 99, 235, 0));
+}
+
+.pageGlowB {
+  width: 180px;
+  height: 180px;
+  left: 6%;
+  top: 42%;
+  background: radial-gradient(circle at center, rgba(14, 116, 144, 0.22), rgba(14, 116, 144, 0));
+}
+
+.pageHead {
+  position: relative;
+  z-index: 1;
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap: 12px;
+  margin-bottom:14px;
+}
+
+h2 {
+  margin: 0;
+  font-size: 1.45rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+}
+
+.pageSub {
+  margin: 6px 0 0;
+  color: #475569;
+  font-size: 13px;
+  max-width: 680px;
+}
+
 .headActions { display:flex; gap:8px; }
 .card {
-  background: white;
+  position: relative;
+  z-index: 1;
+  background: linear-gradient(160deg, #ffffff 0%, #f8fbff 100%);
+  border: 1px solid #dbe8ff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
   padding: 20px;
-  border-radius: 10px;
+  border-radius: 14px;
 }
-.filters { display:grid; grid-template-columns:2fr 1fr 1fr auto; gap:10px; margin-bottom:12px; }
-.createBox { border:1px solid #e5e7eb; border-radius:10px; padding:12px; margin-bottom:12px; }
-.createTitle { font-size:13px; font-weight:800; margin-bottom:8px; }
+
+.sectionTitle {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #334155;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.filters {
+  display:grid;
+  grid-template-columns:2fr 1fr 1fr auto;
+  gap:10px;
+  margin-bottom:12px;
+}
+
+.createBox {
+  border:1px solid #dbeafe;
+  background: #f8fbff;
+  border-radius:12px;
+  padding:12px;
+  margin-bottom:12px;
+}
+
+.createTitle { font-size:13px; font-weight:800; margin-bottom:8px; color:#1e3a8a; }
 .createGrid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:8px; }
 .table { width:100%; border-collapse:collapse; }
-.table th, .table td { padding:10px; border-bottom:1px solid #eee; text-align:left; }
+.tableWrap {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: auto;
+}
+
+.table th, .table td { padding:10px; border-bottom:1px solid #e5e7eb; text-align:left; }
+.table th { background: #f8fafc; font-size: 12px; color:#475569; text-transform: uppercase; letter-spacing:0.04em; }
 .muted { color:#6b7280; text-align:center; }
-.input { height:38px; border-radius:8px; border:1px solid #e5e7eb; padding:0 10px; outline:none; width:100%; }
-.btn { padding:10px 12px; border-radius:8px; border:1px solid #e5e7eb; background:#fff; cursor:pointer; }
+.input {
+  height:40px;
+  border-radius:10px;
+  border:1px solid #d1d5db;
+  background:#fff;
+  padding:0 10px;
+  outline:none;
+  width:100%;
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+
+.input:focus {
+  border-color:#2563eb;
+  box-shadow:0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+
+.btn {
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid #d1d5db;
+  background:#fff;
+  cursor:pointer;
+  transition: all .2s ease;
+}
 .btn:hover { background:#f9fafb; }
 .btn-primary { background:#2563eb; border-color:#2563eb; color:#fff; }
 .btn-primary:hover { background:#1d4ed8; }
@@ -422,8 +543,8 @@ onMounted(async () => {
   border-radius:8px;
 }
 .pager { display:flex; align-items:center; justify-content:flex-end; gap:10px; margin-top:10px; }
-.dupBox { margin-top:14px; border-top:1px solid #eee; padding-top:12px; }
-.dupGroup { border:1px solid #eee; border-radius:8px; padding:10px; margin-top:8px; }
+.dupBox { margin-top:14px; border-top:1px solid #e5e7eb; padding-top:12px; }
+.dupGroup { border:1px solid #dbeafe; border-radius:10px; background:#f8fbff; padding:10px; margin-top:8px; }
 .dupHead { font-weight:700; margin-bottom:8px; }
 .dupRows { display:flex; flex-direction:column; gap:8px; }
 .dupRow { display:flex; align-items:center; justify-content:space-between; gap:10px; }
@@ -464,5 +585,43 @@ onMounted(async () => {
   display:flex;
   justify-content:flex-end;
   gap:8px;
+}
+
+@media (max-width: 1100px) {
+  .filters {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .createGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .pageHead {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .headActions {
+    width: 100%;
+  }
+
+  .headActions .btn {
+    flex: 1;
+  }
+
+  .filters {
+    grid-template-columns: 1fr;
+  }
+
+  .createGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .dupRow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 </style>

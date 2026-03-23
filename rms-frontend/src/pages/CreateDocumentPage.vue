@@ -5,7 +5,7 @@
     </div>
 
     <div v-if="!canCreate" class="errorBox">
-      You are not allowed to create documents. Switch to <b>DC</b> or <b>PMA</b>.
+      You are not allowed to create documents with your current role permissions.
     </div>
 
     <div v-else class="card">
@@ -53,8 +53,8 @@
           <div class="filePickRow">
             <button class="btn btn-sm" type="button" @click="openFilePicker">Choose File</button>
             <span class="filePickLabel">{{ selectedFile ? selectedFile.name : "No file chosen" }}</span>
+            <HoverHint text="PDF and image files can be previewed here. DOC/DOCX and other file types cannot be previewed in-browser." />
           </div>
-          <div class="hint">PDF/images will preview here. DOC/DOCX will show as a link.</div>
 
           <div v-if="selectedFile" class="previewBox">
             <div class="previewHead">
@@ -127,6 +127,7 @@
 import { ref, computed, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import AppLayout from "../layouts/AppLayout.vue";
+import HoverHint from "../components/HoverHint.vue";
 import { createDocument, uploadAttachment } from "../api/documents.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 
@@ -244,8 +245,6 @@ h2 { margin:0; }
   overflow:hidden;
   text-overflow:ellipsis;
 }
-.hint { margin-top:6px; font-size:12px; color:#6b7280; }
-
 .input {
   height:38px; border-radius:8px; border:1px solid #e5e7eb; padding:0 10px; outline:none; width:100%;
 }

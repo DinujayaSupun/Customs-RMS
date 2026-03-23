@@ -1,94 +1,99 @@
 <template>
   <AppLayout>
-    <div class="pageHead">
-      <div>
-        <h2>Permissions</h2>
-        <p class="pageSub">Admin can update role permissions without changing code.</p>
-      </div>
-      <div class="headActions">
-        <button class="btn" :disabled="loading || saving" @click="load">Refresh</button>
-        <button class="btn btn-primary" :disabled="loading || saving || (!dirty && !configDirty)" @click="save">
-          {{ saving ? "Saving..." : "Save Changes" }}
-        </button>
-      </div>
-    </div>
+    <div class="permissionsPage">
+      <div class="pageGlow pageGlowA"></div>
+      <div class="pageGlow pageGlowB"></div>
 
-    <div v-if="!isAdmin" class="errorBox">Only ADMIN can access permission management.</div>
-
-    <div v-else class="card">
-      <div v-if="error" class="errorBox">{{ error }}</div>
-      <div v-if="success" class="successBox">{{ success }}</div>
-
-      <div class="section">
-        <div class="sectionHead">
-          <h3>DC Auto Forward</h3>
-          <p>If a document is forwarded to DC and DC does not open it in time, auto-forward it to the configured DDC/SDDC user.</p>
+      <div class="pageHead">
+        <div>
+          <h2>Permissions</h2>
+          <p class="pageSub">Tune role access and DC escalation controls without code changes.</p>
         </div>
-
-        <div class="configGrid">
-          <label class="toggleWrap configToggle">
-            <input type="checkbox" :checked="dcAutoForwardEnabled" @change="onEnabledChange($event.target.checked)" />
-            <span>Enabled</span>
-          </label>
-
-          <div class="controlBlock">
-            <label>Timeout (minutes)</label>
-            <input
-              type="number"
-              class="input"
-              min="1"
-              max="10080"
-              :disabled="!dcAutoForwardEnabled"
-              v-model.number="dcTimeoutMinutes"
-              @input="markConfigDirty"
-            />
-          </div>
-
-          <div class="controlBlock">
-            <label>Auto-forward receiver (DDC/SDDC)</label>
-            <select class="input" :disabled="!dcAutoForwardEnabled" v-model="dcReceiverUserId" @change="markConfigDirty">
-              <option :value="null">-- Select receiver --</option>
-              <option v-for="u in eligibleReceivers" :key="u.id" :value="u.id">
-                {{ u.fullName }} ({{ u.role }})
-              </option>
-            </select>
-          </div>
+        <div class="headActions">
+          <button class="btn" :disabled="loading || saving" @click="load">Refresh</button>
+          <button class="btn btn-primary" :disabled="loading || saving || (!dirty && !configDirty)" @click="save">
+            {{ saving ? "Saving..." : "Save Changes" }}
+          </button>
         </div>
       </div>
 
-      <div class="tableWrap">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Permission</th>
-              <th v-for="roleName in roles" :key="`head-${roleName}`">{{ roleName }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="loading">
-              <td :colspan="roles.length + 1" class="muted">Loading permissions...</td>
-            </tr>
-            <tr v-else-if="permissions.length === 0">
-              <td :colspan="roles.length + 1" class="muted">No permissions found.</td>
-            </tr>
-            <tr v-else v-for="permission in permissions" :key="permission">
-              <td>
-                <div class="permTitle">{{ friendlyLabel(permission) }}</div>
-                <div class="permCode">{{ permission }}</div>
-              </td>
-              <td v-for="roleName in roles" :key="`${permission}-${roleName}`" class="checkCell">
-                <label class="toggleWrap">
-                  <input
-                    type="checkbox"
-                    :checked="isEnabled(roleName, permission)"
-                    @change="setEnabled(roleName, permission, $event.target.checked)"
-                  />
-                  <span>{{ isEnabled(roleName, permission) ? "Yes" : "No" }}</span>
-                </label>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-if="!isAdmin" class="errorBox">Only ADMIN can access permission management.</div>
+
+      <div v-else class="card">
+        <div v-if="error" class="errorBox">{{ error }}</div>
+        <div v-if="success" class="successBox">{{ success }}</div>
+
+        <div class="section">
+          <div class="sectionHead">
+            <h3>DC Auto Forward</h3>
+            <p>If a document is forwarded to DC and DC does not open it in time, auto-forward it to the configured DDC/SDDC user.</p>
+          </div>
+
+          <div class="configGrid">
+            <label class="toggleWrap configToggle">
+              <input type="checkbox" :checked="dcAutoForwardEnabled" @change="onEnabledChange($event.target.checked)" />
+              <span>Enabled</span>
+            </label>
+
+            <div class="controlBlock">
+              <label>Timeout (minutes)</label>
+              <input
+                type="number"
+                class="input"
+                min="1"
+                max="10080"
+                :disabled="!dcAutoForwardEnabled"
+                v-model.number="dcTimeoutMinutes"
+                @input="markConfigDirty"
+              />
+            </div>
+
+            <div class="controlBlock">
+              <label>Auto-forward receiver (DDC/SDDC)</label>
+              <select class="input" :disabled="!dcAutoForwardEnabled" v-model="dcReceiverUserId" @change="markConfigDirty">
+                <option :value="null">-- Select receiver --</option>
+                <option v-for="u in eligibleReceivers" :key="u.id" :value="u.id">
+                  {{ u.fullName }} ({{ u.role }})
+                </option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="tableWrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Permission</th>
+                <th v-for="roleName in roles" :key="`head-${roleName}`">{{ roleName }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="loading">
+                <td :colspan="roles.length + 1" class="muted">Loading permissions...</td>
+              </tr>
+              <tr v-else-if="permissions.length === 0">
+                <td :colspan="roles.length + 1" class="muted">No permissions found.</td>
+              </tr>
+              <tr v-else v-for="permission in permissions" :key="permission">
+                <td>
+                  <div class="permTitle">{{ friendlyLabel(permission) }}</div>
+                  <div class="permCode">{{ permission }}</div>
+                </td>
+                <td v-for="roleName in roles" :key="`${permission}-${roleName}`" class="checkCell">
+                  <label class="toggleWrap">
+                    <input
+                      type="checkbox"
+                      :checked="isEnabled(roleName, permission)"
+                      @change="setEnabled(roleName, permission, $event.target.checked)"
+                    />
+                    <span>{{ isEnabled(roleName, permission) ? "Yes" : "No" }}</span>
+                  </label>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </AppLayout>
@@ -257,7 +262,39 @@ load();
 </script>
 
 <style scoped>
+.permissionsPage {
+  position: relative;
+  padding: 4px 2px 0;
+}
+
+.pageGlow {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(42px);
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.56;
+}
+
+.pageGlowA {
+  width: 230px;
+  height: 230px;
+  right: 5%;
+  top: -10px;
+  background: radial-gradient(circle at center, rgba(14, 116, 144, 0.24), rgba(14, 116, 144, 0));
+}
+
+.pageGlowB {
+  width: 180px;
+  height: 180px;
+  left: 10%;
+  top: 44%;
+  background: radial-gradient(circle at center, rgba(30, 64, 175, 0.22), rgba(30, 64, 175, 0));
+}
+
 .pageHead {
+  position: relative;
+  z-index: 1;
   display:flex;
   align-items:flex-start;
   justify-content:space-between;
@@ -265,22 +302,33 @@ load();
   margin-bottom:14px;
 }
 
-h2 { margin:0; }
-.pageSub { margin:4px 0 0; color:#6b7280; font-size:13px; }
+h2 {
+  margin:0;
+  color:#0f172a;
+  font-size:1.45rem;
+  letter-spacing:-0.02em;
+}
+
+.pageSub {
+  margin:6px 0 0;
+  color:#475569;
+  font-size:13px;
+}
+
 .headActions { display:flex; gap:10px; }
 
 .section {
   margin-bottom: 16px;
-  padding: 12px;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  background: #f9fafb;
+  padding: 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: linear-gradient(170deg, #f8fbff 0%, #f3f9ff 100%);
 }
 
 .sectionHead h3 {
   margin: 0;
   font-size: 16px;
-  color: #111827;
+  color: #1e3a8a;
 }
 
 .sectionHead p {
@@ -317,20 +365,35 @@ h2 { margin:0; }
 
 .input {
   height: 40px;
-  border-radius: 8px;
-  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
   padding: 0 10px;
   font-size: 13px;
+  background: #fff;
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+
+.input:focus {
+  border-color:#2563eb;
+  box-shadow:0 0 0 3px rgba(37, 99, 235, 0.14);
+  outline:none;
 }
 
 .card {
-  background:#fff;
-  border:1px solid #e5e7eb;
+  position: relative;
+  z-index: 1;
+  background:linear-gradient(160deg, #ffffff 0%, #f8fbff 100%);
+  border:1px solid #dbe8ff;
   border-radius:14px;
   padding:16px;
+  box-shadow:0 12px 30px rgba(15, 23, 42, 0.08);
 }
 
-.tableWrap { overflow:auto; }
+.tableWrap {
+  overflow:auto;
+  border:1px solid #e2e8f0;
+  border-radius:12px;
+}
 .table { width:100%; border-collapse:collapse; min-width:900px; }
 .table th, .table td { border-bottom:1px solid #e5e7eb; padding:12px 10px; text-align:left; vertical-align:top; }
 .table th { font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#6b7280; background:#f9fafb; }
@@ -342,15 +405,39 @@ h2 { margin:0; }
 
 .btn {
   padding:10px 12px;
-  border-radius:8px;
-  border:1px solid #e5e7eb;
+  border-radius:10px;
+  border:1px solid #d1d5db;
   background:#fff;
   cursor:pointer;
+  transition: all .2s ease;
 }
 .btn-primary { background:#2563eb; border-color:#2563eb; color:#fff; }
+.btn:hover:not(:disabled) { background:#f8fafc; }
 .btn:disabled { opacity:0.6; cursor:not-allowed; }
 
 .errorBox { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; padding:10px 12px; border-radius:8px; margin-bottom:12px; }
 .successBox { background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; padding:10px 12px; border-radius:8px; margin-bottom:12px; }
 .muted { color:#6b7280; text-align:center; }
+
+@media (max-width: 1100px) {
+  .configGrid {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 760px) {
+  .pageHead {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .headActions {
+    width: 100%;
+  }
+
+  .headActions .btn {
+    flex: 1;
+  }
+}
 </style>

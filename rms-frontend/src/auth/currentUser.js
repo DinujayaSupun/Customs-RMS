@@ -35,6 +35,17 @@ export function setSession(accessToken, user) {
   window.dispatchEvent(new Event("rms_auth_changed"));
 }
 
+export function updateSessionUser(partialUser) {
+  const existing = getCurrentUser();
+  if (!existing) return;
+  localStorage.setItem(USER_KEY, JSON.stringify({
+    ...existing,
+    ...(partialUser || {}),
+    permissions: normalizePermissions((partialUser && partialUser.permissions) ?? existing.permissions),
+  }));
+  window.dispatchEvent(new Event("rms_auth_changed"));
+}
+
 export function clearSession() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);

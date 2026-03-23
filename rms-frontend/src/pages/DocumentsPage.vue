@@ -60,7 +60,10 @@
           <span class="tableTitle">Document List</span>
           <span class="tableMeta">{{ rows.length }} result{{ rows.length === 1 ? '' : 's' }}</span>
         </div>
-        <span class="tableHint">{{ sortHint }}</span>
+        <div class="tableHintWrap">
+          <span class="tableHintLabel">Sort Info</span>
+          <HoverHint :text="sortHint" />
+        </div>
       </div>
 
       <div class="tableWrap">
@@ -202,6 +205,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { File, FileText, FileSpreadsheet, Image, Archive, Eye } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
+import HoverHint from "../components/HoverHint.vue";
 import { listDocuments, listMovements, listRemarks, listAttachments } from "../api/documents.api";
 import { listUsers } from "../api/auth.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
@@ -579,6 +583,8 @@ h2 { margin:0; line-height:1.15; }
 .tableTitle { font-size:14px; font-weight:800; color:#111827; }
 .tableMeta { font-size:12px; color:#6b7280; }
 .tableHint { font-size:12px; color:#9ca3af; }
+.tableHintWrap { display:flex; align-items:center; gap:8px; }
+.tableHintLabel { font-size:12px; color:#6b7280; }
 
 .tableWrap {
   overflow:auto;

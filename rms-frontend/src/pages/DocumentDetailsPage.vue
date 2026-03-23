@@ -175,11 +175,11 @@
               placeholder="Type minute..."
             ></textarea>
 
-            <div class="smallHint">
-              {{ canAddRemark
-                ? "This minute will be saved when you Forward/Return/Approve/Reject/Issue/Reopen. You can also Save Minute only."
-                : "You can view all minutes, but only the current owner can add/save minutes."
-              }}
+            <div class="hintInline">
+              <span class="hintLabel">Minute help</span>
+              <HoverHint :text="canAddRemark
+                ? 'Your minute will be attached when you run a workflow action (Forward/Return/Approve/Reject/Done/Reopen). You can also save it separately using Save Minute.'
+                : 'You can read minutes, but only the current owner with Add Remark permission can add or save minutes.'" />
             </div>
 
             <div class="btnRow" style="margin-top:8px;">
@@ -204,8 +204,9 @@
               </option>
             </select>
 
-            <div class="smallHint">
-              Only current owner can forward/return. PMA can forward only to DC. Issued cannot move.
+            <div class="hintInline">
+              <span class="hintLabel">Forward rules</span>
+              <HoverHint text="Forward/Return are available only to the current owner with the relevant permission. PMA can send only to DC. Forward/Return are blocked when status is APPROVED, REJECTED, or ISSUED." />
             </div>
           </div>
 
@@ -218,9 +219,9 @@
               </option>
             </select>
 
-            <div class="smallHint">
-              Select whether this forward action is marked as public or private.
-              Allowed by your permissions: {{ availableForwardVisibilities.join(", ") || "None" }}.
+            <div class="hintInline">
+              <span class="hintLabel">Visibility help</span>
+              <HoverHint :text="`Select the next visibility for this document. Options shown here come from your FORWARD_PUBLIC/FORWARD_PRIVATE permissions. If visibility changes, CHANGE_DOCUMENT_VISIBILITY permission is also required. Available now: ${availableForwardVisibilities.join(', ') || 'None'}.`" />
             </div>
           </div>
 
@@ -236,12 +237,13 @@
 
             <button class="btn" :disabled="busy || !canApprove" @click="doApprove">Approve</button>
             <button class="btn" :disabled="busy || !canReject" @click="doReject">Reject</button>
-            <button class="btn" :disabled="busy || !canIssue" @click="doIssue">Issue</button>
+            <button class="btn" :disabled="busy || !canIssue" @click="doIssue">Done</button>
             <button class="btn" :disabled="busy || !canReopen" @click="doReopen">Reopen</button>
           </div>
 
-          <div class="rules">
-            <b>Rules:</b> Forward/Return only by current owner. Approve/Reject/Issue/Reopen only by DC (and must be owner).
+          <div class="hintInline">
+            <span class="hintLabel">Workflow rules</span>
+            <HoverHint text="All workflow actions require current ownership plus the corresponding permission. Done is available only when status is APPROVED (it marks the document as ISSUED). Reopen is allowed only for APPROVED or REJECTED and cannot be done after ISSUED." />
           </div>
         </div>
 
@@ -291,7 +293,10 @@
                     {{ mainFile.fileName }}
                     <span class="ver">(v{{ mainFile.versionNo }})</span>
                   </div>
-                  <div class="smallHint">Main file is the first uploaded file (v1).</div>
+                  <div class="hintInline">
+                    <span class="hintLabel">Main file</span>
+                    <HoverHint text="Main file is version 1 (first uploaded attachment)." />
+                  </div>
                 </div>
                 <div class="btnRow" style="margin-top:0;">
                   <button class="btn btn-primary" @click="openViewer(mainFile)">Preview</button>
@@ -333,8 +338,9 @@
               </button>
             </div>
 
-            <div class="smallHint">
-              Upload allowed only for current owner. First upload becomes Main file (v1). Next uploads are attachments.
+            <div class="hintInline">
+              <span class="hintLabel">Upload rules</span>
+              <HoverHint text="Upload is allowed only for the current owner with Upload Attachment permission, and is blocked after ISSUED. First upload becomes main file (v1); later uploads are additional versions/attachments." />
             </div>
 
             <div v-if="attachmentsSorted.length === 0" class="empty">No files yet.</div>
@@ -513,6 +519,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { File, FileText, FileSpreadsheet, Image, Archive } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
+import HoverHint from "../components/HoverHint.vue";
 import { useToast } from "../composables/useToast";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabel, formatUserLabelById } from "../auth/userLabel";
@@ -1224,6 +1231,18 @@ async function removeAttachment(a) {
 .input { height:38px; width:100%; border:1px solid #e5e7eb; border-radius:8px; padding:0 10px; outline:none; }
 .textarea { width:100%; min-height:80px; border:1px solid #e5e7eb; border-radius:8px; padding:10px; outline:none; resize:vertical; }
 .smallHint { margin-top:6px; font-size:12px; color:#6b7280; }
+
+.hintInline {
+  margin-top: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hintLabel {
+  font-size: 12px;
+  color: #6b7280;
+}
 
 .btnRow { display:flex; gap:10px; align-items:center; margin-top:10px; flex-wrap:wrap; }
 .spacer { flex:1; }

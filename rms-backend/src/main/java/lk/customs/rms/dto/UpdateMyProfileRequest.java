@@ -3,31 +3,23 @@ package lk.customs.rms.dto;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
 @Getter
 @Setter
-public class AdminUserCreateRequest {
+public class UpdateMyProfileRequest {
 
-    @NotBlank
+    @NotBlank(message = "Full name is required.")
+    @Size(max = 150, message = "Full name must be at most 150 characters.")
     private String fullName;
 
-    @NotBlank
-    private String username;
-
-    @Email
+    @Email(message = "Email must be valid.")
+    @Size(max = 150, message = "Email must be at most 150 characters.")
     private String email;
 
     @Pattern(regexp = "^(?=(?:\\D*\\d){10,}).*$", message = "Phone must contain at least 10 digits.")
+    @Size(max = 30, message = "Phone must be at most 30 characters.")
     private String phone;
-
-    private String department;
-
-    @NotBlank
-    private String role;
-
-    @NotBlank
-    @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d).{8,}$", message = "Password must be at least 8 characters with letters and numbers.")
-    private String password;
 }

@@ -7,6 +7,7 @@ import CreateDocumentPage from "../pages/CreateDocumentPage.vue";
 import InboxPage from "../pages/InboxPage.vue";
 import LogsPage from "../pages/LogsPage.vue";
 import PermissionsPage from "../pages/PermissionsPage.vue";
+import ProfilePage from "../pages/ProfilePage.vue";
 import UsersPage from "../pages/UsersPage.vue";
 import LoginPage from "../pages/LoginPage.vue";
 
@@ -22,6 +23,7 @@ const routes = [
   { path: "/documents/:id", component: DocumentDetailsPage },
 
   { path: "/inbox", component: InboxPage },
+  { path: "/profile", component: ProfilePage },
   { path: "/logs", component: LogsPage, meta: { requiredPermission: "VIEW_LOGS" } },
   { path: "/users", component: UsersPage, meta: { adminOnly: true } },
   { path: "/permissions", component: PermissionsPage, meta: { adminOnly: true } },

@@ -63,7 +63,10 @@
           <span class="tableTitle">Inbox Documents</span>
           <span class="tableMeta">{{ rows.length }} item{{ rows.length === 1 ? '' : 's' }}</span>
         </div>
-        <span class="tableHint">{{ sortHint }} • Showing only active assignments assigned to you</span>
+        <div class="tableHintWrap">
+          <span class="tableHintLabel">Inbox Info</span>
+          <HoverHint :text="`${sortHint}. Showing only active assignments assigned to you.`" />
+        </div>
       </div>
 
       <div class="tableWrap">
@@ -124,6 +127,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { File, FileText, FileSpreadsheet, Image, Archive } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
+import HoverHint from "../components/HoverHint.vue";
 import { listDocuments } from "../api/documents.api";
 import { getCurrentUser } from "../auth/currentUser";
 
@@ -335,6 +339,8 @@ h2 { margin:0; line-height:1.15; }
 .tableTitle { font-size:14px; font-weight:800; color:#111827; }
 .tableMeta { font-size:12px; color:#6b7280; }
 .tableHint { font-size:12px; color:#9ca3af; }
+.tableHintWrap { display:flex; align-items:center; gap:8px; }
+.tableHintLabel { font-size:12px; color:#6b7280; }
 
 .tableWrap {
   overflow:auto;
