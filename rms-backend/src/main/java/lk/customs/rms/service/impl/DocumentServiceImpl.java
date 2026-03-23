@@ -115,6 +115,7 @@ public class DocumentServiceImpl implements DocumentService {
         doc.setReceivedDate(request.getReceivedDate());
         doc.setCompanyName(request.getCompanyName());
         doc.setPriority(request.getPriority());
+        doc.setVisibility("PRIVATE");
 
         // Document starts as PENDING
         doc.setStatus(Status.PENDING);
@@ -142,18 +143,46 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
-    public Page<DocumentResponse> getDocuments(int page, int size, String search) {
+    public Page<DocumentResponse> getDocuments(int page, int size, String search, Long actorUserId) {
         var pageable = PageRequest.of(
             page,
             size,
             Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"))
         );
 
+        boolean canViewAll = permissionService.hasPermission(actorUserId, AppPermission.VIEW_ALL_DOCUMENTS);
+        boolean canViewPublic = permissionService.hasPermission(actorUserId, AppPermission.VIEW_PUBLIC_DOCUMENT);
+        boolean canViewPrivate = permissionService.hasPermission(actorUserId, AppPermission.VIEW_PRIVATE_DOCUMENT);
+        boolean canViewOwnCreated = permissionService.hasPermission(actorUserId, AppPermission.VIEW_OWN_CREATED_DOCUMENTS);
+
         Page<Document> docs;
-        if (search == null || search.isBlank()) {
-            docs = documentRepository.findAllNotDeleted(pageable);
+        if (canViewAll) {
+            if (search == null || search.isBlank()) {
+                docs = documentRepository.findAllNotDeleted(pageable);
+            } else {
+                docs = documentRepository.searchNotDeleted(search.trim(), pageable);
+            }
         } else {
-            docs = documentRepository.searchNotDeleted(search.trim(), pageable);
+            if (search == null || search.isBlank()) {
+                docs = documentRepository.findAccessibleNotDeleted(
+                        actorUserId,
+                        canViewPublic,
+                        canViewPrivate,
+                        canViewOwnCreated,
+                        MovementActionType.FORWARD,
+                        pageable
+                );
+            } else {
+                docs = documentRepository.searchAccessibleNotDeleted(
+                        search.trim(),
+                        actorUserId,
+                        canViewPublic,
+                        canViewPrivate,
+                        canViewOwnCreated,
+                        MovementActionType.FORWARD,
+                        pageable
+                );
+            }
         }
 
         List<Long> docIds = docs.getContent().stream().map(Document::getId).toList();
@@ -176,8 +205,11 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
-    public DocumentResponse getDocumentById(Long id) {
+    public DocumentResponse getDocumentById(Long id, Long actorUserId) {
         Document d = requireDocument(id);
+        User actor = requireUser(actorUserId);
+        ensureCanViewDocument(d, actorUserId);
+        markDcViewedIfNeeded(d, actor);
 
         String createdByName = userRepository.findById(d.getCreatedByUserId()).map(User::getFullName).orElse(null);
         String ownerName = userRepository.findById(d.getCurrentOwnerUserId()).map(User::getFullName).orElse(null);
@@ -296,6 +328,9 @@ public class DocumentServiceImpl implements DocumentService {
         } else {
             permissionService.ensurePermission(actorUserId, AppPermission.FORWARD_PUBLIC, "You are not allowed to forward as PUBLIC.");
         }
+        if (!forwardVisibility.equalsIgnoreCase(effectiveVisibility(d))) {
+            permissionService.ensurePermission(actorUserId, AppPermission.CHANGE_DOCUMENT_VISIBILITY, "You are not allowed to change document visibility.");
+        }
 
         // IMPORTANT: remark must be saved BEFORE ownership changes
         saveRemarkIfPresent(d, actionBy.getId(), request.getRemarkText(), "Remark added during forward");
@@ -304,6 +339,8 @@ public class DocumentServiceImpl implements DocumentService {
         Long to = toUser.getId();
 
         d.setCurrentOwnerUserId(to);
+        d.setVisibility(forwardVisibility);
+        applyDcAutoForwardTrackingAfterOwnershipChange(d, toUser);
         d.setStatus(Status.IN_PROGRESS);
         documentRepository.save(d);
 
@@ -342,6 +379,7 @@ public class DocumentServiceImpl implements DocumentService {
         Long to = toUser.getId();
 
         d.setCurrentOwnerUserId(to);
+        applyDcAutoForwardTrackingAfterOwnershipChange(d, toUser);
         d.setStatus(Status.RETURNED);
         documentRepository.save(d);
 
@@ -570,6 +608,64 @@ public class DocumentServiceImpl implements DocumentService {
             throw new BadRequestException("forwardVisibility must be PRIVATE or PUBLIC.");
         }
         return value;
+    }
+
+    private void ensureCanViewDocument(Document doc, Long actorUserId) {
+        if (permissionService.hasPermission(actorUserId, AppPermission.VIEW_ALL_DOCUMENTS)) {
+            return;
+        }
+
+        String visibility = effectiveVisibility(doc);
+        if ("PUBLIC".equals(visibility)) {
+            if (permissionService.hasPermission(actorUserId, AppPermission.VIEW_PUBLIC_DOCUMENT)) {
+                return;
+            }
+            throw new BadRequestException("You are not allowed to view this public document.");
+        }
+
+        if (permissionService.hasPermission(actorUserId, AppPermission.VIEW_OWN_CREATED_DOCUMENTS)
+                && actorUserId.equals(doc.getCreatedByUserId())) {
+            return;
+        }
+
+        if (permissionService.hasPermission(actorUserId, AppPermission.VIEW_PRIVATE_DOCUMENT)) {
+            if (actorUserId.equals(doc.getCurrentOwnerUserId())) {
+                return;
+            }
+            if (movementRepository.existsPrivateForwardTrailForUser(doc.getId(), actorUserId, MovementActionType.FORWARD)) {
+                return;
+            }
+        }
+
+        throw new BadRequestException("You are not allowed to view this private document.");
+    }
+
+    private String effectiveVisibility(Document doc) {
+        String value = doc.getVisibility();
+        if (value == null || value.isBlank()) {
+            return "PUBLIC";
+        }
+        return value.trim().toUpperCase();
+    }
+
+    private void applyDcAutoForwardTrackingAfterOwnershipChange(Document doc, User toUser) {
+        if (isRole(toUser, "DC")) {
+            doc.setDcAssignedAt(LocalDateTime.now());
+            doc.setDcViewedAt(null);
+            return;
+        }
+
+        doc.setDcAssignedAt(null);
+        doc.setDcViewedAt(null);
+    }
+
+    private void markDcViewedIfNeeded(Document doc, User actor) {
+        if (!isRole(actor, "DC")) return;
+        if (!actor.getId().equals(doc.getCurrentOwnerUserId())) return;
+        if (doc.getDcAssignedAt() == null || doc.getDcViewedAt() != null) return;
+
+        doc.setDcViewedAt(LocalDateTime.now());
+        documentRepository.save(doc);
     }
 
 }

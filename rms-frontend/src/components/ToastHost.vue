@@ -1,5 +1,5 @@
 <template>
-  <div class="toast-host" aria-live="polite" aria-atomic="true">
+  <div class="toast-host" :style="{ top: `${topOffset}px` }" aria-live="polite" aria-atomic="true">
     <TransitionGroup name="toast" tag="div" class="toast-list">
       <article
         v-for="toast in toasts"
@@ -18,13 +18,19 @@
 <script setup>
 import { useToast } from "../composables/useToast";
 
+defineProps({
+  topOffset: {
+    type: Number,
+    default: 72,
+  },
+});
+
 const { toasts, remove } = useToast();
 </script>
 
 <style scoped>
 .toast-host {
   position: fixed;
-  top: 1rem;
   right: 1rem;
   z-index: 2200;
   pointer-events: none;
@@ -99,7 +105,6 @@ const { toasts, remove } = useToast();
 
 @media (max-width: 640px) {
   .toast-host {
-    top: 0.75rem;
     right: 0.75rem;
     left: 0.75rem;
   }

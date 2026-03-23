@@ -7,7 +7,7 @@
       </div>
       <div class="headActions">
         <button class="btn" :disabled="loading || saving" @click="load">Refresh</button>
-        <button class="btn btn-primary" :disabled="loading || saving || !dirty" @click="save">
+        <button class="btn btn-primary" :disabled="loading || saving || (!dirty && !configDirty)" @click="save">
           {{ saving ? "Saving..." : "Save Changes" }}
         </button>
       </div>
@@ -18,6 +18,43 @@
     <div v-else class="card">
       <div v-if="error" class="errorBox">{{ error }}</div>
       <div v-if="success" class="successBox">{{ success }}</div>
+
+      <div class="section">
+        <div class="sectionHead">
+          <h3>DC Auto Forward</h3>
+          <p>If a document is forwarded to DC and DC does not open it in time, auto-forward it to the configured DDC/SDDC user.</p>
+        </div>
+
+        <div class="configGrid">
+          <label class="toggleWrap configToggle">
+            <input type="checkbox" :checked="dcAutoForwardEnabled" @change="onEnabledChange($event.target.checked)" />
+            <span>Enabled</span>
+          </label>
+
+          <div class="controlBlock">
+            <label>Timeout (minutes)</label>
+            <input
+              type="number"
+              class="input"
+              min="1"
+              max="10080"
+              :disabled="!dcAutoForwardEnabled"
+              v-model.number="dcTimeoutMinutes"
+              @input="markConfigDirty"
+            />
+          </div>
+
+          <div class="controlBlock">
+            <label>Auto-forward receiver (DDC/SDDC)</label>
+            <select class="input" :disabled="!dcAutoForwardEnabled" v-model="dcReceiverUserId" @change="markConfigDirty">
+              <option :value="null">-- Select receiver --</option>
+              <option v-for="u in eligibleReceivers" :key="u.id" :value="u.id">
+                {{ u.fullName }} ({{ u.role }})
+              </option>
+            </select>
+          </div>
+        </div>
+      </div>
 
       <div class="tableWrap">
         <table class="table">
@@ -60,7 +97,13 @@
 <script setup>
 import { computed, ref } from "vue";
 import AppLayout from "../layouts/AppLayout.vue";
-import { adminGetPermissionsMatrix, adminUpdatePermissionsMatrix } from "../api/auth.api";
+import {
+  adminGetDcAutoForwardConfig,
+  adminGetPermissionsMatrix,
+  adminUpdateDcAutoForwardConfig,
+  adminUpdatePermissionsMatrix,
+  listUsers,
+} from "../api/auth.api";
 import { getCurrentUser } from "../auth/currentUser";
 
 const user = ref(getCurrentUser());
@@ -74,6 +117,16 @@ const roles = ref([]);
 const permissions = ref([]);
 const matrix = ref({});
 const dirty = ref(false);
+const configDirty = ref(false);
+
+const allUsers = ref([]);
+const dcAutoForwardEnabled = ref(false);
+const dcTimeoutMinutes = ref(60);
+const dcReceiverUserId = ref(null);
+
+const eligibleReceivers = computed(() =>
+  allUsers.value.filter((u) => ["DDC", "SDDC"].includes(String(u.role || "").toUpperCase()))
+);
 
 function cellKey(roleName, permission) {
   return `${roleName}::${permission}`;
@@ -99,6 +152,15 @@ function setEnabled(roleName, permission, enabled) {
   dirty.value = true;
 }
 
+function markConfigDirty() {
+  configDirty.value = true;
+}
+
+function onEnabledChange(enabled) {
+  dcAutoForwardEnabled.value = !!enabled;
+  markConfigDirty();
+}
+
 function friendlyLabel(permission) {
   return String(permission || "")
     .toLowerCase()
@@ -113,11 +175,23 @@ async function load() {
   success.value = "";
 
   try {
-    const data = await adminGetPermissionsMatrix();
+    const [data, config, users] = await Promise.all([
+      adminGetPermissionsMatrix(),
+      adminGetDcAutoForwardConfig(),
+      listUsers(),
+    ]);
+
     roles.value = Array.isArray(data?.roles) ? data.roles : [];
     permissions.value = Array.isArray(data?.permissions) ? data.permissions : [];
     matrix.value = buildMatrix(data?.entries);
+
+    allUsers.value = Array.isArray(users) ? users : [];
+    dcAutoForwardEnabled.value = !!config?.enabled;
+    dcTimeoutMinutes.value = Number(config?.timeoutMinutes || 60);
+    dcReceiverUserId.value = config?.receiverUserId == null ? null : Number(config.receiverUserId);
+
     dirty.value = false;
+    configDirty.value = false;
   } catch (e) {
     error.value = e?.message || "Failed to load permissions.";
   } finally {
@@ -131,22 +205,46 @@ async function save() {
   success.value = "";
 
   try {
-    const entries = [];
-    for (const permission of permissions.value) {
-      for (const roleName of roles.value) {
-        entries.push({
-          roleName,
-          permission,
-          enabled: isEnabled(roleName, permission),
-        });
+    if (dirty.value) {
+      const entries = [];
+      for (const permission of permissions.value) {
+        for (const roleName of roles.value) {
+          entries.push({
+            roleName,
+            permission,
+            enabled: isEnabled(roleName, permission),
+          });
+        }
       }
+
+      const data = await adminUpdatePermissionsMatrix(entries);
+      roles.value = Array.isArray(data?.roles) ? data.roles : roles.value;
+      permissions.value = Array.isArray(data?.permissions) ? data.permissions : permissions.value;
+      matrix.value = buildMatrix(data?.entries);
+      dirty.value = false;
     }
 
-    const data = await adminUpdatePermissionsMatrix(entries);
-    roles.value = Array.isArray(data?.roles) ? data.roles : roles.value;
-    permissions.value = Array.isArray(data?.permissions) ? data.permissions : permissions.value;
-    matrix.value = buildMatrix(data?.entries);
-    dirty.value = false;
+    if (configDirty.value) {
+      const timeout = Number(dcTimeoutMinutes.value);
+      if (!Number.isFinite(timeout) || timeout < 1 || timeout > 10080) {
+        throw new Error("Timeout must be between 1 and 10080 minutes.");
+      }
+      if (dcAutoForwardEnabled.value && !dcReceiverUserId.value) {
+        throw new Error("Select a DDC/SDDC receiver when DC auto forward is enabled.");
+      }
+
+      const updatedConfig = await adminUpdateDcAutoForwardConfig({
+        enabled: !!dcAutoForwardEnabled.value,
+        timeoutMinutes: timeout,
+        receiverUserId: dcReceiverUserId.value == null ? null : Number(dcReceiverUserId.value),
+      });
+
+      dcAutoForwardEnabled.value = !!updatedConfig?.enabled;
+      dcTimeoutMinutes.value = Number(updatedConfig?.timeoutMinutes || timeout);
+      dcReceiverUserId.value = updatedConfig?.receiverUserId == null ? null : Number(updatedConfig.receiverUserId);
+      configDirty.value = false;
+    }
+
     success.value = "Permissions updated successfully.";
   } catch (e) {
     error.value = e?.message || "Failed to save permissions.";
@@ -170,6 +268,60 @@ load();
 h2 { margin:0; }
 .pageSub { margin:4px 0 0; color:#6b7280; font-size:13px; }
 .headActions { display:flex; gap:10px; }
+
+.section {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f9fafb;
+}
+
+.sectionHead h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #111827;
+}
+
+.sectionHead p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.configGrid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 180px 1fr 1fr;
+  gap: 12px;
+  align-items: end;
+}
+
+.configToggle {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.controlBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.controlBlock label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #374151;
+}
+
+.input {
+  height: 40px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  padding: 0 10px;
+  font-size: 13px;
+}
 
 .card {
   background:#fff;

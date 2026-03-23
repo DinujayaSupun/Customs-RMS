@@ -11,9 +11,9 @@ public interface DocumentService {
 
     DocumentResponse createDocument(CreateDocumentRequest request, Long actorUserId);
 
-    Page<DocumentResponse> getDocuments(int page, int size, String search);
+    Page<DocumentResponse> getDocuments(int page, int size, String search, Long actorUserId);
 
-    DocumentResponse getDocumentById(Long id);
+    DocumentResponse getDocumentById(Long id, Long actorUserId);
 
     DocumentResponse updateDocument(Long id, UpdateDocumentRequest request, Long actorUserId);
 

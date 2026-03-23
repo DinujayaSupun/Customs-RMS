@@ -32,14 +32,15 @@ public class DocumentController {
     public Page<DocumentResponse> list(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(required = false) String search
+            @RequestParam(required = false) String search,
+            Authentication authentication
     ) {
-        return documentService.getDocuments(page, size, search);
+        return documentService.getDocuments(page, size, search, currentUserService.requireUserId(authentication));
     }
 
     @GetMapping("/{id}")
-    public DocumentResponse getById(@PathVariable Long id) {
-        return documentService.getDocumentById(id);
+    public DocumentResponse getById(@PathVariable Long id, Authentication authentication) {
+        return documentService.getDocumentById(id, currentUserService.requireUserId(authentication));
     }
 
     @PutMapping("/{id}")

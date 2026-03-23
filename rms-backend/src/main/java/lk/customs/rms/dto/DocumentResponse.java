@@ -18,6 +18,7 @@ public class DocumentResponse {
     private String title;
     private LocalDate receivedDate;
     private String companyName;
+    private String visibility;
     private Priority priority;
     private Status status;
 
@@ -44,6 +45,7 @@ public class DocumentResponse {
                 .title(d.getTitle())
                 .receivedDate(d.getReceivedDate())
                 .companyName(d.getCompanyName())
+                .visibility(d.getVisibility())
                 .priority(d.getPriority())
                 .status(d.getStatus())
                 .createdByUserId(d.getCreatedByUserId())

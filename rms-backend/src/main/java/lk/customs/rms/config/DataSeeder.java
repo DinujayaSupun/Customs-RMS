@@ -63,11 +63,15 @@ public class DataSeeder {
                                  Role pma,
                                  Role admin) {
         Set<AppPermission> allWorkflow = EnumSet.of(
+            AppPermission.VIEW_PUBLIC_DOCUMENT,
+            AppPermission.VIEW_PRIVATE_DOCUMENT,
+            AppPermission.VIEW_OWN_CREATED_DOCUMENTS,
                 AppPermission.EDIT_DOCUMENT_DETAILS,
                 AppPermission.ADD_REMARK,
                 AppPermission.FORWARD_DOCUMENT,
             AppPermission.FORWARD_PUBLIC,
             AppPermission.FORWARD_PRIVATE,
+            AppPermission.CHANGE_DOCUMENT_VISIBILITY,
                 AppPermission.RETURN_DOCUMENT,
                 AppPermission.UPLOAD_ATTACHMENT,
                 AppPermission.DELETE_ATTACHMENT
@@ -75,11 +79,16 @@ public class DataSeeder {
 
         seedRolePermissions(rolePermissionRepository, dc, EnumSet.of(
                 AppPermission.CREATE_DOCUMENT,
+            AppPermission.VIEW_PUBLIC_DOCUMENT,
+            AppPermission.VIEW_PRIVATE_DOCUMENT,
+            AppPermission.VIEW_OWN_CREATED_DOCUMENTS,
+            AppPermission.VIEW_ALL_DOCUMENTS,
                 AppPermission.EDIT_DOCUMENT_DETAILS,
                 AppPermission.ADD_REMARK,
                 AppPermission.FORWARD_DOCUMENT,
                 AppPermission.FORWARD_PUBLIC,
                 AppPermission.FORWARD_PRIVATE,
+            AppPermission.CHANGE_DOCUMENT_VISIBILITY,
                 AppPermission.RETURN_DOCUMENT,
                 AppPermission.APPROVE_DOCUMENT,
                 AppPermission.REJECT_DOCUMENT,
@@ -96,11 +105,15 @@ public class DataSeeder {
         seedRolePermissions(rolePermissionRepository, asc, allWorkflow);
         seedRolePermissions(rolePermissionRepository, pma, EnumSet.of(
                 AppPermission.CREATE_DOCUMENT,
+            AppPermission.VIEW_PUBLIC_DOCUMENT,
+            AppPermission.VIEW_PRIVATE_DOCUMENT,
+            AppPermission.VIEW_OWN_CREATED_DOCUMENTS,
                 AppPermission.EDIT_DOCUMENT_DETAILS,
                 AppPermission.ADD_REMARK,
                 AppPermission.FORWARD_DOCUMENT,
                 AppPermission.FORWARD_PUBLIC,
                 AppPermission.FORWARD_PRIVATE,
+            AppPermission.CHANGE_DOCUMENT_VISIBILITY,
                 AppPermission.RETURN_DOCUMENT,
                 AppPermission.UPLOAD_ATTACHMENT,
                 AppPermission.DELETE_ATTACHMENT

@@ -136,6 +136,22 @@ export async function adminUpdatePermissionsMatrix(entries) {
   }
 }
 
+export async function adminGetDcAutoForwardConfig() {
+  try {
+    return (await http.get("/admin/permissions/dc-auto-forward")).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function adminUpdateDcAutoForwardConfig(payload) {
+  try {
+    return (await http.put("/admin/permissions/dc-auto-forward", payload)).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
 export function adminExportUsersUrl({ search = "", role = "", active = "" } = {}) {
   const url = new URL("http://localhost:8080/api/admin/users/export");
   if (search) url.searchParams.set("search", search);
