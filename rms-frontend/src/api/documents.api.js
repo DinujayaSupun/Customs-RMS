@@ -44,6 +44,14 @@ export async function listDocuments() {
   }
 }
 
+export async function getMyWorkloadStats() {
+  try {
+    return (await http.get(`${BASE}/my-workload-stats`)).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
 export async function getDocument(id) {
   try {
     return (await http.get(`${BASE}/${id}`)).data;

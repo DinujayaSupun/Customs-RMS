@@ -94,6 +94,14 @@ async function submit() {
       name: res.fullName,
     });
 
+    // Defer a personalized welcome toast to the first authenticated screen.
+    const welcomePayload = {
+      fullName: res.fullName || res.username || "User",
+      role: res.role || "USER",
+      at: Date.now(),
+    };
+    window.sessionStorage.setItem("rms_pending_welcome", JSON.stringify(welcomePayload));
+
     const redirect = route.query.redirect ? String(route.query.redirect) : "/documents";
     router.replace(redirect);
   } catch (e) {

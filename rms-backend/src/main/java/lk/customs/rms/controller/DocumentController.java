@@ -43,6 +43,11 @@ public class DocumentController {
         return documentService.getDocumentById(id, currentUserService.requireUserId(authentication));
     }
 
+    @GetMapping("/my-workload-stats")
+    public MyWorkloadStatsResponse myWorkloadStats(Authentication authentication) {
+        return documentService.getMyWorkloadStats(currentUserService.requireUserId(authentication));
+    }
+
     @PutMapping("/{id}")
     public DocumentResponse update(@PathVariable Long id,
                                    @Valid @RequestBody UpdateDocumentRequest request,

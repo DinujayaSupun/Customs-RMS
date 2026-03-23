@@ -119,6 +119,32 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
 
     Optional<Document> findByIdAndDeletedFalse(Long id);
 
+    @Query("""
+           select count(d)
+           from Document d
+           where d.deleted = false
+             and d.currentOwnerUserId = :userId
+             and d.status <> :excludedStatus
+           """)
+    long countAssignedActiveByOwner(@Param("userId") Long userId,
+                                    @Param("excludedStatus") Status excludedStatus);
+
+    @Query("""
+           select count(d)
+           from Document d
+           where d.deleted = false
+             and d.currentOwnerUserId = :userId
+             and d.status <> :excludedStatus
+             and exists (
+                 select v.id
+                 from DocumentUserView v
+                 where v.documentId = d.id
+                   and v.userId = :userId
+             )
+           """)
+    long countOpenedAssignedActiveByOwner(@Param("userId") Long userId,
+                                          @Param("excludedStatus") Status excludedStatus);
+
     @Modifying
     @Query("""
            update Document d

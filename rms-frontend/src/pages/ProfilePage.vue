@@ -422,8 +422,8 @@ h3 {
 }
 
 .avatar {
-  width: 82px;
-  height: 82px;
+  width: 132px;
+  height: 132px;
   border-radius: 999px;
   object-fit: cover;
   border: 3px solid #cbd5e1;
@@ -436,7 +436,7 @@ h3 {
   background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
   color: #0f172a;
   font-weight: 700;
-  font-size: 22px;
+  font-size: 34px;
 }
 
 .picActions {
@@ -557,6 +557,15 @@ label {
 @media (max-width: 980px) {
   .grid {
     grid-template-columns: 1fr;
+  }
+
+  .avatar {
+    width: 112px;
+    height: 112px;
+  }
+
+  .avatar.fallback {
+    font-size: 28px;
   }
 
   .cardWide {

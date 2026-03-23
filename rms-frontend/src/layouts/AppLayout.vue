@@ -46,12 +46,15 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import { getMyWorkloadStats } from "../api/documents.api";
 import { buildMyProfilePictureUrl } from "../api/auth.api";
 import { clearSession, getCurrentUser, hasPermission } from "../auth/currentUser";
+import { useToast } from "../composables/useToast";
 
 const router = useRouter();
 const userRef = ref(getCurrentUser());
 const avatarBroken = ref(false);
+const { success, info } = useToast();
 
 const currentUser = computed(() => userRef.value);
 const canViewLogs = computed(() => hasPermission(currentUser.value, "VIEW_LOGS"));
@@ -78,8 +81,51 @@ function logout() {
   router.replace("/login");
 }
 
+function greetingByTime() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+async function getMyDocumentStats() {
+  const data = await getMyWorkloadStats();
+  return {
+    assignedCount: Number(data?.assignedCount || 0),
+    unopenedCount: Number(data?.unopenedCount || 0),
+  };
+}
+
+async function showPendingWelcome() {
+  let raw = null;
+  try {
+    raw = window.sessionStorage.getItem("rms_pending_welcome");
+    if (!raw) return;
+
+    const payload = JSON.parse(raw);
+    const fullName = String(payload?.fullName || currentUser.value?.fullName || currentUser.value?.username || "User").trim();
+    const role = String(payload?.role || currentUser.value?.role || "USER").trim();
+    const stats = await getMyDocumentStats();
+
+    const primaryMessage = `${greetingByTime()}, ${fullName}. You are signed in as ${role}.`;
+    success(primaryMessage, 4200);
+
+    const secondaryMessage = `You have ${stats.unopenedCount} unopened documents out of ${stats.assignedCount} assigned to you.`;
+    window.setTimeout(() => {
+      info(secondaryMessage, 9000);
+    }, 320);
+  } catch {
+    // Ignore malformed payloads and continue normal page render.
+  } finally {
+    if (raw !== null) {
+      window.sessionStorage.removeItem("rms_pending_welcome");
+    }
+  }
+}
+
 onMounted(() => {
   window.addEventListener("rms_auth_changed", onAuthChanged);
+  showPendingWelcome();
 });
 
 onUnmounted(() => {

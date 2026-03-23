@@ -5,6 +5,7 @@ import lk.customs.rms.entity.Document;
 import lk.customs.rms.entity.DocumentAttachment;
 import lk.customs.rms.entity.DocumentMovement;
 import lk.customs.rms.entity.DocumentRemark;
+import lk.customs.rms.entity.DocumentUserView;
 import lk.customs.rms.entity.User;
 import lk.customs.rms.enums.AppPermission;
 import lk.customs.rms.enums.MovementActionType;
@@ -15,6 +16,7 @@ import lk.customs.rms.repository.DocumentMovementRepository;
 import lk.customs.rms.repository.DocumentAttachmentRepository;
 import lk.customs.rms.repository.DocumentRemarkRepository;
 import lk.customs.rms.repository.DocumentRepository;
+import lk.customs.rms.repository.DocumentUserViewRepository;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.service.AuditLogService;
 import lk.customs.rms.service.DocumentService;
@@ -71,6 +73,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentAttachmentRepository attachmentRepository;
     private final DocumentMovementRepository movementRepository;
     private final DocumentRemarkRepository remarkRepository;
+    private final DocumentUserViewRepository documentUserViewRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
     private final PermissionService permissionService;
@@ -80,6 +83,7 @@ public class DocumentServiceImpl implements DocumentService {
             DocumentAttachmentRepository attachmentRepository,
             DocumentMovementRepository movementRepository,
             DocumentRemarkRepository remarkRepository,
+            DocumentUserViewRepository documentUserViewRepository,
             UserRepository userRepository,
             AuditLogService auditLogService,
             PermissionService permissionService
@@ -88,6 +92,7 @@ public class DocumentServiceImpl implements DocumentService {
         this.attachmentRepository = attachmentRepository;
         this.movementRepository = movementRepository;
         this.remarkRepository = remarkRepository;
+        this.documentUserViewRepository = documentUserViewRepository;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
         this.permissionService = permissionService;
@@ -209,6 +214,7 @@ public class DocumentServiceImpl implements DocumentService {
         Document d = requireDocument(id);
         User actor = requireUser(actorUserId);
         ensureCanViewDocument(d, actorUserId);
+        markViewedByUser(d.getId(), actorUserId);
         markDcViewedIfNeeded(d, actor);
 
         String createdByName = userRepository.findById(d.getCreatedByUserId()).map(User::getFullName).orElse(null);
@@ -216,6 +222,19 @@ public class DocumentServiceImpl implements DocumentService {
         String mainAttachmentType = resolveMainAttachmentType(d.getId());
 
         return DocumentResponse.from(d, createdByName, ownerName, mainAttachmentType);
+    }
+
+    @Override
+    public MyWorkloadStatsResponse getMyWorkloadStats(Long actorUserId) {
+        long assignedCount = documentRepository.countAssignedActiveByOwner(actorUserId, Status.ISSUED);
+        long openedCount = documentRepository.countOpenedAssignedActiveByOwner(actorUserId, Status.ISSUED);
+        long unopenedCount = Math.max(0, assignedCount - openedCount);
+
+        return MyWorkloadStatsResponse.builder()
+                .assignedCount(assignedCount)
+                .openedCount(openedCount)
+                .unopenedCount(unopenedCount)
+                .build();
     }
 
     @Override
@@ -339,6 +358,7 @@ public class DocumentServiceImpl implements DocumentService {
         Long to = toUser.getId();
 
         d.setCurrentOwnerUserId(to);
+        documentUserViewRepository.deleteByDocumentIdAndUserId(d.getId(), to);
         d.setVisibility(forwardVisibility);
         applyDcAutoForwardTrackingAfterOwnershipChange(d, toUser);
         d.setStatus(Status.IN_PROGRESS);
@@ -379,6 +399,7 @@ public class DocumentServiceImpl implements DocumentService {
         Long to = toUser.getId();
 
         d.setCurrentOwnerUserId(to);
+        documentUserViewRepository.deleteByDocumentIdAndUserId(d.getId(), to);
         applyDcAutoForwardTrackingAfterOwnershipChange(d, toUser);
         d.setStatus(Status.RETURNED);
         documentRepository.save(d);
@@ -666,6 +687,20 @@ public class DocumentServiceImpl implements DocumentService {
 
         doc.setDcViewedAt(LocalDateTime.now());
         documentRepository.save(doc);
+    }
+
+    private void markViewedByUser(Long documentId, Long actorUserId) {
+        LocalDateTime now = LocalDateTime.now();
+        DocumentUserView view = documentUserViewRepository.findByDocumentIdAndUserId(documentId, actorUserId)
+                .orElseGet(() -> {
+                    DocumentUserView created = new DocumentUserView();
+                    created.setDocumentId(documentId);
+                    created.setUserId(actorUserId);
+                    return created;
+                });
+
+        view.setViewedAt(now);
+        documentUserViewRepository.save(view);
     }
 
 }

@@ -8,6 +8,7 @@ import lk.customs.rms.enums.MovementActionType;
 import lk.customs.rms.enums.Status;
 import lk.customs.rms.repository.DocumentMovementRepository;
 import lk.customs.rms.repository.DocumentRepository;
+import lk.customs.rms.repository.DocumentUserViewRepository;
 import lk.customs.rms.repository.UserRepository;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -22,17 +23,20 @@ public class DcAutoForwardScheduler {
     private final DcAutoForwardConfigService dcAutoForwardConfigService;
     private final DocumentRepository documentRepository;
     private final DocumentMovementRepository movementRepository;
+    private final DocumentUserViewRepository documentUserViewRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
 
     public DcAutoForwardScheduler(DcAutoForwardConfigService dcAutoForwardConfigService,
                                   DocumentRepository documentRepository,
                                   DocumentMovementRepository movementRepository,
+                                  DocumentUserViewRepository documentUserViewRepository,
                                   UserRepository userRepository,
                                   AuditLogService auditLogService) {
         this.dcAutoForwardConfigService = dcAutoForwardConfigService;
         this.documentRepository = documentRepository;
         this.movementRepository = movementRepository;
+        this.documentUserViewRepository = documentUserViewRepository;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
     }
@@ -69,6 +73,7 @@ public class DcAutoForwardScheduler {
 
             Long from = doc.getCurrentOwnerUserId();
             doc.setCurrentOwnerUserId(receiver.getId());
+            documentUserViewRepository.deleteByDocumentIdAndUserId(doc.getId(), receiver.getId());
             doc.setStatus(Status.IN_PROGRESS);
             doc.setDcAssignedAt(null);
             doc.setDcViewedAt(null);
