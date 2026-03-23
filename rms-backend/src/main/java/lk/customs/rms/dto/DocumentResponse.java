@@ -33,12 +33,31 @@ public class DocumentResponse {
     private LocalDateTime issuedAt;
 
     private String mainAttachmentType;
+    private String latestRemarkPreview;
+    private Boolean viewedByMe;
 
     public static DocumentResponse from(Document d, String createdByName, String ownerName) {
-        return from(d, createdByName, ownerName, null);
+        return from(d, createdByName, ownerName, null, null, false);
     }
 
     public static DocumentResponse from(Document d, String createdByName, String ownerName, String mainAttachmentType) {
+        return from(d, createdByName, ownerName, mainAttachmentType, null, false);
+    }
+
+    public static DocumentResponse from(Document d,
+                                        String createdByName,
+                                        String ownerName,
+                                        String mainAttachmentType,
+                                        boolean viewedByMe) {
+        return from(d, createdByName, ownerName, mainAttachmentType, null, viewedByMe);
+    }
+
+    public static DocumentResponse from(Document d,
+                                        String createdByName,
+                                        String ownerName,
+                                        String mainAttachmentType,
+                                        String latestRemarkPreview,
+                                        boolean viewedByMe) {
         return DocumentResponse.builder()
                 .id(d.getId())
                 .refNo(d.getRefNo())
@@ -56,6 +75,8 @@ public class DocumentResponse {
                 .completedAt(d.getCompletedAt())
                 .issuedAt(d.getIssuedAt())
                 .mainAttachmentType(mainAttachmentType)
+                .latestRemarkPreview(latestRemarkPreview)
+                .viewedByMe(viewedByMe)
                 .build();
     }
 }

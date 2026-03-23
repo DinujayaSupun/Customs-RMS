@@ -27,8 +27,11 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /*
@@ -144,7 +147,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         auditLogService.logDocumentCreate(saved.getId(), createdBy.getId(), "Document created");
 
-        return DocumentResponse.from(saved, createdBy.getFullName(), owner.getFullName(), null);
+        return DocumentResponse.from(saved, createdBy.getFullName(), owner.getFullName(), null, null, false);
     }
 
     @Override
@@ -191,6 +194,9 @@ public class DocumentServiceImpl implements DocumentService {
         }
 
         List<Long> docIds = docs.getContent().stream().map(Document::getId).toList();
+        Set<Long> viewedDocIds = docIds.isEmpty()
+            ? Set.of()
+            : new HashSet<>(documentUserViewRepository.findViewedDocumentIdsByUser(actorUserId, docIds));
         Map<Long, String> mainAttachmentTypes = docIds.isEmpty()
             ? Map.of()
             : attachmentRepository
@@ -201,11 +207,28 @@ public class DocumentServiceImpl implements DocumentService {
                     a -> resolveAttachmentTypeFromFileName(a.getFileName()),
                     (first, second) -> first
                 ));
+        Map<Long, String> latestRemarkPreviews = docIds.isEmpty()
+            ? Map.of()
+            : remarkRepository.findLatestByDocumentIdsWithUser(docIds)
+                .stream()
+                .collect(Collectors.toMap(
+                    DocumentRemark::getDocumentId,
+                    this::toRemarkPreview,
+                    (first, second) -> first
+                ));
 
         return docs.map(d -> {
             String createdByName = userRepository.findById(d.getCreatedByUserId()).map(User::getFullName).orElse(null);
             String ownerName = userRepository.findById(d.getCurrentOwnerUserId()).map(User::getFullName).orElse(null);
-            return DocumentResponse.from(d, createdByName, ownerName, mainAttachmentTypes.get(d.getId()));
+            boolean viewedByMe = viewedDocIds.contains(d.getId());
+            return DocumentResponse.from(
+                d,
+                createdByName,
+                ownerName,
+                mainAttachmentTypes.get(d.getId()),
+                latestRemarkPreviews.get(d.getId()),
+                viewedByMe
+            );
         });
     }
 
@@ -220,8 +243,11 @@ public class DocumentServiceImpl implements DocumentService {
         String createdByName = userRepository.findById(d.getCreatedByUserId()).map(User::getFullName).orElse(null);
         String ownerName = userRepository.findById(d.getCurrentOwnerUserId()).map(User::getFullName).orElse(null);
         String mainAttachmentType = resolveMainAttachmentType(d.getId());
+        String latestRemarkPreview = remarkRepository.findFirstByDocumentIdOrderByRemarkedAtDescWithUser(d.getId())
+            .map(this::toRemarkPreview)
+            .orElse(null);
 
-        return DocumentResponse.from(d, createdByName, ownerName, mainAttachmentType);
+        return DocumentResponse.from(d, createdByName, ownerName, mainAttachmentType, latestRemarkPreview, true);
     }
 
     @Override
@@ -275,7 +301,11 @@ public class DocumentServiceImpl implements DocumentService {
         String ownerName = userRepository.findById(saved.getCurrentOwnerUserId()).map(User::getFullName).orElse(null);
         String mainAttachmentType = resolveMainAttachmentType(saved.getId());
 
-        return DocumentResponse.from(saved, createdByName, ownerName, mainAttachmentType);
+        String latestRemarkPreview = remarkRepository.findFirstByDocumentIdOrderByRemarkedAtDescWithUser(saved.getId())
+            .map(this::toRemarkPreview)
+            .orElse(null);
+
+        return DocumentResponse.from(saved, createdByName, ownerName, mainAttachmentType, latestRemarkPreview, true);
     }
 
     private String resolveMainAttachmentType(Long documentId) {
@@ -701,6 +731,35 @@ public class DocumentServiceImpl implements DocumentService {
 
         view.setViewedAt(now);
         documentUserViewRepository.save(view);
+    }
+
+    private String toRemarkPreview(String value) {
+        String text = value == null ? "" : value.trim().replaceAll("\\s+", " ");
+        if (text.isEmpty()) return null;
+        if (text.length() <= 110) return text;
+        return text.substring(0, 107) + "...";
+    }
+
+    private String toRemarkPreview(DocumentRemark remark) {
+        if (remark == null || remark.getRemarkText() == null) {
+            return null;
+        }
+        
+        String text = remark.getRemarkText().trim().replaceAll("\\s+", " ");
+        if (text.isEmpty()) return null;
+        
+        // Truncate text to 80 chars to fit author/time metadata
+        String preview = text.length() <= 80 ? text : text.substring(0, 77) + "...";
+        
+        // Format author and timestamp
+        String roleName = remark.getRemarkedBy() != null && remark.getRemarkedBy().getRole() != null 
+            ? remark.getRemarkedBy().getRole().getRoleName() 
+            : "Unknown";
+        
+        DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("h:mm a");
+        String formattedTime = remark.getRemarkedAt().format(timeFormatter);
+        
+        return String.format("By %s • %s – %s", roleName, formattedTime, preview);
     }
 
 }

@@ -1,122 +1,126 @@
 <template>
   <AppLayout>
-    <div class="pageHead">
-      <div class="titleBlock">
-        <h2>My Inbox</h2>
-        <p class="pageSub">Items currently assigned to you and awaiting action.</p>
-      </div>
-      <div class="headActions">
-        <button class="btn" @click="load">Refresh</button>
-      </div>
-    </div>
-
-    <div class="card filtersCard">
-      <div class="filters">
-        <div class="control">
-          <label class="controlLabel">Search</label>
-          <input v-model="q" class="input" placeholder="Search ref/title/company..." />
+    <div class="inboxCanvas">
+      <div class="pageHead">
+        <div class="titleBlock">
+          <h2>My Inbox</h2>
+          <p class="pageSub">Scan assigned documents in a message-style view and open items faster.</p>
         </div>
-
-        <div class="control">
-          <label class="controlLabel">Status</label>
-          <select v-model="status" class="input">
-            <option value="">All Status</option>
-            <option>PENDING</option>
-            <option>IN_PROGRESS</option>
-            <option>RETURNED</option>
-            <option>APPROVED</option>
-            <option>REJECTED</option>
-            <option>ISSUED</option>
-          </select>
-        </div>
-
-        <div class="control">
-          <label class="controlLabel">Priority</label>
-          <select v-model="priority" class="input">
-            <option value="">All Priority</option>
-            <option>LOW</option>
-            <option>MEDIUM</option>
-            <option>HIGH</option>
-            <option>URGENT</option>
-          </select>
-        </div>
-
-        <div class="control">
-          <label class="controlLabel">Sort By</label>
-          <select v-model="sortBy" class="input">
-            <option value="recent">Most Recent</option>
-            <option value="ref_asc">Ref No (A-Z)</option>
-            <option value="ref_desc">Ref No (Z-A)</option>
-            <option value="title_asc">Title (A-Z)</option>
-            <option value="priority_desc">Priority (High-Low)</option>
-            <option value="status_asc">Status (Workflow)</option>
-          </select>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="error" class="errorBox">{{ error }}</div>
-
-    <div class="card tableCard">
-      <div class="tableHead">
-        <div class="tableTitleWrap">
-          <span class="tableTitle">Inbox Documents</span>
-          <span class="tableMeta">{{ rows.length }} item{{ rows.length === 1 ? '' : 's' }}</span>
-        </div>
-        <div class="tableHintWrap">
-          <span class="tableHintLabel">Inbox Info</span>
-          <HoverHint :text="`${sortHint}. Showing only active assignments assigned to you.`" />
+        <div class="headActions">
+          <button class="btn" @click="load">Refresh</button>
         </div>
       </div>
 
-      <div class="tableWrap">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Ref No</th>
-              <th>Title</th>
-              <th>Company</th>
-              <th>Priority</th>
-              <th>Status</th>
-              <th style="width:120px;">Open</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="loading">
-              <td colspan="6" class="muted">Loading...</td>
-            </tr>
-            <tr v-else-if="rows.length===0">
-              <td colspan="6" class="muted">No inbox items.</td>
-            </tr>
-            <tr v-else v-for="d in rows" :key="d.id">
-              <td class="refCell">
-                <div class="refWrap">
-                  <span
-                    class="docTypeBadge"
-                    :class="'docType-' + docTypeClass(d.mainAttachmentType)"
-                    :title="attachmentTypeLabel(d.mainAttachmentType)"
-                  >
-                    <component
-                      :is="attachmentIconComponent(d.mainAttachmentType)"
-                      class="docIcon"
-                      aria-hidden="true"
-                    />
-                  </span>
-                  <b>{{ d.refNo }}</b>
-                </div>
-              </td>
-              <td>{{ d.title }}</td>
-              <td>{{ d.companyName }}</td>
-              <td><span class="pill" :class="'pill-'+d.priority">{{ d.priority }}</span></td>
-              <td><span class="pill" :class="'pill-'+d.status">{{ d.status }}</span></td>
-              <td>
-                <div class="actions">
-                  <button class="btn btn-sm" @click="open(d.id)">Open</button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+      <div class="card filtersCard">
+        <div class="filters">
+          <div class="control controlSearch">
+            <label class="controlLabel">Search</label>
+            <input v-model="q" class="input" placeholder="Search ref/title/company..." />
+          </div>
+
+          <div class="control">
+            <label class="controlLabel">Status</label>
+            <select v-model="status" class="input">
+              <option value="">All Status</option>
+              <option>PENDING</option>
+              <option>IN_PROGRESS</option>
+              <option>RETURNED</option>
+              <option>APPROVED</option>
+              <option>REJECTED</option>
+              <option>ISSUED</option>
+            </select>
+          </div>
+
+          <div class="control">
+            <label class="controlLabel">Priority</label>
+            <select v-model="priority" class="input">
+              <option value="">All Priority</option>
+              <option>LOW</option>
+              <option>MEDIUM</option>
+              <option>HIGH</option>
+              <option>URGENT</option>
+            </select>
+          </div>
+
+          <div class="control">
+            <label class="controlLabel">Sort By</label>
+            <select v-model="sortBy" class="input">
+              <option value="recent">Most Recent</option>
+              <option value="ref_asc">Ref No (A-Z)</option>
+              <option value="ref_desc">Ref No (Z-A)</option>
+              <option value="title_asc">Title (A-Z)</option>
+              <option value="priority_desc">Priority (High-Low)</option>
+              <option value="status_asc">Status (Workflow)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="chipsRow">
+          <button class="chip" :class="{ chipActive: viewFilter === 'all' }" @click="viewFilter = 'all'">All</button>
+          <button class="chip" :class="{ chipActive: viewFilter === 'unopened' }" @click="viewFilter = 'unopened'">Unopened</button>
+          <button class="chip" :class="{ chipActive: viewFilter === 'opened' }" @click="viewFilter = 'opened'">Opened</button>
+          <button class="chip" :class="{ chipActive: viewFilter === 'urgent' }" @click="viewFilter = 'urgent'">Urgent</button>
+        </div>
+      </div>
+
+      <div v-if="error" class="errorBox">{{ error }}</div>
+
+      <div class="card inboxCard">
+        <div class="inboxHead">
+          <div class="inboxTitleWrap">
+            <span class="inboxTitle">Inbox Documents</span>
+            <span class="inboxMeta">{{ rows.length }} item{{ rows.length === 1 ? '' : 's' }}</span>
+          </div>
+          <div class="tableHintWrap">
+            <span class="tableHintLabel">Inbox Info</span>
+            <HoverHint :text="`${sortHint}. Unopened means the document has not been opened by you in the current assignment.`" />
+          </div>
+        </div>
+
+        <div v-if="loading" class="emptyState">Loading...</div>
+        <div v-else-if="rows.length===0" class="emptyState">No inbox items.</div>
+
+        <div v-else class="mailList">
+          <article
+            v-for="d in rows"
+            :key="d.id"
+            class="mailRow"
+            :class="{ unopened: !isViewedByMe(d) }"
+            @click="open(d.id)"
+          >
+            <div class="mailLeft">
+              <span class="unreadDot" :class="{ visible: !isViewedByMe(d) }" aria-hidden="true"></span>
+              <span
+                class="docTypeBadge"
+                :class="'docType-' + docTypeClass(d.mainAttachmentType)"
+                :title="attachmentTypeLabel(d.mainAttachmentType)"
+              >
+                <component
+                  :is="attachmentIconComponent(d.mainAttachmentType)"
+                  class="docIcon"
+                  aria-hidden="true"
+                />
+              </span>
+            </div>
+
+            <div class="mailCenter">
+              <div class="mailTopLine">
+                <span class="refNo">{{ d.refNo }}</span>
+                <span class="titleText">{{ d.title }}</span>
+              </div>
+              <div class="mailPreview">
+                <template v-if="d.latestRemarkPreview">{{ d.latestRemarkPreview }}</template>
+                <template v-else>{{ d.companyName || 'No company' }} • {{ d.status }} • Priority {{ d.priority }}</template>
+              </div>
+            </div>
+
+            <div class="mailRight">
+              <span class="pill" :class="'pill-'+d.status">{{ d.status }}</span>
+              <span class="timeText">{{ displayDate(d) }}</span>
+              <button class="btn btn-sm" @click.stop="open(d.id)">Open</button>
+            </div>
+          </article>
+        </div>
       </div>
     </div>
   </AppLayout>
@@ -141,6 +145,7 @@ const q = ref("");
 const status = ref("");
 const priority = ref("");
 const sortBy = ref("recent");
+const viewFilter = ref("all");
 
 const sortHint = computed(() => {
   switch (sortBy.value) {
@@ -233,8 +238,14 @@ function applyFilters(list) {
 
     const matchStatus = !status.value || d.status === status.value;
     const matchPriority = !priority.value || d.priority === priority.value;
+    const matchView = (() => {
+      if (viewFilter.value === "unopened") return !isViewedByMe(d);
+      if (viewFilter.value === "opened") return isViewedByMe(d);
+      if (viewFilter.value === "urgent") return String(d.priority || "").toUpperCase() === "URGENT";
+      return true;
+    })();
 
-    return matchQ && matchStatus && matchPriority;
+    return matchQ && matchStatus && matchPriority && matchView;
   });
 }
 
@@ -242,7 +253,7 @@ function applyNow() {
   rows.value = sortDocuments(applyFilters(allRows.value));
 }
 
-watch([q, status, priority, sortBy], () => {
+watch([q, status, priority, sortBy, viewFilter], () => {
   applyNow();
 });
 
@@ -268,6 +279,24 @@ function open(id) {
   router.push(`/documents/${id}`);
 }
 
+function isViewedByMe(doc) {
+  return !!doc?.viewedByMe;
+}
+
+function displayDate(doc) {
+  const source = doc?.createdAt || doc?.receivedDate;
+  if (!source) return "";
+  const parsed = new Date(source);
+  if (Number.isNaN(parsed.getTime())) return "";
+
+  const now = new Date();
+  const sameDay = parsed.toDateString() === now.toDateString();
+  if (sameDay) {
+    return parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  return parsed.toLocaleDateString();
+}
+
 onMounted(() => {
   window.addEventListener("rms_auth_changed", load);
   load();
@@ -279,6 +308,14 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.inboxCanvas {
+  background:
+    radial-gradient(90% 70% at 0% 0%, rgba(37, 99, 235, 0.08) 0%, rgba(37, 99, 235, 0) 70%),
+    radial-gradient(70% 60% at 100% 0%, rgba(15, 118, 110, 0.08) 0%, rgba(15, 118, 110, 0) 70%);
+  border-radius: 14px;
+  padding: 10px;
+}
+
 .pageHead {
   display:flex;
   align-items:flex-start;
@@ -305,9 +342,38 @@ h2 { margin:0; line-height:1.15; }
 .filtersCard { margin-bottom:14px; }
 .filters {
   display:grid;
-  grid-template-columns: 1.6fr 1fr 1fr 1fr;
+  grid-template-columns: 1.8fr 1fr 1fr 1fr;
   gap:12px;
   align-items:end;
+}
+
+.controlSearch {
+  min-width: 260px;
+}
+
+.chipsRow {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  border: 1px solid #dbe3ef;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.chipActive {
+  background: #dbeafe;
+  color: #1e3a8a;
+  border-color: #bfdbfe;
 }
 .control { display:flex; flex-direction:column; gap:6px; }
 .controlLabel { font-size:12px; font-weight:700; color:#374151; }
@@ -320,14 +386,15 @@ h2 { margin:0; line-height:1.15; }
   box-shadow:0 6px 18px rgba(17, 24, 39, 0.05);
 }
 
-.tableCard {
+.inboxCard {
   padding:0;
   overflow:hidden;
   position:relative;
   z-index:0;
   isolation:isolate;
 }
-.tableHead {
+
+.inboxHead {
   padding:14px 16px;
   border-bottom:1px solid #e5e7eb;
   display:flex;
@@ -335,56 +402,55 @@ h2 { margin:0; line-height:1.15; }
   align-items:center;
   background:linear-gradient(180deg, #ffffff 0%, #f9fafb 100%);
 }
-.tableTitleWrap { display:flex; align-items:baseline; gap:10px; }
-.tableTitle { font-size:14px; font-weight:800; color:#111827; }
-.tableMeta { font-size:12px; color:#6b7280; }
-.tableHint { font-size:12px; color:#9ca3af; }
+.inboxTitleWrap { display:flex; align-items:baseline; gap:10px; }
+.inboxTitle { font-size:14px; font-weight:800; color:#111827; }
+.inboxMeta { font-size:12px; color:#6b7280; }
 .tableHintWrap { display:flex; align-items:center; gap:8px; }
 .tableHintLabel { font-size:12px; color:#6b7280; }
 
-.tableWrap {
-  overflow:auto;
-  position:relative;
-  z-index:0;
+.mailList {
+  display: flex;
+  flex-direction: column;
 }
 
-.table {
-  width:100%;
-  border-collapse:separate;
-  border-spacing:0;
-  min-width:820px;
+.mailRow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #edf2f7;
+  cursor: pointer;
+  background: #ffffff;
+  transition: background-color 0.18s ease, transform 0.12s ease;
 }
-.table th, .table td {
-  padding:14px;
-  border-bottom:1px solid #eef2f7;
-  text-align:left;
-  white-space:nowrap;
-  font-size:14px;
+
+.mailRow:hover {
+  background: #f8fafc;
 }
-.table th {
-  position:sticky;
-  top:0;
-  z-index:1;
-  background:#f9fafb;
-  font-size:12px;
-  letter-spacing:0.05em;
-  text-transform:uppercase;
-  color:#6b7280;
-  font-weight:800;
+
+.mailRow.unopened {
+  background: #f5f9ff;
 }
-.table tbody tr { transition:background-color 0.16s ease; }
-.table tbody tr:hover { background:#f8fafc; }
-.refCell {
-  font-size:16px;
-  font-weight:800;
-  color:#111827;
-  font-variant-numeric:tabular-nums;
+
+.mailLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-.refWrap {
-  display:flex;
-  align-items:center;
-  gap:8px;
+
+.unreadDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: transparent;
 }
+
+.unreadDot.visible {
+  background: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+}
+
 .docTypeBadge {
   display:inline-flex;
   align-items:center;
@@ -412,16 +478,71 @@ h2 { margin:0; line-height:1.15; }
 .docType-TXT { background:#eef2ff; border-color:#c7d2fe; color:#3730a3; }
 .docType-ZIP { background:#fffbeb; border-color:#fde68a; color:#92400e; }
 .docType-FILE { background:#f3f4f6; border-color:#e5e7eb; color:#4b5563; }
-.muted { color:#6b7280; padding:20px; }
+
+.mailCenter {
+  min-width: 0;
+}
+
+.mailTopLine {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.refNo {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f172a;
+  flex-shrink: 0;
+}
+
+.titleText {
+  font-size: 14px;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mailRow.unopened .titleText,
+.mailRow.unopened .refNo {
+  font-weight: 800;
+}
+
+.mailPreview {
+  margin-top: 3px;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mailRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timeText {
+  font-size: 12px;
+  color: #64748b;
+  min-width: 62px;
+  text-align: right;
+}
+
+.emptyState {
+  color:#64748b;
+  padding:20px;
+  text-align:center;
+}
 
 .btn { padding:10px 12px; border-radius:10px; border:1px solid #e5e7eb; background:#fff; cursor:pointer; }
 .btn:hover { background:#f9fafb; }
 .btn-sm { padding:8px 12px; font-size:12px; font-weight:700; }
-
-.actions {
-  display:inline-flex;
-  align-items:center;
-}
 
 .pill {
   display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700;
@@ -449,10 +570,25 @@ h2 { margin:0; line-height:1.15; }
     grid-template-columns:1fr 1fr;
   }
 
-  .tableHead {
+  .inboxHead {
     flex-direction:column;
     align-items:flex-start;
     gap:4px;
+  }
+
+  .mailRow {
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      "left center"
+      "right right";
+    row-gap: 8px;
+  }
+
+  .mailLeft { grid-area: left; }
+  .mailCenter { grid-area: center; }
+  .mailRight {
+    grid-area: right;
+    justify-content: space-between;
   }
 }
 

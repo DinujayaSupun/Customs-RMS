@@ -102,7 +102,7 @@ async function submit() {
     };
     window.sessionStorage.setItem("rms_pending_welcome", JSON.stringify(welcomePayload));
 
-    const redirect = route.query.redirect ? String(route.query.redirect) : "/documents";
+    const redirect = route.query.redirect ? String(route.query.redirect) : "/inbox";
     router.replace(redirect);
   } catch (e) {
     error.value = e?.message || "Login failed.";
