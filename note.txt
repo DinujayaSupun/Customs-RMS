@@ -1,9 +1,19 @@
-.\mvnw clean spring-boot:run
+Customs RMS Quick Notes
+=======================
+
+Run backend (from rms-backend):
 mvn spring-boot:run
 
+Run frontend (from rms-frontend):
+npm run dev
 
-# romved this dependency as security is not needed now
-        <dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-security</artifactId>
-		</dependency>
+Run backend tests:
+mvn test
+
+Run frontend E2E smoke:
+npm run test:e2e
+
+Important:
+- Spring Security is enabled and required.
+- Auth model is JWT-based.
+- Use README.md as the primary setup and workflow reference.

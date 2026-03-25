@@ -9,22 +9,7 @@ Document Records Management System for Sri Lanka Customs.
 
 ## Overview
 
-Customs RMS is an internal workflow system for receiving, routing, reviewing, and completing customs-related documents. It supports document ownership transfer between officers, document visibility rules, file attachments, workflow minutes, audit logs, and admin-managed role permissions.
-
-## Current Feature Set
-
-- JWT-based authentication with Spring Security
-- Role-based access control backed by a permission matrix
-- Document creation, viewing, updating, soft deletion, and search
-- Workflow actions: forward, return, approve, reject, issue, reopen
-- Private/public forwarding visibility rules
-- Remarks/minutes on documents and during workflow actions
-- Attachment upload, download, preview, version history, and deletion
-- Inbox view for received documents and sent-messages tracking
-- Audit log listing and CSV export
-- User profile management, profile picture upload, and password change
-- Admin user management: create, edit, activate, deactivate, reset password, merge duplicates, CSV export
-- DC auto-forward escalation when assigned documents are not opened in time
+Customs RMS is an internal workflow system for receiving, routing, reviewing, and completing customs documents. It supports role-based visibility, document movement between officers, remarks/minutes, attachments, audit logs, and admin permission management.
 
 ## Tech Stack
 
@@ -34,93 +19,75 @@ Customs RMS is an internal workflow system for receiving, routing, reviewing, an
 | Frontend | Vue 3, Vite, Vue Router |
 | Database | MySQL 8 |
 | Auth | JWT |
-| Build Tools | Maven, npm |
+| Build/Test | Maven, npm, Playwright |
 
 ## Project Structure
 
 ```text
 Customs-RMS/
-├── rms-backend/     # Spring Boot REST API
-├── rms-frontend/    # Vue 3 SPA
+├── .github/workflows/         # CI pipeline
+├── rms-backend/               # Spring Boot REST API
+├── rms-frontend/              # Vue 3 SPA + Playwright E2E
 ├── README.md
 └── note.txt
 ```
 
-## Backend Summary
+## Main Features
 
-The backend exposes APIs for:
+- JWT authentication with Spring Security
+- Role + permission matrix authorization
+- Document create/list/details/edit/archive flow
+- Workflow actions: forward, return, approve, reject, issue, reopen
+- Public/private forwarding visibility rules
+- Document remarks/minutes timeline
+- Attachment upload/download/versioning/delete
+- Inbox and sent messages views
+- Audit logs with filtering and CSV export
+- Admin user management: create/edit/activate/deactivate/reset password/merge/export
+- Profile management: personal details, password change, profile picture
+- DC auto-forward scheduler for unattended assignments
 
-- `/api/auth` for login, profile, password change, profile picture, and user lookup
-- `/api/documents` for document CRUD, workflow actions, inbox/sent data, and workload stats
-- `/api/documents/{id}/remarks` for minutes
-- `/api/documents/{id}/movements` for workflow history
-- `/api/documents/{id}/attachments` and `/api/attachments/{id}` for file handling
-- `/api/audit-logs` for audit search and export
-- `/api/admin/users` for admin user management
-- `/api/admin/permissions` for permission matrix and DC auto-forward configuration
+## Backend API Areas
 
-Legacy `/api/reports` document routes are still supported for backward compatibility.
-
-## Frontend Summary
-
-The frontend currently includes these main screens:
-
-- Login
-- Inbox
-- Documents
-- Document Details
-- My Profile
-- Logs
-- Users
-- Permissions
-
-Navigation and route guards are driven by the authenticated user and their permissions.
+- `/api/health`
+- `/api/auth`
+- `/api/documents` (also supports legacy `/api/reports`)
+- `/api/documents/{id}/remarks`
+- `/api/documents/{id}/movements`
+- `/api/documents/{id}/attachments`
+- `/api/attachments/{id}`
+- `/api/audit-logs`
+- `/api/admin/users`
+- `/api/admin/permissions`
 
 ## Prerequisites
 
 - Java 17+
 - Maven 3.9+
-- Node.js 18+
+- Node.js 18+ (Node 20 recommended for CI alignment)
 - MySQL 8
 
-## Backend Setup
+## Local Run
 
-From the repository root:
+### 1) Start backend
 
 ```powershell
 cd rms-backend
-```
-
-Set environment variables:
-
-```powershell
-setx JWT_SECRET "PUT_BASE64_SECRET_HERE"
 setx DB_USERNAME "root"
 setx DB_PASSWORD "your_password"
+setx JWT_SECRET "PUT_BASE64_SECRET_HERE"
 setx APP_UPLOAD_DIR "C:/customs_uploads"
-```
-
-Then open a new terminal and run:
-
-```powershell
 mvn spring-boot:run
 ```
 
-Backend default URL:
-
-```text
-http://localhost:8080
-```
+Backend default URL: `http://localhost:8080`
 
 Notes:
+- DB URL default is `jdbc:mysql://localhost:3306/customs_rms?...` from `application.properties`
+- Upload directory default is `C:/customs_uploads`
+- Local template: `rms-backend/src/main/resources/application-local.example.properties`
 
-- The app uses MySQL database `customs_rms` with `createDatabaseIfNotExist=true`
-- File uploads are stored outside the project using `APP_UPLOAD_DIR`
-- A local profile template is available at [rms-backend/src/main/resources/application-local.example.properties](/C:/Users/Dinujaya/Documents/GitHub/Customs-RMS/rms-backend/src/main/resources/application-local.example.properties)
-
-## Frontend Setup
-
-From the repository root:
+### 2) Start frontend
 
 ```powershell
 cd rms-frontend
@@ -128,18 +95,12 @@ npm install
 npm run dev
 ```
 
-Frontend default URL:
+Frontend default URL: `http://localhost:5173`  
+Frontend calls backend at `http://localhost:8080/api`.
 
-```text
-http://localhost:5173
-```
+## Seeded Roles and Default Users
 
-Current frontend API calls target the backend at `http://localhost:8080/api`.
-
-## Seeded Roles and Users
-
-The backend seeds these roles:
-
+Roles:
 - `ADMIN`
 - `DC`
 - `DDC`
@@ -148,7 +109,7 @@ The backend seeds these roles:
 - `ASC`
 - `PMA`
 
-Default seeded users:
+Default users:
 
 | Username | Password | Role |
 |----------|----------|------|
@@ -159,15 +120,29 @@ Default seeded users:
 | `pma` | `Pass@123` | `PMA` |
 | `admin` | `Admin@123` | `ADMIN` |
 
-## Important Configuration
+## Testing
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `JWT_SECRET` | Base64 JWT signing secret | Fallback exists in local config, but you should override it |
-| `DB_USERNAME` | MySQL username | `root` |
-| `DB_PASSWORD` | MySQL password | `root123` |
-| `APP_UPLOAD_DIR` | External file upload directory | `C:/customs_uploads` |
-| `DC_AUTO_FORWARD_POLL_MS` | Scheduler polling interval for DC auto-forward | `60000` |
+### Backend tests
+
+```powershell
+cd rms-backend
+mvn test
+```
+
+### Frontend E2E smoke tests
+
+```powershell
+cd rms-frontend
+npm run test:e2e
+```
+
+## CI
+
+GitHub Actions workflow is at `.github/workflows/ci.yml` and runs:
+- backend tests
+- frontend Playwright smoke tests
+
+CI uses an ephemeral MySQL service container, so temporary E2E data created during a run does not persist after the job ends.
 
 ## Build for Production
 
@@ -186,11 +161,4 @@ cd rms-frontend
 npm run build
 ```
 
-The frontend build output is written to `rms-frontend/dist/`.
-
-## Known Notes
-
-- Spring Security is enabled in the current codebase
-- Authentication is JWT-based and most routes require a valid token
-- Admin-only features are enforced both in the backend and frontend route guards
-- Document workflow rules are implemented in backend service logic, not only in the UI
+Frontend output: `rms-frontend/dist/`
