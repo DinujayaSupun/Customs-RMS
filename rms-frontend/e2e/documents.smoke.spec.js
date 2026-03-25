@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { createTempUserByAdmin, loginFromUI } from "./helpers/auth";
 
 test("non-admin user can open create page and create a document", async ({ page, request }) => {
-  const user = await createTempUserByAdmin(request, "SC");
+  const user = await createTempUserByAdmin(request, "PMA");
   await loginFromUI(page, user);
   await expect(page).toHaveURL(/\/inbox$/);
 

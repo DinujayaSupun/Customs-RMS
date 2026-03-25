@@ -36,7 +36,13 @@ test("user can change password and login with the new password", async ({ page, 
   await passwordInputs.nth(0).fill(user.password);
   await passwordInputs.nth(1).fill(newPassword);
   await passwordInputs.nth(2).fill(newPassword);
-  await page.getByRole("button", { name: "Update Password" }).click();
+  await Promise.all([
+    page.waitForResponse((response) =>
+      response.url().includes("/api/auth/me/password") && response.status() === 204
+    ),
+    page.getByRole("button", { name: "Update Password" }).click(),
+  ]);
+  await expect(page.getByText("Password changed successfully.")).toBeVisible();
 
   await page.getByRole("button", { name: "Logout" }).click();
   await expect(page).toHaveURL(/\/login$/);
