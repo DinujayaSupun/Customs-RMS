@@ -557,6 +557,7 @@ h2 {
   align-items:center;
   justify-content:center;
   padding:14px;
+  z-index: 2000;
 }
 
 .modal {
