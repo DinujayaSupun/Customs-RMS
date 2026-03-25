@@ -112,14 +112,14 @@ class AdminManagementAndPermissionIntegrationTests {
 
         User admin = createUser("ADMIN", "user-admin-", adminPassword);
         User fallbackDc = createUser("DC", "fallback-dc-", userPassword);
-        User scUser = createUser("SC", "deactivate-sc-", userPassword);
+        User workflowUser = createUser("PMA", "deactivate-pma-", userPassword);
 
         String adminToken = loginAndGetToken(admin.getUsername(), adminPassword);
-        String scToken = loginAndGetToken(scUser.getUsername(), userPassword);
+        String workflowUserToken = loginAndGetToken(workflowUser.getUsername(), userPassword);
 
-        long documentId = createDocument(scUser, scToken, "deactivate-transfer");
+        long documentId = createDocument(workflowUser, workflowUserToken, "deactivate-transfer");
 
-        mockMvc.perform(patch("/api/admin/users/{userId}/deactivate", scUser.getId())
+        mockMvc.perform(patch("/api/admin/users/{userId}/deactivate", workflowUser.getId())
                         .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -128,7 +128,7 @@ class AdminManagementAndPermissionIntegrationTests {
                                 }
                                 """.formatted(fallbackDc.getId())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(scUser.getId()))
+                .andExpect(jsonPath("$.id").value(workflowUser.getId()))
                 .andExpect(jsonPath("$.active").value(false));
 
         mockMvc.perform(post("/api/auth/login")
@@ -138,7 +138,7 @@ class AdminManagementAndPermissionIntegrationTests {
                                   "username": "%s",
                                   "password": "%s"
                                 }
-                                """.formatted(scUser.getUsername(), userPassword)))
+                                """.formatted(workflowUser.getUsername(), userPassword)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Invalid username or password."));
 
@@ -147,7 +147,7 @@ class AdminManagementAndPermissionIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.currentOwnerUserId").value(fallbackDc.getId()));
 
-        mockMvc.perform(patch("/api/admin/users/{userId}/reset-password", scUser.getId())
+        mockMvc.perform(patch("/api/admin/users/{userId}/reset-password", workflowUser.getId())
                         .header("Authorization", bearer(adminToken))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -157,7 +157,7 @@ class AdminManagementAndPermissionIntegrationTests {
                                 """.formatted(resetPassword)))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(patch("/api/admin/users/{userId}/activate", scUser.getId())
+        mockMvc.perform(patch("/api/admin/users/{userId}/activate", workflowUser.getId())
                         .header("Authorization", bearer(adminToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.active").value(true));
@@ -169,9 +169,9 @@ class AdminManagementAndPermissionIntegrationTests {
                                   "username": "%s",
                                   "password": "%s"
                                 }
-                                """.formatted(scUser.getUsername(), resetPassword)))
+                                """.formatted(workflowUser.getUsername(), resetPassword)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.username").value(scUser.getUsername()));
+                .andExpect(jsonPath("$.username").value(workflowUser.getUsername()));
     }
 
     @Test
