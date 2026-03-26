@@ -12,7 +12,7 @@ npm run dev
 Run backend + frontend together (from repo root):
 npm install
 npm run dev:all
-dev:all uses backend Maven Wrapper (`rms-backend\\mvnw.cmd`) so global Maven is not required.
+dev:all uses backend Maven Wrapper (`rms-backend\\mvnw.cmd -f rms-backend/pom.xml`) so global Maven is not required.
 dev:all sets MAVEN_USER_HOME to repo-local `.m2` for stable wrapper behavior.
 dev:all prints URLs at startup:
 - Frontend: http://localhost:5173

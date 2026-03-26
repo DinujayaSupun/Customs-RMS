@@ -110,7 +110,7 @@ npm run dev:all
 ```
 
 This starts:
-- backend via Maven Wrapper (`rms-backend\\mvnw.cmd spring-boot:run`)
+- backend via Maven Wrapper (`rms-backend\\mvnw.cmd -f rms-backend/pom.xml spring-boot:run`)
 - frontend via `npm --prefix rms-frontend run dev`
 
 `dev:all` sets `MAVEN_USER_HOME` to a repo-local `.m2` folder for consistent wrapper behavior.
