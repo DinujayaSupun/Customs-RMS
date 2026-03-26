@@ -10,6 +10,9 @@ npm run dev
 Run backend + frontend together (from repo root):
 npm install
 npm run dev:all
+dev:all prints URLs at startup:
+- Frontend: http://localhost:5173
+- Backend : http://localhost:8080
 
 Run backend tests:
 mvn test
@@ -21,3 +24,5 @@ Important:
 - Spring Security is enabled and required.
 - Auth model is JWT-based.
 - Use README.md as the primary setup and workflow reference.
+- If logs scroll too fast, increase terminal scrollback/history size.
+- Hibernate SQL query spam is disabled by default for cleaner backend logs.

@@ -87,6 +87,7 @@ Notes:
 - DB URL default is `jdbc:mysql://localhost:3306/customs_rms?...` from `application.properties`
 - Upload directory default is `C:/customs_uploads`
 - Local template: `rms-backend/src/main/resources/application-local.example.properties`
+- Hibernate SQL console spam is disabled by default (`spring.jpa.show-sql=false`) to keep terminal logs readable
 
 ### 2) Start frontend
 
@@ -112,7 +113,13 @@ This starts:
 - backend via `mvn -f rms-backend/pom.xml spring-boot:run`
 - frontend via `npm --prefix rms-frontend run dev`
 
+`dev:all` now prints a clear URL block before logs begin:
+- Frontend: `http://localhost:5173`
+- Backend: `http://localhost:8080`
+
 Stop both with `Ctrl + C`.
+
+If logs scroll too fast, increase terminal history/scrollback size (for example in Windows Terminal profile settings).
 
 ## Seeded Roles and Default Users
 
