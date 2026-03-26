@@ -566,7 +566,7 @@ h2 { margin:0; line-height:1.15; }
 
 .inboxCard {
   padding:0;
-  overflow:hidden;
+  overflow:visible;
   position:relative;
   z-index:0;
   isolation:isolate;
@@ -585,6 +585,10 @@ h2 { margin:0; line-height:1.15; }
 .inboxMeta { font-size:12px; color:#6b7280; }
 .tableHintWrap { display:flex; align-items:center; gap:8px; }
 .tableHintLabel { font-size:12px; color:#6b7280; }
+.tableHintWrap :deep(.hintBubble) {
+  left: auto;
+  right: 0;
+}
 
 .mailList {
   display: flex;
