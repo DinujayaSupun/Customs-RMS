@@ -19,6 +19,7 @@ Thumbs.db
 # Node
 node_modules/
 **/node_modules/
+.m2/
 
 # Build output
 dist/

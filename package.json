@@ -4,9 +4,9 @@
   "version": "1.0.0",
   "scripts": {
     "dev:banner": "node -e \"console.log('========================================'); console.log('Customs RMS Dev URLs'); console.log('Frontend: http://localhost:5173'); console.log('Backend : http://localhost:8080'); console.log('========================================');\"",
-    "dev:backend": "mvn -f rms-backend/pom.xml spring-boot:run",
+    "dev:backend": "cmd /c \"set MAVEN_USER_HOME=%CD%\\.m2 && rms-backend\\mvnw.cmd spring-boot:run\"",
     "dev:frontend": "npm --prefix rms-frontend run dev",
-    "dev:all": "npm run dev:banner && concurrently --shell -n backend,frontend -c green,blue \"mvn -f rms-backend/pom.xml spring-boot:run\" \"npm --prefix rms-frontend run dev\""
+    "dev:all": "npm run dev:banner && concurrently --shell -n backend,frontend -c green,blue \"cmd /c \\\"set MAVEN_USER_HOME=%CD%\\.m2 && rms-backend\\mvnw.cmd spring-boot:run\\\"\" \"npm --prefix rms-frontend run dev\""
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

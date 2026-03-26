@@ -110,8 +110,10 @@ npm run dev:all
 ```
 
 This starts:
-- backend via `mvn -f rms-backend/pom.xml spring-boot:run`
+- backend via Maven Wrapper (`rms-backend\\mvnw.cmd spring-boot:run`)
 - frontend via `npm --prefix rms-frontend run dev`
+
+`dev:all` sets `MAVEN_USER_HOME` to a repo-local `.m2` folder for consistent wrapper behavior.
 
 `dev:all` now prints a clear URL block before logs begin:
 - Frontend: `http://localhost:5173`
