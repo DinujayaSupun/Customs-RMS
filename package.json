@@ -1,0 +1,13 @@
+{
+  "name": "customs-rms-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev:backend": "mvn -f rms-backend/pom.xml spring-boot:run",
+    "dev:frontend": "npm --prefix rms-frontend run dev",
+    "dev:all": "concurrently --shell -n backend,frontend -c green,blue \"mvn -f rms-backend/pom.xml spring-boot:run\" \"npm --prefix rms-frontend run dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

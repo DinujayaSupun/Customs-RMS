@@ -7,6 +7,10 @@ mvn spring-boot:run
 Run frontend (from rms-frontend):
 npm run dev
 
+Run backend + frontend together (from repo root):
+npm install
+npm run dev:all
+
 Run backend tests:
 mvn test
 

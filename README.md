@@ -26,6 +26,7 @@ Customs RMS is an internal workflow system for receiving, routing, reviewing, an
 ```text
 Customs-RMS/
 ├── .github/workflows/         # CI pipeline
+├── package.json               # Root dev orchestration scripts
 ├── rms-backend/               # Spring Boot REST API
 ├── rms-frontend/              # Vue 3 SPA + Playwright E2E
 ├── README.md
@@ -97,6 +98,21 @@ npm run dev
 
 Frontend default URL: `http://localhost:5173`  
 Frontend calls backend at `http://localhost:8080/api`.
+
+### 3) Start backend + frontend together (single command)
+
+From repository root:
+
+```powershell
+npm install
+npm run dev:all
+```
+
+This starts:
+- backend via `mvn -f rms-backend/pom.xml spring-boot:run`
+- frontend via `npm --prefix rms-frontend run dev`
+
+Stop both with `Ctrl + C`.
 
 ## Seeded Roles and Default Users
 
