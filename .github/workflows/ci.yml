@@ -81,7 +81,7 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: rms-backend
-        run: mvn -q -DskipTests dependency:go-offline
+        run: mvn -q -DskipTests clean install
 
       - name: Start backend
         working-directory: rms-backend
