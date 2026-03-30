@@ -10,7 +10,6 @@ import PermissionsPage from "../pages/PermissionsPage.vue";
 import ProfilePage from "../pages/ProfilePage.vue";
 import UsersPage from "../pages/UsersPage.vue";
 import LoginPage from "../pages/LoginPage.vue";
-import { clearSession, getAccessToken } from "../auth/currentUser";
 
 const routes = [
   // default
