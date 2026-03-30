@@ -30,7 +30,7 @@ Set environment variables permanently:
 
 ```powershell
 setx JWT_SECRET "PUT_BASE64_SECRET_HERE"
-setx DB_USERNAME "root"
+setx DB_USERNAME "your_db_user"
 setx DB_PASSWORD "your_password"
 setx APP_UPLOAD_DIR "C:/customs_uploads"
 ```

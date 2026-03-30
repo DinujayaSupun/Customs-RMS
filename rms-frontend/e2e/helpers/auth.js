@@ -1,13 +1,21 @@
 import { expect } from "@playwright/test";
 
+function requiredEnv(name) {
+  const value = process.env[name];
+  if (!value || !String(value).trim()) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
 export const adminCreds = {
-  username: process.env.RMS_E2E_ADMIN_USER || "admin",
-  password: process.env.RMS_E2E_ADMIN_PASS || "Admin@123",
+  username: requiredEnv("RMS_E2E_ADMIN_USER"),
+  password: requiredEnv("RMS_E2E_ADMIN_PASS"),
 };
 
 export const dcCreds = {
-  username: process.env.RMS_E2E_DC_USER || "dc",
-  password: process.env.RMS_E2E_DC_PASS || "Pass@123",
+  username: requiredEnv("RMS_E2E_DC_USER"),
+  password: requiredEnv("RMS_E2E_DC_PASS"),
 };
 
 export const apiBaseUrl = process.env.RMS_E2E_API_BASE_URL || "http://localhost:8080/api";
@@ -15,8 +23,8 @@ export const apiBaseUrl = process.env.RMS_E2E_API_BASE_URL || "http://localhost:
 export async function loginFromUI(page, { username, password }) {
   await page.goto("/login");
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
-  await page.getByPlaceholder("dc").fill(username);
-  await page.getByPlaceholder("Pass@123").fill(password);
+  await page.getByLabel("Username").fill(username);
+  await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign In" }).click();
 }
 

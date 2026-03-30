@@ -11,10 +11,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.util.StringUtils;
 
 import java.util.EnumSet;
 import java.util.Set;
@@ -23,6 +25,19 @@ import java.util.Set;
 public class DataSeeder {
 
     private static final Logger log = LoggerFactory.getLogger(DataSeeder.class);
+    private final boolean seedDefaultUsersEnabled;
+    private final String seedDefaultUsersPassword;
+    private final String seedAdminPassword;
+
+    public DataSeeder(
+        @Value("${app.seed.default-users.enabled:false}") boolean seedDefaultUsersEnabled,
+        @Value("${app.seed.default-users.password:}") String seedDefaultUsersPassword,
+        @Value("${app.seed.default-users.admin-password:}") String seedAdminPassword
+    ) {
+        this.seedDefaultUsersEnabled = seedDefaultUsersEnabled;
+        this.seedDefaultUsersPassword = seedDefaultUsersPassword;
+        this.seedAdminPassword = seedAdminPassword;
+    }
 
     @Bean
     CommandLineRunner seedUsers(RoleRepository roleRepository,
@@ -42,16 +57,35 @@ public class DataSeeder {
             Role admin = ensureRole(roleRepository, "ADMIN");
 
             seedPermissions(rolePermissionRepository, dc, ddc, sddc, sc, asc, pma, admin);
-
-            String defaultPasswordHash = passwordEncoder.encode("Pass@123");
-
-            ensureUser(userRepository, "dc", "Director Customs", defaultPasswordHash, dc);
-            ensureUser(userRepository, "ddc", "Deputy Director Customs", defaultPasswordHash, ddc);
-            ensureUser(userRepository, "sc", "Senior Superintendent", defaultPasswordHash, sc);
-            ensureUser(userRepository, "asc", "Assistant Superintendent", defaultPasswordHash, asc);
-            ensureUser(userRepository, "pma", "Personal Management Assistant", defaultPasswordHash, pma);
-            ensureUser(userRepository, "admin", "System Administrator", passwordEncoder.encode("Admin@123"), admin);
+            seedDefaultUsersIfEnabled(userRepository, passwordEncoder, dc, ddc, sc, asc, pma, admin);
         };
+    }
+
+    private void seedDefaultUsersIfEnabled(UserRepository userRepository,
+                                           PasswordEncoder passwordEncoder,
+                                           Role dc,
+                                           Role ddc,
+                                           Role sc,
+                                           Role asc,
+                                           Role pma,
+                                           Role admin) {
+        if (!seedDefaultUsersEnabled) {
+            log.info("Skipping default user seeding: app.seed.default-users.enabled=false");
+            return;
+        }
+
+        if (!StringUtils.hasText(seedDefaultUsersPassword) || !StringUtils.hasText(seedAdminPassword)) {
+            log.warn("Default user seeding enabled but passwords are missing. Set app.seed.default-users.password and app.seed.default-users.admin-password.");
+            return;
+        }
+
+        String defaultPasswordHash = passwordEncoder.encode(seedDefaultUsersPassword);
+        ensureUser(userRepository, "dc", "Director Customs", defaultPasswordHash, dc);
+        ensureUser(userRepository, "ddc", "Deputy Director Customs", defaultPasswordHash, ddc);
+        ensureUser(userRepository, "sc", "Senior Superintendent", defaultPasswordHash, sc);
+        ensureUser(userRepository, "asc", "Assistant Superintendent", defaultPasswordHash, asc);
+        ensureUser(userRepository, "pma", "Personal Management Assistant", defaultPasswordHash, pma);
+        ensureUser(userRepository, "admin", "System Administrator", passwordEncoder.encode(seedAdminPassword), admin);
     }
 
     private void seedPermissions(RolePermissionRepository rolePermissionRepository,

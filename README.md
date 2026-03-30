@@ -74,10 +74,11 @@ Customs-RMS/
 
 ```powershell
 cd rms-backend
-setx DB_USERNAME "root"
+setx DB_USERNAME "your_db_user"
 setx DB_PASSWORD "your_password"
 setx JWT_SECRET "PUT_BASE64_SECRET_HERE"
 setx APP_UPLOAD_DIR "C:/customs_uploads"
+setx SEED_DEFAULT_USERS_ENABLED "false"
 mvn spring-boot:run
 ```
 
@@ -85,6 +86,7 @@ Backend default URL: `http://localhost:8080`
 
 Notes:
 - DB URL default is `jdbc:mysql://localhost:3306/customs_rms?...` from `application.properties`
+- `DB_USERNAME`, `DB_PASSWORD`, and `JWT_SECRET` are required (no fallback defaults in committed config)
 - Upload directory default is `C:/customs_uploads`
 - Local template: `rms-backend/src/main/resources/application-local.example.properties`
 - Hibernate SQL console spam is disabled by default (`spring.jpa.show-sql=false`) to keep terminal logs readable
@@ -123,7 +125,7 @@ Stop both with `Ctrl + C`.
 
 If logs scroll too fast, increase terminal history/scrollback size (for example in Windows Terminal profile settings).
 
-## Seeded Roles and Default Users
+## Seeded Roles and Optional Default Users
 
 Roles:
 - `ADMIN`
@@ -134,16 +136,23 @@ Roles:
 - `ASC`
 - `PMA`
 
-Default users:
+Default users are now optional and disabled by default.
 
-| Username | Password | Role |
-|----------|----------|------|
-| `dc` | `Pass@123` | `DC` |
-| `ddc` | `Pass@123` | `DDC` |
-| `sc` | `Pass@123` | `SC` |
-| `asc` | `Pass@123` | `ASC` |
-| `pma` | `Pass@123` | `PMA` |
-| `admin` | `Admin@123` | `ADMIN` |
+To enable non-production default user seeding, set:
+
+```powershell
+setx SEED_DEFAULT_USERS_ENABLED "true"
+setx SEED_DEFAULT_USERS_PASSWORD "strong_non_prod_password"
+setx SEED_DEFAULT_USERS_ADMIN_PASSWORD "strong_non_prod_admin_password"
+```
+
+When enabled, the following usernames are created if missing:
+- `dc`
+- `ddc`
+- `sc`
+- `asc`
+- `pma`
+- `admin`
 
 ## Testing
 
@@ -158,6 +167,10 @@ mvn test
 
 ```powershell
 cd rms-frontend
+setx RMS_E2E_ADMIN_USER "admin"
+setx RMS_E2E_ADMIN_PASS "your_admin_password"
+setx RMS_E2E_DC_USER "dc"
+setx RMS_E2E_DC_PASS "your_dc_password"
 npm run test:e2e
 ```
 

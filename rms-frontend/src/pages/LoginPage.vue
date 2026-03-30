@@ -37,12 +37,12 @@
           <form class="form" @submit.prevent="submit">
             <div class="row">
               <label>Username</label>
-              <input id="username" v-model="username" class="input" placeholder="dc" autocomplete="username" />
+              <input id="username" v-model="username" class="input" placeholder="Enter username" autocomplete="username" />
             </div>
 
             <div class="row">
               <label>Password</label>
-              <input id="password" v-model="password" class="input" type="password" placeholder="Pass@123" autocomplete="current-password" />
+              <input id="password" v-model="password" class="input" type="password" placeholder="Enter password" autocomplete="current-password" />
             </div>
 
             <button class="btn btn-primary" type="submit" :disabled="busy">
@@ -51,11 +51,6 @@
           </form>
 
           <div v-if="error" class="err">{{ error }}</div>
-
-          <div class="hintRow">
-            <span class="hintLabel">Need demo credentials?</span>
-            <HoverHint text="Users dc, ddc, sddc, sc, asc, pma use Pass@123. Admin user uses Admin@123." />
-          </div>
         </div>
       </section>
     </div>
@@ -65,15 +60,14 @@
 <script setup>
 import { ref } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import HoverHint from "../components/HoverHint.vue";
 import { login } from "../api/auth.api";
 import { setSession } from "../auth/currentUser";
 
 const router = useRouter();
 const route = useRoute();
 
-const username = ref("dc");
-const password = ref("Pass@123");
+const username = ref("");
+const password = ref("");
 const busy = ref(false);
 const error = ref("");
 
@@ -338,18 +332,6 @@ label {
   padding: 10px 12px;
   border-radius: 8px;
   font-size: 13px;
-}
-
-.hintRow {
-  margin-top: 14px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.hintLabel {
-  font-size: 12px;
-  color: #64748b;
 }
 
 @media (max-width: 900px) {
