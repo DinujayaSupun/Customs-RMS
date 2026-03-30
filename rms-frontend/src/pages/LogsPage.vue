@@ -59,6 +59,16 @@
 
       <div class="tableWrap">
         <table class="table">
+          <colgroup>
+            <col class="col-time" />
+            <col class="col-action" />
+            <col class="col-entity" />
+            <col class="col-entity-id" />
+            <col class="col-doc-ref" />
+            <col class="col-user" />
+            <col class="col-message" />
+            <col class="col-view" />
+          </colgroup>
           <thead>
             <tr>
               <th>Performed At</th>
@@ -81,13 +91,15 @@
             <tr v-else v-for="row in rows" :key="row.id">
               <td class="mono">{{ formatDateTime(row.performedAt) }}</td>
               <td><span class="pill">{{ row.actionType || "-" }}</span></td>
-              <td>{{ row.entityType || "-" }}</td>
+              <td :title="row.entityType || '-'"><span class="truncateText">{{ row.entityType || "-" }}</span></td>
               <td>{{ row.entityId ?? "-" }}</td>
-              <td>{{ row.documentRef || "-" }}</td>
-              <td>{{ row.performedByUserName || `User ID ${row.performedByUserId}` }}</td>
+              <td :title="row.documentRef || '-'"><span class="truncateText">{{ row.documentRef || "-" }}</span></td>
+              <td :title="row.performedByUserName || `User ID ${row.performedByUserId}`">
+                <span class="truncateText">{{ row.performedByUserName || `User ID ${row.performedByUserId}` }}</span>
+              </td>
               <td>
-                <div>{{ row.message || "-" }}</div>
-                <div v-if="row.detailsJson" class="small mono">{{ row.detailsJson }}</div>
+                <div class="truncateText" :title="row.message || '-'">{{ row.message || "-" }}</div>
+                <div v-if="row.detailsJson" class="small mono truncateText" :title="row.detailsJson">{{ row.detailsJson }}</div>
               </td>
               <td>
                 <button class="btn btn-sm" @click="openView(row)">View</button>
@@ -482,6 +494,21 @@ onMounted(() => {
 .table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
+}
+.col-time { width: 165px; }
+.col-action { width: 120px; }
+.col-entity { width: 110px; }
+.col-entity-id { width: 90px; }
+.col-doc-ref { width: 150px; }
+.col-user { width: 180px; }
+.col-message { width: 280px; }
+.col-view { width: 80px; }
+.truncateText {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .table th,

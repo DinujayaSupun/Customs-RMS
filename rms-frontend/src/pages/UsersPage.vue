@@ -54,6 +54,15 @@
 
         <div class="tableWrap">
           <table class="table">
+            <colgroup>
+              <col class="col-name" />
+              <col class="col-username" />
+              <col class="col-role" />
+              <col class="col-contact" />
+              <col class="col-department" />
+              <col class="col-status" />
+              <col class="col-actions" />
+            </colgroup>
             <thead>
               <tr>
                 <th>Name</th>
@@ -73,14 +82,16 @@
                 <td colspan="7" class="muted">No users found.</td>
               </tr>
               <tr v-else v-for="u in rows" :key="u.id">
-                <td>{{ u.fullName }} • {{ u.role }} • ID {{ u.id }}</td>
-                <td>{{ u.username }}</td>
+                <td :title="`${u.fullName} • ${u.role} • ID ${u.id}`">
+                  <span class="truncateText">{{ u.fullName }} • {{ u.role }} • ID {{ u.id }}</span>
+                </td>
+                <td :title="u.username"><span class="truncateText">{{ u.username }}</span></td>
                 <td>{{ u.role }}</td>
                 <td>
-                  <div>{{ u.email || "-" }}</div>
-                  <div class="small">{{ u.phone || "-" }}</div>
+                  <div class="truncateText" :title="u.email || '-'">{{ u.email || "-" }}</div>
+                  <div class="small truncateText" :title="u.phone || '-'">{{ u.phone || "-" }}</div>
                 </td>
-                <td>{{ u.department || "-" }}</td>
+                <td :title="u.department || '-'"><span class="truncateText">{{ u.department || "-" }}</span></td>
                 <td>
                   <span class="pill" :class="u.active ? 'pill-active' : 'pill-inactive'">{{ u.active ? 'ACTIVE' : 'INACTIVE' }}</span>
                 </td>
@@ -490,11 +501,24 @@ h2 {
 
 .createTitle { font-size:13px; font-weight:800; margin-bottom:8px; color:#1e3a8a; }
 .createGrid { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:8px; }
-.table { width:100%; border-collapse:collapse; }
+.table { width:100%; border-collapse:collapse; table-layout:fixed; }
+.col-name { width: 240px; }
+.col-username { width: 140px; }
+.col-role { width: 90px; }
+.col-contact { width: 220px; }
+.col-department { width: 150px; }
+.col-status { width: 100px; }
+.col-actions { width: 260px; }
 .tableWrap {
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   overflow: auto;
+}
+.truncateText {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .table th, .table td { padding:10px; border-bottom:1px solid #e5e7eb; text-align:left; }

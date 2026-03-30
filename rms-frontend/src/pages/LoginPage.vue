@@ -37,7 +37,7 @@
           <form class="form" @submit.prevent="submit">
             <div class="row">
               <label>Username</label>
-              <input v-model="username" class="input" placeholder="dc" autocomplete="username" />
+              <input id="username" v-model="username" class="input" placeholder="dc" autocomplete="username" />
             </div>
 
             <div class="row">

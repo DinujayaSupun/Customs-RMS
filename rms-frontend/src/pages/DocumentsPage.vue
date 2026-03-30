@@ -68,6 +68,15 @@
 
       <div class="tableWrap">
         <table class="table">
+          <colgroup>
+            <col class="col-ref" />
+            <col class="col-title" />
+            <col class="col-company" />
+            <col class="col-priority" />
+            <col class="col-status" />
+            <col class="col-owner" />
+            <col class="col-actions" />
+          </colgroup>
           <thead>
             <tr>
               <th>Ref No</th>
@@ -76,7 +85,7 @@
               <th>Priority</th>
               <th>Status</th>
               <th>Owner</th>
-              <th style="width:180px;">Actions</th>
+              <th>Actions</th>
             </tr>
           </thead>
 
@@ -91,7 +100,7 @@
 
             <tr v-else v-for="d in rows" :key="d.id">
               <td class="refCell">
-                <div class="refWrap">
+                <div class="refWrap" :title="d.refNo">
                   <span
                     class="docTypeBadge"
                     :class="'docType-' + docTypeClass(d.mainAttachmentType)"
@@ -103,16 +112,18 @@
                       aria-hidden="true"
                     />
                   </span>
-                  <b>{{ d.refNo }}</b>
+                  <b class="truncateText">{{ d.refNo }}</b>
                 </div>
               </td>
-              <td>{{ d.title }}</td>
-              <td>{{ d.companyName }}</td>
+              <td :title="d.title"><span class="truncateText">{{ d.title }}</span></td>
+              <td :title="d.companyName"><span class="truncateText">{{ d.companyName }}</span></td>
 
               <td><span class="pill" :class="'pill-'+d.priority">{{ d.priority }}</span></td>
               <td><span class="pill" :class="'pill-'+d.status">{{ displayStatusLabel(d.status) }}</span></td>
 
-              <td class="ownerCell">{{ ownerLabel(d.currentOwnerUserId) }}</td>
+              <td class="ownerCell" :title="ownerLabel(d.currentOwnerUserId)">
+                <span class="truncateText">{{ ownerLabel(d.currentOwnerUserId) }}</span>
+              </td>
 
               <td>
                 <div class="actions">
@@ -604,7 +615,20 @@ h2 { margin:0; line-height:1.15; }
   width:100%;
   border-collapse:separate;
   border-spacing:0;
-  min-width:960px;
+  table-layout:fixed;
+}
+.col-ref { width:170px; }
+.col-title { width:240px; }
+.col-company { width:220px; }
+.col-priority { width:120px; }
+.col-status { width:140px; }
+.col-owner { width:180px; }
+.col-actions { width:130px; }
+.truncateText {
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
 }
 .table th,
 .table td {
@@ -639,6 +663,7 @@ h2 { margin:0; line-height:1.15; }
   display:flex;
   align-items:center;
   gap:8px;
+  overflow:hidden;
 }
 .docTypeBadge {
   display:inline-flex;
@@ -680,9 +705,14 @@ h2 { margin:0; line-height:1.15; }
 .btn-sm { padding:8px 12px; font-size:12px; font-weight:700; }
 
 .actions {
-  display:inline-flex;
+  display:flex;
   align-items:center;
+  justify-content:flex-end;
   gap:8px;
+}
+
+@media (max-width: 1200px) {
+  .table { min-width:980px; }
 }
 
 .iconBtn {

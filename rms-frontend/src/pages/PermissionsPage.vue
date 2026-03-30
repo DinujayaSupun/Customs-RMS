@@ -76,9 +76,9 @@
                 <td :colspan="roles.length + 1" class="muted">No permissions found.</td>
               </tr>
               <tr v-else v-for="permission in permissions" :key="permission">
-                <td>
+                <td :title="permission">
                   <div class="permTitle">{{ friendlyLabel(permission) }}</div>
-                  <div class="permCode">{{ permission }}</div>
+                  <div class="permCode truncateText">{{ permission }}</div>
                 </td>
                 <td v-for="roleName in roles" :key="`${permission}-${roleName}`" class="checkCell">
                   <label class="toggleWrap">
@@ -394,9 +394,23 @@ h2 {
   border:1px solid #e2e8f0;
   border-radius:12px;
 }
-.table { width:100%; border-collapse:collapse; min-width:900px; }
+.table { width:100%; border-collapse:collapse; min-width:900px; table-layout:fixed; }
 .table th, .table td { border-bottom:1px solid #e5e7eb; padding:12px 10px; text-align:left; vertical-align:top; }
 .table th { font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#6b7280; background:#f9fafb; }
+.table th:first-child,
+.table td:first-child {
+  width: 280px;
+}
+.table th:not(:first-child),
+.table td.checkCell {
+  width: 90px;
+}
+.truncateText {
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
 
 .permTitle { font-weight:700; color:#111827; }
 .permCode { font-size:11px; color:#6b7280; margin-top:4px; }
