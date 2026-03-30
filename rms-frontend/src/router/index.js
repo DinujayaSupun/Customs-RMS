@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
-import { getCurrentUser, hasPermission, isAuthenticated } from "../auth/currentUser";
-
+import { getCurrentUser, hasPermission, clearSession, getAccessToken } from "../auth/currentUser";
+import { getMe } from "../api/auth.api";
 import DocumentsPage from "../pages/DocumentsPage.vue";
 import DocumentDetailsPage from "../pages/DocumentDetailsPage.vue";
 import CreateDocumentPage from "../pages/CreateDocumentPage.vue";
@@ -10,6 +10,7 @@ import PermissionsPage from "../pages/PermissionsPage.vue";
 import ProfilePage from "../pages/ProfilePage.vue";
 import UsersPage from "../pages/UsersPage.vue";
 import LoginPage from "../pages/LoginPage.vue";
+import { clearSession, getAccessToken } from "../auth/currentUser";
 
 const routes = [
   // default
@@ -42,14 +43,29 @@ const router = createRouter({
   routes,
 });
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   if (to.meta?.public) return true;
-  if (isAuthenticated()) return true;
 
-  return {
-    path: "/login",
-    query: { redirect: to.fullPath },
-  };
+  const token = getAccessToken();
+
+  if (!token) {
+    return {
+      path: "/login",
+      query: { redirect: to.fullPath },
+    };
+  }
+
+  try {
+    await getMe();
+    return true;
+  } catch (error) {
+    clearSession();
+
+    return {
+      path: "/login",
+      query: { redirect: to.fullPath },
+    };
+  }
 });
 
 router.beforeEach((to) => {
