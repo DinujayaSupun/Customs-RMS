@@ -42,7 +42,7 @@
 
             <div class="row">
               <label>Password</label>
-              <input v-model="password" class="input" type="password" placeholder="Pass@123" autocomplete="current-password" />
+              <input id="password" v-model="password" class="input" type="password" placeholder="Pass@123" autocomplete="current-password" />
             </div>
 
             <button class="btn btn-primary" type="submit" :disabled="busy">
