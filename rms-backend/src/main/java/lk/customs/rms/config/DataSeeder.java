@@ -10,16 +10,19 @@ import lk.customs.rms.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.EnumSet;
 import java.util.Set;
 
 @Configuration
+@Profile({"local", "dev"})
+@ConditionalOnProperty(name = "app.seed.enabled", havingValue = "true")
 public class DataSeeder {
 
     private static final Logger log = LoggerFactory.getLogger(DataSeeder.class);
@@ -28,11 +31,8 @@ public class DataSeeder {
     CommandLineRunner seedUsers(RoleRepository roleRepository,
                                 RolePermissionRepository rolePermissionRepository,
                                 UserRepository userRepository,
-                                PasswordEncoder passwordEncoder,
-                                JdbcTemplate jdbcTemplate) {
+                                PasswordEncoder passwordEncoder) {
         return args -> {
-            migrateDocumentDateColumns(jdbcTemplate);
-
             Role dc = ensureRole(roleRepository, "DC");
             Role ddc = ensureRole(roleRepository, "DDC");
             Role sddc = ensureRole(roleRepository, "SDDC");
@@ -145,49 +145,6 @@ public class DataSeeder {
         rolePermission.setPermissionName(permission.name());
         rolePermission.setEnabled(enabled);
         rolePermissionRepository.save(rolePermission);
-    }
-
-    private void migrateDocumentDateColumns(JdbcTemplate jdbcTemplate) {
-        // Migration is best-effort only. Seeder must never fail app startup.
-        if (!tableExists(jdbcTemplate, "documents")) {
-            log.info("Skipping date-column migration: 'documents' table does not exist yet.");
-            return;
-        }
-
-        migrateColumnToDateTime(jdbcTemplate, "documents", "completed_at");
-        migrateColumnToDateTime(jdbcTemplate, "documents", "issued_at");
-    }
-
-    private void migrateColumnToDateTime(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
-        if (!columnExists(jdbcTemplate, tableName, columnName)) {
-            log.info("Skipping migration for {}.{}: column not found.", tableName, columnName);
-            return;
-        }
-
-        try {
-            jdbcTemplate.execute("ALTER TABLE " + tableName + " MODIFY COLUMN " + columnName + " DATETIME(6) NULL");
-        } catch (Exception ex) {
-            log.warn("Skipping migration for {}.{} due to: {}", tableName, columnName, ex.getMessage());
-        }
-    }
-
-    private boolean tableExists(JdbcTemplate jdbcTemplate, String tableName) {
-        Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
-                Integer.class,
-                tableName
-        );
-        return count != null && count > 0;
-    }
-
-    private boolean columnExists(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
-        Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
-                Integer.class,
-                tableName,
-                columnName
-        );
-        return count != null && count > 0;
     }
 
     private Role ensureRole(RoleRepository roleRepository, String roleName) {
