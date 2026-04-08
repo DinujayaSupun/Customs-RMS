@@ -1,5 +1,13 @@
 import { expect, test } from "@playwright/test";
-import { adminCreds, apiBaseUrl, apiLogin, createDocumentByApi, createTempUserByAdmin, loginFromUI } from "./helpers/auth";
+import {
+  adminCreds,
+  apiBaseUrl,
+  apiLogin,
+  createDocumentByApi,
+  createTempUserByAdmin,
+  forwardDocumentByApi,
+  loginFromUI,
+} from "./helpers/auth";
 
 test("admin can access users and permissions pages", async ({ page }) => {
   await loginFromUI(page, adminCreds);
@@ -26,8 +34,10 @@ test("non-admin route guard redirects /users to /documents", async ({ page, requ
 });
 
 test("permission update enables Approve button live for affected role", async ({ browser, request }) => {
+  const creator = await createTempUserByAdmin(request, "DC");
   const user = await createTempUserByAdmin(request, "SC");
-  const document = await createDocumentByApi(request, user);
+  const document = await createDocumentByApi(request, creator);
+  await forwardDocumentByApi(request, creator, document.id, user.id, "Forward for live permission update test");
 
   const userContext = await browser.newContext();
   const userPage = await userContext.newPage();
