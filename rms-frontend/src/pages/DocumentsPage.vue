@@ -504,9 +504,21 @@ async function load() {
   loading.value = true;
   error.value = "";
   try {
-    const data = await listDocuments();
-    const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
-    all.value = list;
+    const pageSize = 200;
+    const maxPages = 25;
+    const allDocs = [];
+
+    for (let page = 0; page < maxPages; page += 1) {
+      const data = await listDocuments({ page, size: pageSize, search: q.value || undefined });
+      const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
+      allDocs.push(...list);
+
+      if (Array.isArray(data) || list.length < pageSize || page >= ((data?.totalPages ?? 1) - 1)) {
+        break;
+      }
+    }
+
+    all.value = allDocs;
     applyNow();
   } catch (e) {
     error.value = e?.message ?? "Failed to load documents";

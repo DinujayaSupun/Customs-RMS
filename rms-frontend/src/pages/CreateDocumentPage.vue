@@ -124,7 +124,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
@@ -135,6 +135,10 @@ const router = useRouter();
 
 const user = ref(getCurrentUser());
 const canCreate = computed(() => hasPermission(user.value, "CREATE_DOCUMENT"));
+
+function refreshCurrentUser() {
+  user.value = getCurrentUser();
+}
 
 const refNo = ref("");
 const title = ref("");
@@ -174,7 +178,14 @@ function openLocalPreview() {
 }
 
 onUnmounted(() => {
+  window.removeEventListener("rms_auth_changed", refreshCurrentUser);
+  window.removeEventListener("rms_permissions_updated", refreshCurrentUser);
   if (localUrl.value) URL.revokeObjectURL(localUrl.value);
+});
+
+onMounted(() => {
+  window.addEventListener("rms_auth_changed", refreshCurrentUser);
+  window.addEventListener("rms_permissions_updated", refreshCurrentUser);
 });
 
 function validate() {

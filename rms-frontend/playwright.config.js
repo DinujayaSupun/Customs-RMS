@@ -5,6 +5,7 @@ const baseURL = process.env.RMS_E2E_BASE_URL || `http://localhost:${port}`;
 
 export default defineConfig({
   testDir: "./e2e",
+  globalTeardown: "./e2e/global-teardown.js",
   timeout: 45_000,
   expect: {
     timeout: 10_000,

@@ -11,6 +11,10 @@ Thumbs.db
 .env
 .env.*
 
+# Local Spring overrides (secrets stay local)
+rms-backend/src/main/resources/application-local.properties
+rms-backend/src/main/resources/application-*.local.properties
+
 # VS Code workspace files
 .vscode/*
 !.vscode/extensions.json

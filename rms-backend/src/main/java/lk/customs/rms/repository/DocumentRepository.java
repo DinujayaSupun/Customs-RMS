@@ -34,6 +34,8 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
            select d from Document d
            where d.deleted = false
              and (
+                    d.currentOwnerUserId = :userId
+              or
                  (upper(coalesce(d.visibility, 'PUBLIC')) = 'PUBLIC' and :canViewPublic = true)
               or (
                     upper(coalesce(d.visibility, 'PUBLIC')) = 'PRIVATE'
@@ -80,6 +82,8 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
               or lower(d.companyName) like lower(concat('%', :search, '%'))
              )
              and (
+            d.currentOwnerUserId = :userId
+          or
                  (upper(coalesce(d.visibility, 'PUBLIC')) = 'PUBLIC' and :canViewPublic = true)
               or (
                     upper(coalesce(d.visibility, 'PUBLIC')) = 'PRIVATE'

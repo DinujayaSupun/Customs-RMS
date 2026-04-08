@@ -31,12 +31,13 @@ function getMsg(e) {
 const BASE = "/documents";
 
 // ===================== DOCUMENTS =====================
-export async function listDocuments() {
+export async function listDocuments({ page = 0, size = 100, search } = {}) {
   try {
     return (await http.get(BASE, {
       params: {
-        page: 0,
-        size: 100,
+        page,
+        size,
+        ...(search ? { search } : {}),
       },
     })).data;
   } catch (e) {

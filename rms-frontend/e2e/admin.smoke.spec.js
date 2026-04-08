@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { adminCreds, createTempUserByAdmin, loginFromUI } from "./helpers/auth";
+import { adminCreds, apiBaseUrl, apiLogin, createDocumentByApi, createTempUserByAdmin, loginFromUI } from "./helpers/auth";
 
 test("admin can access users and permissions pages", async ({ page }) => {
   await loginFromUI(page, adminCreds);
@@ -23,4 +23,71 @@ test("non-admin route guard redirects /users to /documents", async ({ page, requ
 
   await expect(page).toHaveURL(/\/documents$/);
   await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible();
+});
+
+test("permission update enables Approve button live for affected role", async ({ browser, request }) => {
+  const user = await createTempUserByAdmin(request, "SC");
+  const document = await createDocumentByApi(request, user);
+
+  const userContext = await browser.newContext();
+  const userPage = await userContext.newPage();
+
+  let originalEntries = null;
+
+  try {
+    await loginFromUI(userPage, user);
+    await expect(userPage).toHaveURL(/\/inbox$/);
+    await userPage.goto(`/documents/${document.id}`);
+    await expect(userPage).toHaveURL(new RegExp(`/documents/${document.id}$`));
+
+    const approveBtn = userPage.getByRole("button", { name: "Approve" });
+    await expect(approveBtn).toBeDisabled();
+
+    const adminLogin = await apiLogin(request, adminCreds);
+    expect(adminLogin.status).toBe(200);
+    const adminToken = adminLogin.body?.accessToken;
+    expect(adminToken).toBeTruthy();
+
+    const matrixResp = await request.get(`${apiBaseUrl}/admin/permissions`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(matrixResp.status()).toBe(200);
+    const matrixData = await matrixResp.json();
+
+    originalEntries = Array.isArray(matrixData?.entries) ? matrixData.entries : [];
+    const updatedEntries = originalEntries.map((entry) => {
+      if (String(entry?.roleName || "").toUpperCase() === "SC" && String(entry?.permission || "").toUpperCase() === "APPROVE_DOCUMENT") {
+        return { ...entry, enabled: true };
+      }
+      return entry;
+    });
+
+    const updateResp = await request.put(`${apiBaseUrl}/admin/permissions`, {
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        "Content-Type": "application/json",
+      },
+      data: { entries: updatedEntries },
+    });
+    expect(updateResp.status()).toBe(200);
+
+    await expect(approveBtn).toBeEnabled({ timeout: 12000 });
+  } finally {
+    try {
+      const adminLogin = await apiLogin(request, adminCreds);
+      if (adminLogin.status === 200 && Array.isArray(originalEntries)) {
+        await request.put(`${apiBaseUrl}/admin/permissions`, {
+          headers: {
+            Authorization: `Bearer ${adminLogin.body?.accessToken}`,
+            "Content-Type": "application/json",
+          },
+          data: { entries: originalEntries },
+        });
+      }
+    } catch {
+      // Ignore restore failures in test cleanup path.
+    }
+
+    await userContext.close();
+  }
 });

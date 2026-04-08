@@ -11,6 +11,8 @@ export const dcCreds = {
 };
 
 export const apiBaseUrl = process.env.RMS_E2E_API_BASE_URL || "http://localhost:8080/api";
+export const E2E_USER_PREFIX = "e2e-auto-";
+export const E2E_DOC_PREFIX = "E2E-AUTO-";
 
 export async function loginFromUI(page, { username, password }) {
   await page.goto("/login");
@@ -42,7 +44,7 @@ export async function createTempUserByAdmin(request, role = "SC") {
   }
 
   const unique = `${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
-  const username = `e2e-${role.toLowerCase()}-${unique}`;
+  const username = `${E2E_USER_PREFIX}${role.toLowerCase()}-${unique}`;
   const password = `E2e${unique}9`;
 
   const createResponse = await request.post(`${apiBaseUrl}/admin/users`, {
@@ -51,7 +53,7 @@ export async function createTempUserByAdmin(request, role = "SC") {
       "Content-Type": "application/json",
     },
     data: {
-      fullName: `E2E ${role} ${unique}`,
+      fullName: `E2E AUTO ${role} ${unique}`,
       username,
       email: `${username}@example.com`,
       phone: "0771234567",
@@ -84,8 +86,8 @@ export async function createDocumentByApi(request, creds, overrides = {}) {
 
   const unique = `${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
   const payload = {
-    refNo: overrides.refNo || `E2E-DOC-${unique}`,
-    title: overrides.title || `E2E Document ${unique}`,
+    refNo: overrides.refNo || `${E2E_DOC_PREFIX}DOC-${unique}`,
+    title: overrides.title || `${E2E_DOC_PREFIX}Document ${unique}`,
     receivedDate: overrides.receivedDate || "2026-03-25",
     companyName: overrides.companyName || "E2E Company",
     priority: overrides.priority || "HIGH",
@@ -106,7 +108,7 @@ export async function createDocumentByApi(request, creds, overrides = {}) {
   return await response.json();
 }
 
-export async function forwardDocumentByApi(request, creds, documentId, toUserId, remarkText = "Forwarded by E2E") {
+export async function forwardDocumentByApi(request, creds, documentId, toUserId, remarkText = "Forwarded by E2E AUTO") {
   const loginResult = await apiLogin(request, creds);
   if (loginResult.status !== 200) {
     throw new Error(`API login failed for document forward. Status: ${loginResult.status}`);

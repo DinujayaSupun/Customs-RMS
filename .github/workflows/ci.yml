@@ -9,6 +9,10 @@ on:
 jobs:
   backend-tests:
     runs-on: ubuntu-latest
+    env:
+      DB_USERNAME: root
+      DB_PASSWORD: root123
+      JWT_SECRET: cW1TNXUxM0xURnRjWnJmU3BsaDl6Z3VweFY4QnQ4V3hNQ3I1S1V0VXA9
     services:
       mysql:
         image: mysql:8.0
@@ -39,14 +43,15 @@ jobs:
           cache: maven
 
       - name: Run backend tests
-        env:
-          DB_USERNAME: root
-          DB_PASSWORD: root123
         run: mvn test
 
   frontend-e2e-smoke:
     runs-on: ubuntu-latest
     needs: backend-tests
+    env:
+      DB_USERNAME: root
+      DB_PASSWORD: root123
+      JWT_SECRET: cW1TNXUxM0xURnRjWnJmU3BsaDl6Z3VweFY4QnQ4V3hNQ3I1S1V0VXA9
     services:
       mysql:
         image: mysql:8.0
@@ -85,9 +90,6 @@ jobs:
 
       - name: Start backend
         working-directory: rms-backend
-        env:
-          DB_USERNAME: root
-          DB_PASSWORD: root123
         run: |
           mvn spring-boot:run > backend-ci.log 2>&1 &
           echo $! > backend.pid

@@ -21,12 +21,14 @@ import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.service.AuditLogService;
 import lk.customs.rms.service.DocumentService;
 import lk.customs.rms.service.PermissionService;
+import lk.customs.rms.service.RealtimeNotificationService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
+import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
@@ -81,6 +83,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
     private final PermissionService permissionService;
+    private final RealtimeNotificationService realtimeNotificationService;
 
     public DocumentServiceImpl(
             DocumentRepository documentRepository,
@@ -90,7 +93,8 @@ public class DocumentServiceImpl implements DocumentService {
             DocumentUserViewRepository documentUserViewRepository,
             UserRepository userRepository,
             AuditLogService auditLogService,
-            PermissionService permissionService
+                PermissionService permissionService,
+                RealtimeNotificationService realtimeNotificationService
     ) {
         this.documentRepository = documentRepository;
         this.attachmentRepository = attachmentRepository;
@@ -100,6 +104,7 @@ public class DocumentServiceImpl implements DocumentService {
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
         this.permissionService = permissionService;
+        this.realtimeNotificationService = realtimeNotificationService;
     }
 
     // ==========================================================
@@ -473,6 +478,7 @@ public class DocumentServiceImpl implements DocumentService {
     // ==========================================================
 
     @Override
+    @Transactional
     public void forward(Long documentId, ForwardReturnRequest request, Long actorUserId) {
         permissionService.ensurePermission(actorUserId, AppPermission.FORWARD_DOCUMENT, "You are not allowed to forward documents.");
 
@@ -521,6 +527,13 @@ public class DocumentServiceImpl implements DocumentService {
         movementRepository.save(mv);
 
         auditLogService.logMovement(documentId, actionBy.getId(), "FORWARD", "Forwarded to userId=" + to + " with visibility=" + forwardVisibility);
+        realtimeNotificationService.notifyDocumentForwarded(
+            to,
+            d.getId(),
+            d.getRefNo(),
+            actionBy.getId(),
+            actionBy.getFullName()
+        );
     }
 
     @Override
@@ -786,6 +799,10 @@ public class DocumentServiceImpl implements DocumentService {
 
     private void ensureCanViewDocument(Document doc, Long actorUserId) {
         if (permissionService.hasPermission(actorUserId, AppPermission.VIEW_ALL_DOCUMENTS)) {
+            return;
+        }
+
+        if (actorUserId.equals(doc.getCurrentOwnerUserId())) {
             return;
         }
 

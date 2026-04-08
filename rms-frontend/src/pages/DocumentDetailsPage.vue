@@ -110,10 +110,10 @@
             <div class="k">Created At</div>
             <div class="v mono">{{ formatDateTime(doc.createdAt) }}</div>
 
-            <div class="k">Completed At</div>
+            <div class="k">Approved At</div>
             <div class="v mono">{{ completedAtDisplay }}</div>
 
-            <div class="k">Issued At</div>
+            <div class="k">Completed (Done) At</div>
             <div class="v mono">{{ issuedAtDisplay }}</div>
           </div>
 
@@ -515,7 +515,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { File, FileText, FileSpreadsheet, Image, Archive } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
@@ -548,6 +548,10 @@ const toast = useToast();
 const documentId = Number(route.params.id);
 
 const currentUser = ref(getCurrentUser());
+function refreshCurrentUser() {
+  currentUser.value = getCurrentUser();
+}
+
 const users = ref([]);
 
 const doc = ref(null);
@@ -913,12 +917,19 @@ async function reloadAll() {
 }
 
 onMounted(async () => {
+  window.addEventListener("rms_auth_changed", refreshCurrentUser);
+  window.addEventListener("rms_permissions_updated", refreshCurrentUser);
   try {
     users.value = await listUsers();
   } catch {
     users.value = [];
   }
   await reloadAll();
+});
+
+onUnmounted(() => {
+  window.removeEventListener("rms_auth_changed", refreshCurrentUser);
+  window.removeEventListener("rms_permissions_updated", refreshCurrentUser);
 });
 
 function goBack() {
@@ -1123,7 +1134,7 @@ async function doIssue() {
     await issueDocument(documentId, { remarkText: remarkOrNull() });
     remarkDraft.value = "";
     await reloadAll();
-    successMessage.value = "Document issued successfully.";
+    successMessage.value = "Document completed successfully.";
     toast.success(successMessage.value);
   } catch (e) {
     error.value = e?.message || "Issue failed.";

@@ -184,7 +184,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import AppLayout from "../layouts/AppLayout.vue";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { getDocument } from "../api/documents.api";
@@ -192,6 +192,10 @@ import { buildAuditLogsExportUrl, listAuditLogs } from "../api/logs.api";
 
 const currentUser = ref(getCurrentUser());
 const canViewLogs = computed(() => hasPermission(currentUser.value, "VIEW_LOGS"));
+
+function refreshCurrentUser() {
+  currentUser.value = getCurrentUser();
+}
 
 const loading = ref(false);
 const error = ref("");
@@ -429,7 +433,14 @@ function downloadCsv() {
 }
 
 onMounted(() => {
+  window.addEventListener("rms_auth_changed", refreshCurrentUser);
+  window.addEventListener("rms_permissions_updated", refreshCurrentUser);
   load();
+});
+
+onUnmounted(() => {
+  window.removeEventListener("rms_auth_changed", refreshCurrentUser);
+  window.removeEventListener("rms_permissions_updated", refreshCurrentUser);
 });
 </script>
 

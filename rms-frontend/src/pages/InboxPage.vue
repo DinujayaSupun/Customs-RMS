@@ -198,7 +198,11 @@ const priority = ref("");
 const sortBy = ref("recent");
 const viewFilter = ref("all");
 const inboxMode = ref("received");
-const canViewSentMessages = computed(() => hasPermission(getCurrentUser(), "VIEW_SENT_MESSAGES"));
+const authTick = ref(0);
+const canViewSentMessages = computed(() => {
+  authTick.value;
+  return hasPermission(getCurrentUser(), "VIEW_SENT_MESSAGES");
+});
 
 const sortHint = computed(() => {
   switch (sortBy.value) {
@@ -329,9 +333,25 @@ async function loadReceived() {
   error.value = "";
   try {
     const user = getCurrentUser();
-    const data = await listDocuments();
-    const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
-    allRows.value = list.filter((d) => d.currentOwnerUserId === user.id && d.status !== "ISSUED");
+    const pageSize = 200;
+    const maxPages = 20;
+    const all = [];
+    for (let page = 0; page < maxPages; page += 1) {
+      const data = await listDocuments({ page, size: pageSize });
+      const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
+      all.push(...list);
+
+      if (Array.isArray(data) || list.length < pageSize || page >= ((data?.totalPages ?? 1) - 1)) {
+        break;
+      }
+    }
+
+    const myUserId = Number(user?.id);
+    allRows.value = all.filter((d) => {
+      const ownerId = Number(d?.currentOwnerUserId ?? d?.currentOwnerId ?? d?.ownerUserId);
+      const status = String(d?.status || "").toUpperCase();
+      return Number.isFinite(myUserId) && ownerId === myUserId && status !== "ISSUED";
+    });
     applyNow();
   } catch (e) {
     error.value = e?.message ?? "Failed to load inbox";
@@ -353,9 +373,21 @@ async function loadSent() {
       return;
     }
 
-    const data = await listSentMessages({ page: 0, size: 300 });
-    const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
-    allRows.value = list;
+    const pageSize = 300;
+    const maxPages = 20;
+    const all = [];
+
+    for (let page = 0; page < maxPages; page += 1) {
+      const data = await listSentMessages({ page, size: pageSize });
+      const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
+      all.push(...list);
+
+      if (Array.isArray(data) || list.length < pageSize || page >= ((data?.totalPages ?? 1) - 1)) {
+        break;
+      }
+    }
+
+    allRows.value = all;
     applyNow();
   } catch (e) {
     error.value = e?.message ?? "Failed to load sent messages";
@@ -441,13 +473,30 @@ function displaySentDate(doc) {
   });
 }
 
+function onRealtimeDocumentReceived() {
+  if (inboxMode.value !== "received") {
+    inboxMode.value = "received";
+    viewFilter.value = "all";
+  }
+  load();
+}
+
+function onAuthChanged() {
+  authTick.value += 1;
+  load();
+}
+
 onMounted(() => {
-  window.addEventListener("rms_auth_changed", load);
+  window.addEventListener("rms_auth_changed", onAuthChanged);
+  window.addEventListener("rms_permissions_updated", onAuthChanged);
+  window.addEventListener("rms_document_received", onRealtimeDocumentReceived);
   load();
 });
 
 onUnmounted(() => {
-  window.removeEventListener("rms_auth_changed", load);
+  window.removeEventListener("rms_auth_changed", onAuthChanged);
+  window.removeEventListener("rms_permissions_updated", onAuthChanged);
+  window.removeEventListener("rms_document_received", onRealtimeDocumentReceived);
 });
 </script>
 

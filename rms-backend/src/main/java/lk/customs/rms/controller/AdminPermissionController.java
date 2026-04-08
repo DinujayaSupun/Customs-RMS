@@ -9,6 +9,7 @@ import lk.customs.rms.security.CurrentUserService;
 import lk.customs.rms.service.AuditLogService;
 import lk.customs.rms.service.DcAutoForwardConfigService;
 import lk.customs.rms.service.PermissionService;
+import lk.customs.rms.service.RealtimeNotificationService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -23,15 +24,18 @@ public class AdminPermissionController {
     private final DcAutoForwardConfigService dcAutoForwardConfigService;
     private final CurrentUserService currentUserService;
     private final AuditLogService auditLogService;
+    private final RealtimeNotificationService realtimeNotificationService;
 
     public AdminPermissionController(PermissionService permissionService,
                                      DcAutoForwardConfigService dcAutoForwardConfigService,
                                      CurrentUserService currentUserService,
-                                     AuditLogService auditLogService) {
+                                     AuditLogService auditLogService,
+                                     RealtimeNotificationService realtimeNotificationService) {
         this.permissionService = permissionService;
         this.dcAutoForwardConfigService = dcAutoForwardConfigService;
         this.currentUserService = currentUserService;
         this.auditLogService = auditLogService;
+        this.realtimeNotificationService = realtimeNotificationService;
     }
 
     @GetMapping
@@ -53,6 +57,8 @@ public class AdminPermissionController {
                 "Admin updated permission matrix",
                 "{\"entryCount\":" + request.getEntries().size() + "}"
         );
+
+        realtimeNotificationService.notifyPermissionsUpdated();
 
         return updated;
     }
