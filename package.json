@@ -1,0 +1,15 @@
+{
+  "name": "customs-rms-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev:free-ports": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$ports=@(8080,5173); foreach($p in $ports){ $conns=Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue; foreach($c in $conns){ try { Stop-Process -Id $c.OwningProcess -Force -ErrorAction Stop } catch {} } }; Write-Host 'Cleared dev ports if occupied.'\"",
+    "dev:banner": "node -e \"console.log('========================================'); console.log('Customs RMS Dev URLs'); console.log('Frontend: http://localhost:5173'); console.log('Backend : http://localhost:8080'); console.log('========================================');\"",
+    "dev:backend": "set SPRING_PROFILES_ACTIVE=dev&& set APP_SEED_ENABLED=true&& set MAVEN_USER_HOME=%CD%\\.m2&& rms-backend\\mvnw.cmd -f rms-backend/pom.xml spring-boot:run",
+    "dev:frontend": "npm --prefix rms-frontend run dev",
+    "dev:all": "npm run dev:free-ports && npm run dev:banner && concurrently -n backend,frontend -c green,blue \"npm:dev:backend\" \"npm:dev:frontend\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

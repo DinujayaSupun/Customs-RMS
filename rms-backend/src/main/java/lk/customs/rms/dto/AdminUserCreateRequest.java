@@ -19,6 +19,7 @@ public class AdminUserCreateRequest {
     @Email
     private String email;
 
+    @Pattern(regexp = "^(?=(?:\\D*\\d){10,}).*$", message = "Phone must contain at least 10 digits.")
     private String phone;
 
     private String department;

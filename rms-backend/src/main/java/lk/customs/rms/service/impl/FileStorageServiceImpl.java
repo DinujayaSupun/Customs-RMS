@@ -71,6 +71,57 @@ public class FileStorageServiceImpl implements FileStorageService {
     }
 
     @Override
+    public String saveProfilePicture(Long userId, MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BadRequestException("Profile picture file is required.");
+        }
+
+        String originalName = StringUtils.cleanPath(file.getOriginalFilename() == null ? "profile" : file.getOriginalFilename());
+        if (originalName.contains("..")) {
+            throw new BadRequestException("Invalid file name: " + originalName);
+        }
+
+        Path profileFolder = uploadRoot.resolve("profiles").resolve("user-" + userId).normalize();
+        try {
+            Files.createDirectories(profileFolder);
+        } catch (IOException e) {
+            throw new BadRequestException("Could not create folder for user profile picture: " + userId);
+        }
+
+        String ext = "";
+        int dot = originalName.lastIndexOf('.');
+        if (dot >= 0 && dot < originalName.length() - 1) {
+            ext = originalName.substring(dot);
+        }
+
+        String storedName = "profile_" + UUID.randomUUID() + ext;
+        Path destination = profileFolder.resolve(storedName).normalize();
+
+        try {
+            Files.copy(file.getInputStream(), destination, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            throw new BadRequestException("Failed to store profile picture.");
+        }
+
+        return uploadRoot.relativize(destination).toString().replace("\\", "/");
+    }
+
+    @Override
+    public void deleteIfExists(String relativePath) {
+        if (relativePath == null || relativePath.isBlank()) return;
+
+        try {
+            Path file = uploadRoot.resolve(relativePath).normalize();
+            if (!file.startsWith(uploadRoot)) {
+                throw new BadRequestException("Invalid file path.");
+            }
+            Files.deleteIfExists(file);
+        } catch (IOException e) {
+            throw new BadRequestException("Could not delete stored file.");
+        }
+    }
+
+    @Override
     public Resource loadAsResource(String relativePath) {
         try {
             Path file = uploadRoot.resolve(relativePath).normalize();

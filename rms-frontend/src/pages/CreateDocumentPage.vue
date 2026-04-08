@@ -5,7 +5,7 @@
     </div>
 
     <div v-if="!canCreate" class="errorBox">
-      You are not allowed to create documents. Switch to <b>DC</b> or <b>PMA</b>.
+      You are not allowed to create documents with your current role permissions.
     </div>
 
     <div v-else class="card">
@@ -53,8 +53,8 @@
           <div class="filePickRow">
             <button class="btn btn-sm" type="button" @click="openFilePicker">Choose File</button>
             <span class="filePickLabel">{{ selectedFile ? selectedFile.name : "No file chosen" }}</span>
+            <HoverHint text="PDF and image files can be previewed here. DOC/DOCX and other file types cannot be previewed in-browser." />
           </div>
-          <div class="hint">PDF/images will preview here. DOC/DOCX will show as a link.</div>
 
           <div v-if="selectedFile" class="previewBox">
             <div class="previewHead">
@@ -124,16 +124,21 @@
 </template>
 
 <script setup>
-import { ref, computed, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import AppLayout from "../layouts/AppLayout.vue";
+import HoverHint from "../components/HoverHint.vue";
 import { createDocument, uploadAttachment } from "../api/documents.api";
-import { getCurrentUser } from "../auth/currentUser";
+import { getCurrentUser, hasPermission } from "../auth/currentUser";
 
 const router = useRouter();
 
 const user = ref(getCurrentUser());
-const canCreate = computed(() => ["DC", "PMA"].includes(user.value?.role));
+const canCreate = computed(() => hasPermission(user.value, "CREATE_DOCUMENT"));
+
+function refreshCurrentUser() {
+  user.value = getCurrentUser();
+}
 
 const refNo = ref("");
 const title = ref("");
@@ -173,7 +178,14 @@ function openLocalPreview() {
 }
 
 onUnmounted(() => {
+  window.removeEventListener("rms_auth_changed", refreshCurrentUser);
+  window.removeEventListener("rms_permissions_updated", refreshCurrentUser);
   if (localUrl.value) URL.revokeObjectURL(localUrl.value);
+});
+
+onMounted(() => {
+  window.addEventListener("rms_auth_changed", refreshCurrentUser);
+  window.addEventListener("rms_permissions_updated", refreshCurrentUser);
 });
 
 function validate() {
@@ -244,8 +256,6 @@ h2 { margin:0; }
   overflow:hidden;
   text-overflow:ellipsis;
 }
-.hint { margin-top:6px; font-size:12px; color:#6b7280; }
-
 .input {
   height:38px; border-radius:8px; border:1px solid #e5e7eb; padding:0 10px; outline:none; width:100%;
 }

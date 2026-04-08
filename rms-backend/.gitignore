@@ -1,6 +1,5 @@
 HELP.md
 target/
-.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
 
@@ -32,22 +31,9 @@ build/
 ### VS Code ###
 .vscode/
 
-# Node
-node_modules/
-dist/
-
-# Vue
-.vite/
-
 # Spring Boot
 target/
 *.log
 
 # Environment files
-.env
-.env.*
 src/main/resources/application-local.properties
-
-# OS
-.DS_Store
-Thumbs.db

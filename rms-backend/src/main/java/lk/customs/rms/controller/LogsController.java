@@ -2,11 +2,14 @@ package lk.customs.rms.controller;
 
 import lk.customs.rms.dto.AuditLogResponse;
 import lk.customs.rms.entity.AuditLog;
+import lk.customs.rms.enums.AppPermission;
+import lk.customs.rms.exception.BadRequestException;
 import lk.customs.rms.repository.AuditLogRepository;
 import lk.customs.rms.repository.DocumentAttachmentRepository;
 import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.UserRepository;
-import org.springframework.security.access.prepost.PreAuthorize;
+import lk.customs.rms.security.CurrentUserService;
+import lk.customs.rms.service.PermissionService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -19,6 +22,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.Authentication;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
@@ -29,22 +33,27 @@ import java.util.List;
 @RestController
 @CrossOrigin
 @RequestMapping("/api/audit-logs")
-@PreAuthorize("hasAnyRole('ADMIN','DC')")
 public class LogsController {
 
     private final AuditLogRepository auditLogRepository;
     private final UserRepository userRepository;
     private final DocumentRepository documentRepository;
     private final DocumentAttachmentRepository documentAttachmentRepository;
+    private final CurrentUserService currentUserService;
+    private final PermissionService permissionService;
 
     public LogsController(AuditLogRepository auditLogRepository,
                           UserRepository userRepository,
                           DocumentRepository documentRepository,
-                          DocumentAttachmentRepository documentAttachmentRepository) {
+                          DocumentAttachmentRepository documentAttachmentRepository,
+                          CurrentUserService currentUserService,
+                          PermissionService permissionService) {
         this.auditLogRepository = auditLogRepository;
         this.userRepository = userRepository;
         this.documentRepository = documentRepository;
         this.documentAttachmentRepository = documentAttachmentRepository;
+        this.currentUserService = currentUserService;
+        this.permissionService = permissionService;
     }
 
     @GetMapping
@@ -55,8 +64,10 @@ public class LogsController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(required = false) String actionType,
             @RequestParam(required = false) Long performedByUserId,
-            @RequestParam(required = false) String document
+            @RequestParam(required = false) String document,
+            Authentication authentication
     ) {
+        ensureCanViewLogs(authentication);
         Pageable pageable = PageRequest.of(page, size);
 
         LocalDateTime fromAt = fromDate == null ? null : fromDate.atStartOfDay();
@@ -82,8 +93,10 @@ public class LogsController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(required = false) String actionType,
             @RequestParam(required = false) Long performedByUserId,
-            @RequestParam(required = false) String document
+            @RequestParam(required = false) String document,
+            Authentication authentication
     ) {
+        ensureCanViewLogs(authentication);
         LocalDateTime fromAt = fromDate == null ? null : fromDate.atStartOfDay();
         LocalDateTime toAtExclusive = toDate == null ? null : toDate.plusDays(1).atStartOfDay();
 
@@ -123,6 +136,13 @@ public class LogsController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
                 .contentType(MediaType.parseMediaType("text/csv"))
                 .body(bytes);
+    }
+
+    private void ensureCanViewLogs(Authentication authentication) {
+        Long actorUserId = currentUserService.requireUserId(authentication);
+        if (!permissionService.hasPermission(actorUserId, AppPermission.VIEW_LOGS)) {
+            throw new BadRequestException("You are not allowed to view logs.");
+        }
     }
 
     private AuditLogResponse toResponse(AuditLog log) {

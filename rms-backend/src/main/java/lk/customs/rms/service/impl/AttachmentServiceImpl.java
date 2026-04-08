@@ -4,6 +4,8 @@ import lk.customs.rms.dto.AttachmentDownloadResult;
 import lk.customs.rms.dto.AttachmentResponse;
 import lk.customs.rms.entity.Document;
 import lk.customs.rms.entity.DocumentAttachment;
+import lk.customs.rms.entity.User;
+import lk.customs.rms.enums.AppPermission;
 import lk.customs.rms.exception.BadRequestException;
 import lk.customs.rms.exception.ResourceNotFoundException;
 import lk.customs.rms.repository.DocumentAttachmentRepository;
@@ -12,6 +14,7 @@ import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.service.AttachmentService;
 import lk.customs.rms.service.AuditLogService;
 import lk.customs.rms.service.FileStorageService;
+import lk.customs.rms.service.PermissionService;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,19 +31,22 @@ public class AttachmentServiceImpl implements AttachmentService {
     private final UserRepository userRepository;
     private final FileStorageService fileStorageService;
     private final AuditLogService auditLogService;
+        private final PermissionService permissionService;
 
     public AttachmentServiceImpl(
             DocumentRepository documentRepository,
             DocumentAttachmentRepository attachmentRepository,
             UserRepository userRepository,
             FileStorageService fileStorageService,
-            AuditLogService auditLogService
+                        AuditLogService auditLogService,
+                        PermissionService permissionService
     ) {
         this.documentRepository = documentRepository;
         this.attachmentRepository = attachmentRepository;
         this.userRepository = userRepository;
         this.fileStorageService = fileStorageService;
         this.auditLogService = auditLogService;
+                this.permissionService = permissionService;
     }
 
     @Override
@@ -49,8 +55,12 @@ public class AttachmentServiceImpl implements AttachmentService {
         Document doc = documentRepository.findByIdAndDeletedFalse(documentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
 
-        var uploader = userRepository.findById(actorUserId)
-                .orElseThrow(() -> new BadRequestException("User not found: " + actorUserId));
+                User uploader = requireUser(actorUserId);
+                permissionService.ensurePermission(actorUserId, AppPermission.UPLOAD_ATTACHMENT, "You are not allowed to upload attachments.");
+
+                if (!doc.getCurrentOwnerUserId().equals(actorUserId)) {
+                        throw new BadRequestException("Only the current owner can upload attachments.");
+                }
 
         int nextVersion = attachmentRepository.findMaxVersionNo(documentId) + 1;
 
@@ -84,9 +94,11 @@ public class AttachmentServiceImpl implements AttachmentService {
     }
 
     @Override
-    public List<AttachmentResponse> listForDocument(Long documentId) {
-        documentRepository.findByIdAndDeletedFalse(documentId)
+        public List<AttachmentResponse> listForDocument(Long documentId, Long actorUserId) {
+                Document doc = documentRepository.findByIdAndDeletedFalse(documentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
+
+                ensureHistoryAccess(doc, actorUserId);
 
         return attachmentRepository.findByDocumentIdAndDeletedFalseOrderByVersionNoAsc(documentId)
                 .stream()
@@ -99,13 +111,17 @@ public class AttachmentServiceImpl implements AttachmentService {
         DocumentAttachment a = attachmentRepository.findByIdAndDeletedFalse(attachmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Attachment not found: " + attachmentId));
 
+                Document doc = documentRepository.findByIdAndDeletedFalse(a.getDocumentId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + a.getDocumentId()));
+
+                ensureHistoryAccess(doc, actorUserId);
+
         Resource resource = fileStorageService.loadAsResource(a.getFilePath());
 
         // ✅ Optional audit log for download (only if caller gives performedByUserId)
         if (actorUserId != null) {
             // validate user exists
-            userRepository.findById(actorUserId)
-                    .orElseThrow(() -> new BadRequestException("User not found: " + actorUserId));
+                    requireUser(actorUserId);
 
             auditLogService.logAttachment(a.getDocumentId(), a.getId(), actorUserId, "DOWNLOAD",
                     "Attachment downloaded: v" + a.getVersionNo() + " " + a.getFileName());
@@ -120,8 +136,15 @@ public class AttachmentServiceImpl implements AttachmentService {
         DocumentAttachment a = attachmentRepository.findByIdAndDeletedFalse(attachmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Attachment not found: " + attachmentId));
 
-        userRepository.findById(actorUserId)
-                .orElseThrow(() -> new BadRequestException("User not found: " + actorUserId));
+                Document doc = documentRepository.findByIdAndDeletedFalse(a.getDocumentId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + a.getDocumentId()));
+
+                requireUser(actorUserId);
+                permissionService.ensurePermission(actorUserId, AppPermission.DELETE_ATTACHMENT, "You are not allowed to delete attachments.");
+
+                if (!doc.getCurrentOwnerUserId().equals(actorUserId)) {
+                    throw new BadRequestException("Only the current owner can delete attachments.");
+                }
 
         a.setDeleted(true);
         a.setDeletedAt(LocalDateTime.now());
@@ -162,4 +185,21 @@ public class AttachmentServiceImpl implements AttachmentService {
                 .deletedByName(deletedByName)
                 .build();
     }
+
+        private User requireUser(Long userId) {
+                return userRepository.findById(userId)
+                                .orElseThrow(() -> new BadRequestException("User not found: " + userId));
+        }
+
+        private void ensureHistoryAccess(Document doc, Long actorUserId) {
+                if (doc.getCurrentOwnerUserId().equals(actorUserId)) {
+                        return;
+                }
+
+                if (permissionService.hasPermission(actorUserId, AppPermission.VIEW_ALL_HISTORY)) {
+                        return;
+                }
+
+                throw new BadRequestException("You are not allowed to view file history for this document.");
+        }
 }

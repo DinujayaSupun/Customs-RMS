@@ -20,7 +20,7 @@
             <td>{{ r.title }}</td>
             <td>{{ r.companyName }}</td>
             <td>{{ r.priority }}</td>
-            <td>{{ r.status }}</td>
+            <td>{{ displayStatusLabel(r.status) }}</td>
           </tr>
         </tbody>
       </table>
@@ -33,6 +33,10 @@ import { ref, onMounted } from "vue";
 import AppLayout from "../layouts/AppLayout.vue";
 
 const reports = ref([]);
+
+function displayStatusLabel(statusValue) {
+  return String(statusValue || "").toUpperCase() === "ISSUED" ? "DONE" : statusValue;
+}
 
 onMounted(async () => {
   const res = await fetch("/api/reports");

@@ -8,7 +8,7 @@
       <button class="btn" :disabled="loading" @click="downloadCsv">Export CSV</button>
     </div>
 
-    <div v-if="!canViewLogs" class="errorBox">Only DC and ADMIN can access logs.</div>
+    <div v-if="!canViewLogs" class="errorBox">You do not have permission to access logs.</div>
 
     <div v-else class="card">
       <div class="filters">
@@ -59,6 +59,16 @@
 
       <div class="tableWrap">
         <table class="table">
+          <colgroup>
+            <col class="col-time" />
+            <col class="col-action" />
+            <col class="col-entity" />
+            <col class="col-entity-id" />
+            <col class="col-doc-ref" />
+            <col class="col-user" />
+            <col class="col-message" />
+            <col class="col-view" />
+          </colgroup>
           <thead>
             <tr>
               <th>Performed At</th>
@@ -81,13 +91,15 @@
             <tr v-else v-for="row in rows" :key="row.id">
               <td class="mono">{{ formatDateTime(row.performedAt) }}</td>
               <td><span class="pill">{{ row.actionType || "-" }}</span></td>
-              <td>{{ row.entityType || "-" }}</td>
+              <td :title="row.entityType || '-'"><span class="truncateText">{{ row.entityType || "-" }}</span></td>
               <td>{{ row.entityId ?? "-" }}</td>
-              <td>{{ row.documentRef || "-" }}</td>
-              <td>{{ row.performedByUserName || `User ID ${row.performedByUserId}` }}</td>
+              <td :title="row.documentRef || '-'"><span class="truncateText">{{ row.documentRef || "-" }}</span></td>
+              <td :title="row.performedByUserName || `User ID ${row.performedByUserId}`">
+                <span class="truncateText">{{ row.performedByUserName || `User ID ${row.performedByUserId}` }}</span>
+              </td>
               <td>
-                <div>{{ row.message || "-" }}</div>
-                <div v-if="row.detailsJson" class="small mono">{{ row.detailsJson }}</div>
+                <div class="truncateText" :title="row.message || '-'">{{ row.message || "-" }}</div>
+                <div v-if="row.detailsJson" class="small mono truncateText" :title="row.detailsJson">{{ row.detailsJson }}</div>
               </td>
               <td>
                 <button class="btn btn-sm" @click="openView(row)">View</button>
@@ -154,7 +166,7 @@
               <div class="kv"><span class="k">Ref No</span><span class="v">{{ selectedDocument.refNo || "-" }}</span></div>
               <div class="kv"><span class="k">Title</span><span class="v">{{ selectedDocument.title || "-" }}</span></div>
               <div class="kv"><span class="k">Company</span><span class="v">{{ selectedDocument.companyName || "-" }}</span></div>
-              <div class="kv"><span class="k">Status</span><span class="v">{{ selectedDocument.status || "-" }}</span></div>
+              <div class="kv"><span class="k">Status</span><span class="v">{{ displayStatusLabel(selectedDocument.status) || "-" }}</span></div>
               <div class="kv"><span class="k">Priority</span><span class="v">{{ selectedDocument.priority || "-" }}</span></div>
               <div class="kv"><span class="k">Received Date</span><span class="v">{{ selectedDocument.receivedDate || "-" }}</span></div>
               <div class="kv"><span class="k">Created By ID</span><span class="v">{{ selectedDocument.createdByUserId ?? "-" }}</span></div>
@@ -172,14 +184,18 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import AppLayout from "../layouts/AppLayout.vue";
-import { getCurrentUser } from "../auth/currentUser";
+import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { getDocument } from "../api/documents.api";
 import { buildAuditLogsExportUrl, listAuditLogs } from "../api/logs.api";
 
 const currentUser = ref(getCurrentUser());
-const canViewLogs = computed(() => ["ADMIN", "DC"].includes(currentUser.value?.role));
+const canViewLogs = computed(() => hasPermission(currentUser.value, "VIEW_LOGS"));
+
+function refreshCurrentUser() {
+  currentUser.value = getCurrentUser();
+}
 
 const loading = ref(false);
 const error = ref("");
@@ -351,6 +367,10 @@ function formatDateTime(value) {
   return dt.toLocaleString();
 }
 
+function displayStatusLabel(statusValue) {
+  return String(statusValue || "").toUpperCase() === "ISSUED" ? "DONE" : statusValue;
+}
+
 function resolveDocumentId(row) {
   const entityType = String(row?.entityType || "").toUpperCase();
   if ((entityType === "DOCUMENT" || entityType === "MOVEMENT") && row?.entityId) {
@@ -413,7 +433,14 @@ function downloadCsv() {
 }
 
 onMounted(() => {
+  window.addEventListener("rms_auth_changed", refreshCurrentUser);
+  window.addEventListener("rms_permissions_updated", refreshCurrentUser);
   load();
+});
+
+onUnmounted(() => {
+  window.removeEventListener("rms_auth_changed", refreshCurrentUser);
+  window.removeEventListener("rms_permissions_updated", refreshCurrentUser);
 });
 </script>
 
@@ -478,6 +505,21 @@ onMounted(() => {
 .table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
+}
+.col-time { width: 165px; }
+.col-action { width: 120px; }
+.col-entity { width: 110px; }
+.col-entity-id { width: 90px; }
+.col-doc-ref { width: 150px; }
+.col-user { width: 180px; }
+.col-message { width: 280px; }
+.col-view { width: 80px; }
+.truncateText {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .table th,

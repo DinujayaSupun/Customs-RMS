@@ -2,7 +2,7 @@ import axios from "axios";
 import { getAccessToken } from "../auth/currentUser";
 
 const http = axios.create({
-  baseURL: "http://localhost:8080/api",
+  baseURL: `${import.meta.env.VITE_API_BASE_URL || "http://localhost:8080"}/api`,
   timeout: 20000,
 });
 
@@ -38,6 +38,42 @@ export async function getMe() {
   } catch (e) {
     throw new Error(getMsg(e));
   }
+}
+
+export async function updateMe(payload) {
+  try {
+    return (await http.put("/auth/me", payload)).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function changeMyPassword(payload) {
+  try {
+    await http.patch("/auth/me/password", payload);
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function uploadMyProfilePicture(file) {
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    return (await http.post("/auth/me/profile-picture", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    })).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export function buildMyProfilePictureUrl(version) {
+  const url = new URL("http://localhost:8080/api/auth/me/profile-picture");
+  const token = getAccessToken();
+  if (token) url.searchParams.set("access_token", token);
+  if (version) url.searchParams.set("v", String(version));
+  return url.toString();
 }
 
 export async function listUsers() {
@@ -115,6 +151,38 @@ export async function adminListDuplicateUsers() {
 export async function adminMergeUsers(sourceUserId, targetUserId) {
   try {
     await http.post("/admin/users/merge", { sourceUserId, targetUserId });
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function adminGetPermissionsMatrix() {
+  try {
+    return (await http.get("/admin/permissions")).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function adminUpdatePermissionsMatrix(entries) {
+  try {
+    return (await http.put("/admin/permissions", { entries })).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function adminGetDcAutoForwardConfig() {
+  try {
+    return (await http.get("/admin/permissions/dc-auto-forward")).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function adminUpdateDcAutoForwardConfig(payload) {
+  try {
+    return (await http.put("/admin/permissions/dc-auto-forward", payload)).data;
   } catch (e) {
     throw new Error(getMsg(e));
   }

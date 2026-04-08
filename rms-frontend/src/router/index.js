@@ -1,11 +1,13 @@
 import { createRouter, createWebHistory } from "vue-router";
-import { getCurrentUser, isAuthenticated } from "../auth/currentUser";
-
+import { getCurrentUser, hasPermission, clearSession, getAccessToken } from "../auth/currentUser";
+import { getMe } from "../api/auth.api";
 import DocumentsPage from "../pages/DocumentsPage.vue";
 import DocumentDetailsPage from "../pages/DocumentDetailsPage.vue";
 import CreateDocumentPage from "../pages/CreateDocumentPage.vue";
 import InboxPage from "../pages/InboxPage.vue";
 import LogsPage from "../pages/LogsPage.vue";
+import PermissionsPage from "../pages/PermissionsPage.vue";
+import ProfilePage from "../pages/ProfilePage.vue";
 import UsersPage from "../pages/UsersPage.vue";
 import LoginPage from "../pages/LoginPage.vue";
 
@@ -21,8 +23,10 @@ const routes = [
   { path: "/documents/:id", component: DocumentDetailsPage },
 
   { path: "/inbox", component: InboxPage },
-  { path: "/logs", component: LogsPage, meta: { logsOnly: true } },
+  { path: "/profile", component: ProfilePage },
+  { path: "/logs", component: LogsPage, meta: { requiredPermission: "VIEW_LOGS" } },
   { path: "/users", component: UsersPage, meta: { adminOnly: true } },
+  { path: "/permissions", component: PermissionsPage, meta: { adminOnly: true } },
 
   // ✅ Backward compatibility: old REPORT routes still work
   { path: "/reports", redirect: "/documents" },
@@ -38,14 +42,29 @@ const router = createRouter({
   routes,
 });
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   if (to.meta?.public) return true;
-  if (isAuthenticated()) return true;
 
-  return {
-    path: "/login",
-    query: { redirect: to.fullPath },
-  };
+  const token = getAccessToken();
+
+  if (!token) {
+    return {
+      path: "/login",
+      query: { redirect: to.fullPath },
+    };
+  }
+
+  try {
+    await getMe();
+    return true;
+  } catch (error) {
+    clearSession();
+
+    return {
+      path: "/login",
+      query: { redirect: to.fullPath },
+    };
+  }
 });
 
 router.beforeEach((to) => {
@@ -56,9 +75,9 @@ router.beforeEach((to) => {
 });
 
 router.beforeEach((to) => {
-  if (!to.meta?.logsOnly) return true;
+  if (!to.meta?.requiredPermission) return true;
   const user = getCurrentUser();
-  if (user?.role === "ADMIN" || user?.role === "DC") return true;
+  if (hasPermission(user, to.meta.requiredPermission)) return true;
   return { path: "/documents" };
 });
 

@@ -31,6 +31,9 @@ public class Document {
     @Column(name="company_name")
     private String companyName;
 
+    @Column(name = "visibility", length = 10)
+    private String visibility;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Priority priority;
@@ -53,6 +56,12 @@ public class Document {
 
     @Column(name="issued_at")
     private LocalDateTime issuedAt;
+
+    @Column(name = "dc_assigned_at")
+    private LocalDateTime dcAssignedAt;
+
+    @Column(name = "dc_viewed_at")
+    private LocalDateTime dcViewedAt;
 
     // soft delete
     @Column(name="is_deleted", nullable = false)

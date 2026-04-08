@@ -2,7 +2,7 @@ import axios from "axios";
 import { getAccessToken } from "../auth/currentUser";
 
 const http = axios.create({
-  baseURL: "http://localhost:8080/api",
+  baseURL: `${import.meta.env.VITE_API_BASE_URL || "http://localhost:8080"}/api`,
   timeout: 20000,
 });
 
@@ -31,12 +31,35 @@ function getMsg(e) {
 const BASE = "/documents";
 
 // ===================== DOCUMENTS =====================
-export async function listDocuments() {
+export async function listDocuments({ page = 0, size = 100, search } = {}) {
   try {
     return (await http.get(BASE, {
       params: {
-        page: 0,
-        size: 100,
+        page,
+        size,
+        ...(search ? { search } : {}),
+      },
+    })).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function getMyWorkloadStats() {
+  try {
+    return (await http.get(`${BASE}/my-workload-stats`)).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function listSentMessages(params = {}) {
+  try {
+    return (await http.get(`${BASE}/sent-messages`, {
+      params: {
+        page: params.page ?? 0,
+        size: params.size ?? 200,
+        search: params.search ?? undefined,
       },
     })).data;
   } catch (e) {

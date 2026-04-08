@@ -48,6 +48,18 @@ Create `src/main/resources/application-local.properties` from the example and ru
 mvn spring-boot:run -Dspring-boot.run.profiles=local
 ```
 
+## Default User Seeding (Local/Dev Only)
+
+- Startup seeding of default roles/users is restricted to `local` or `dev` profile.
+- Seeding runs only when `app.seed.enabled=true`.
+- Safe default is disabled in `application.properties`.
+
+For local development, set this in your local profile file:
+
+```properties
+app.seed.enabled=true
+```
+
 ## Generate a Base64 JWT Secret (PowerShell)
 
 ```powershell

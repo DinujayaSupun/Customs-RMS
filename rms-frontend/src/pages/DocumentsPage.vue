@@ -24,7 +24,7 @@
             <option>RETURNED</option>
             <option>APPROVED</option>
             <option>REJECTED</option>
-            <option>ISSUED</option>
+            <option value="ISSUED">DONE</option>
           </select>
         </div>
 
@@ -60,11 +60,23 @@
           <span class="tableTitle">Document List</span>
           <span class="tableMeta">{{ rows.length }} result{{ rows.length === 1 ? '' : 's' }}</span>
         </div>
-        <span class="tableHint">{{ sortHint }}</span>
+        <div class="tableHintWrap">
+          <span class="tableHintLabel">Sort Info</span>
+          <HoverHint :text="sortHint" />
+        </div>
       </div>
 
       <div class="tableWrap">
         <table class="table">
+          <colgroup>
+            <col class="col-ref" />
+            <col class="col-title" />
+            <col class="col-company" />
+            <col class="col-priority" />
+            <col class="col-status" />
+            <col class="col-owner" />
+            <col class="col-actions" />
+          </colgroup>
           <thead>
             <tr>
               <th>Ref No</th>
@@ -73,7 +85,7 @@
               <th>Priority</th>
               <th>Status</th>
               <th>Owner</th>
-              <th style="width:180px;">Actions</th>
+              <th>Actions</th>
             </tr>
           </thead>
 
@@ -88,7 +100,7 @@
 
             <tr v-else v-for="d in rows" :key="d.id">
               <td class="refCell">
-                <div class="refWrap">
+                <div class="refWrap" :title="d.refNo">
                   <span
                     class="docTypeBadge"
                     :class="'docType-' + docTypeClass(d.mainAttachmentType)"
@@ -100,16 +112,18 @@
                       aria-hidden="true"
                     />
                   </span>
-                  <b>{{ d.refNo }}</b>
+                  <b class="truncateText">{{ d.refNo }}</b>
                 </div>
               </td>
-              <td>{{ d.title }}</td>
-              <td>{{ d.companyName }}</td>
+              <td :title="d.title"><span class="truncateText">{{ d.title }}</span></td>
+              <td :title="d.companyName"><span class="truncateText">{{ d.companyName }}</span></td>
 
               <td><span class="pill" :class="'pill-'+d.priority">{{ d.priority }}</span></td>
-              <td><span class="pill" :class="'pill-'+d.status">{{ d.status }}</span></td>
+              <td><span class="pill" :class="'pill-'+d.status">{{ displayStatusLabel(d.status) }}</span></td>
 
-              <td class="ownerCell">{{ ownerLabel(d.currentOwnerUserId) }}</td>
+              <td class="ownerCell" :title="ownerLabel(d.currentOwnerUserId)">
+                <span class="truncateText">{{ ownerLabel(d.currentOwnerUserId) }}</span>
+              </td>
 
               <td>
                 <div class="actions">
@@ -147,7 +161,7 @@
 
         <div class="modalBody">
           <div class="previewPills">
-            <span class="pill" :class="'pill-'+previewDoc?.status">{{ previewDoc?.status || '-' }}</span>
+            <span class="pill" :class="'pill-'+previewDoc?.status">{{ displayStatusLabel(previewDoc?.status) || '-' }}</span>
             <span class="pill" :class="'pill-'+previewDoc?.priority">{{ previewDoc?.priority || '-' }}</span>
             <span class="pill pill-PENDING">Owner: {{ ownerLabel(previewDoc?.currentOwnerUserId) }}</span>
           </div>
@@ -202,15 +216,16 @@ import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import { File, FileText, FileSpreadsheet, Image, Archive, Eye } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
+import HoverHint from "../components/HoverHint.vue";
 import { listDocuments, listMovements, listRemarks, listAttachments } from "../api/documents.api";
 import { listUsers } from "../api/auth.api";
-import { getCurrentUser } from "../auth/currentUser";
+import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabelById } from "../auth/userLabel";
 
 const router = useRouter();
 
 const currentUser = ref(getCurrentUser());
-const canCreate = computed(() => ["DC", "PMA"].includes(currentUser.value?.role));
+const canCreate = computed(() => hasPermission(currentUser.value, "CREATE_DOCUMENT"));
 
 const q = ref("");
 const status = ref("");
@@ -252,8 +267,12 @@ const previewAttachments = ref([]);
 const PRIORITY_ORDER = { LOW: 1, MEDIUM: 2, HIGH: 3, URGENT: 4 };
 const STATUS_ORDER = { PENDING: 1, IN_PROGRESS: 2, APPROVED: 3, ISSUED: 4, REJECTED: 5 };
 
+function displayStatusLabel(statusValue) {
+  return String(statusValue || "").toUpperCase() === "ISSUED" ? "DONE" : statusValue;
+}
+
 function canPreview(doc) {
-  if (currentUser.value?.role === "DC") return true;
+  if (hasPermission(currentUser.value, "VIEW_ALL_HISTORY")) return true;
   return doc.currentOwnerUserId === currentUser.value.id;
 }
 
@@ -308,7 +327,7 @@ const previewIsOwner = computed(() => {
 
 const previewCanSeeOperational = computed(() => {
   if (!previewDoc.value || !currentUser.value) return false;
-  return currentUser.value.role === "DC" || previewIsOwner.value;
+  return hasPermission(currentUser.value, "VIEW_ALL_HISTORY") || previewIsOwner.value;
 });
 
 const previewLastMovement = computed(() => {
@@ -485,9 +504,21 @@ async function load() {
   loading.value = true;
   error.value = "";
   try {
-    const data = await listDocuments();
-    const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
-    all.value = list;
+    const pageSize = 200;
+    const maxPages = 25;
+    const allDocs = [];
+
+    for (let page = 0; page < maxPages; page += 1) {
+      const data = await listDocuments({ page, size: pageSize, search: q.value || undefined });
+      const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
+      allDocs.push(...list);
+
+      if (Array.isArray(data) || list.length < pageSize || page >= ((data?.totalPages ?? 1) - 1)) {
+        break;
+      }
+    }
+
+    all.value = allDocs;
     applyNow();
   } catch (e) {
     error.value = e?.message ?? "Failed to load documents";
@@ -562,7 +593,7 @@ h2 { margin:0; line-height:1.15; }
 
 .tableCard {
   padding:0;
-  overflow:hidden;
+  overflow:visible;
   position:relative;
   z-index:0;
   isolation:isolate;
@@ -579,6 +610,12 @@ h2 { margin:0; line-height:1.15; }
 .tableTitle { font-size:14px; font-weight:800; color:#111827; }
 .tableMeta { font-size:12px; color:#6b7280; }
 .tableHint { font-size:12px; color:#9ca3af; }
+.tableHintWrap { display:flex; align-items:center; gap:8px; }
+.tableHintLabel { font-size:12px; color:#6b7280; }
+.tableHintWrap :deep(.hintBubble) {
+  left: auto;
+  right: 0;
+}
 
 .tableWrap {
   overflow:auto;
@@ -590,7 +627,20 @@ h2 { margin:0; line-height:1.15; }
   width:100%;
   border-collapse:separate;
   border-spacing:0;
-  min-width:960px;
+  table-layout:fixed;
+}
+.col-ref { width:170px; }
+.col-title { width:240px; }
+.col-company { width:220px; }
+.col-priority { width:120px; }
+.col-status { width:140px; }
+.col-owner { width:180px; }
+.col-actions { width:130px; }
+.truncateText {
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
 }
 .table th,
 .table td {
@@ -625,6 +675,7 @@ h2 { margin:0; line-height:1.15; }
   display:flex;
   align-items:center;
   gap:8px;
+  overflow:hidden;
 }
 .docTypeBadge {
   display:inline-flex;
@@ -666,9 +717,14 @@ h2 { margin:0; line-height:1.15; }
 .btn-sm { padding:8px 12px; font-size:12px; font-weight:700; }
 
 .actions {
-  display:inline-flex;
+  display:flex;
   align-items:center;
+  justify-content:flex-end;
   gap:8px;
+}
+
+@media (max-width: 1200px) {
+  .table { min-width:980px; }
 }
 
 .iconBtn {

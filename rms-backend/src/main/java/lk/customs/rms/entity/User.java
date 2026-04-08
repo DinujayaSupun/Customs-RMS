@@ -30,6 +30,15 @@ public class User {
     @Column(name = "department", length = 120)
     private String department;
 
+    @Column(name = "profile_picture_path", length = 255)
+    private String profilePicturePath;
+
+    @Column(name = "profile_picture_content_type", length = 80)
+    private String profilePictureContentType;
+
+    @Column(name = "profile_picture_updated_at")
+    private LocalDateTime profilePictureUpdatedAt;
+
     @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "role_id", nullable = false)
     private Role role;
@@ -79,6 +88,18 @@ public class User {
         return department;
     }
 
+    public String getProfilePicturePath() {
+        return profilePicturePath;
+    }
+
+    public String getProfilePictureContentType() {
+        return profilePictureContentType;
+    }
+
+    public LocalDateTime getProfilePictureUpdatedAt() {
+        return profilePictureUpdatedAt;
+    }
+
     public Role getRole() {
         return role;
     }
@@ -117,6 +138,18 @@ public class User {
 
     public void setDepartment(String department) {
         this.department = department;
+    }
+
+    public void setProfilePicturePath(String profilePicturePath) {
+        this.profilePicturePath = profilePicturePath;
+    }
+
+    public void setProfilePictureContentType(String profilePictureContentType) {
+        this.profilePictureContentType = profilePictureContentType;
+    }
+
+    public void setProfilePictureUpdatedAt(LocalDateTime profilePictureUpdatedAt) {
+        this.profilePictureUpdatedAt = profilePictureUpdatedAt;
     }
 
     public void setRole(Role role) {

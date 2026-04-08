@@ -3,6 +3,9 @@ package lk.customs.rms.dto;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.time.LocalDateTime;
+import java.util.List;
+
 @Getter
 @Builder
 public class UserSummaryResponse {
@@ -14,4 +17,7 @@ public class UserSummaryResponse {
     private String department;
     private String role;
     private Boolean active;
+    private Boolean hasProfilePicture;
+    private LocalDateTime profilePictureUpdatedAt;
+    private List<String> permissions;
 }

@@ -32,14 +32,30 @@ public class DocumentController {
     public Page<DocumentResponse> list(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
-            @RequestParam(required = false) String search
+            @RequestParam(required = false) String search,
+            Authentication authentication
     ) {
-        return documentService.getDocuments(page, size, search);
+        return documentService.getDocuments(page, size, search, currentUserService.requireUserId(authentication));
+    }
+
+    @GetMapping("/sent-messages")
+    public Page<SentMessageResponse> sentMessages(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(required = false) String search,
+            Authentication authentication
+    ) {
+        return documentService.getSentMessages(page, size, search, currentUserService.requireUserId(authentication));
     }
 
     @GetMapping("/{id}")
-    public DocumentResponse getById(@PathVariable Long id) {
-        return documentService.getDocumentById(id);
+    public DocumentResponse getById(@PathVariable Long id, Authentication authentication) {
+        return documentService.getDocumentById(id, currentUserService.requireUserId(authentication));
+    }
+
+    @GetMapping("/my-workload-stats")
+    public MyWorkloadStatsResponse myWorkloadStats(Authentication authentication) {
+        return documentService.getMyWorkloadStats(currentUserService.requireUserId(authentication));
     }
 
     @PutMapping("/{id}")

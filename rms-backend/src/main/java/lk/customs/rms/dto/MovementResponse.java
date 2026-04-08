@@ -19,6 +19,8 @@ public class MovementResponse {
     private Long toUserId;
     private String toUserName;
 
+    private String forwardVisibility;
+
     private Long actionByUserId;
     private String actionByUserName;
 
