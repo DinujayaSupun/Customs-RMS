@@ -10,12 +10,14 @@ import lk.customs.rms.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.util.StringUtils;
 
 import java.util.EnumSet;
 import java.util.Set;
@@ -26,6 +28,15 @@ import java.util.Set;
 public class DataSeeder {
 
     private static final Logger log = LoggerFactory.getLogger(DataSeeder.class);
+    private final String defaultPassword;
+    private final String adminPassword;
+
+    public DataSeeder(
+            @Value("${app.seed.default-password:}") String defaultPassword,
+            @Value("${app.seed.admin-password:}") String adminPassword) {
+        this.defaultPassword = defaultPassword;
+        this.adminPassword = adminPassword;
+    }
 
     @Bean
     CommandLineRunner seedUsers(RoleRepository roleRepository,
@@ -43,14 +54,19 @@ public class DataSeeder {
 
             seedPermissions(rolePermissionRepository, dc, ddc, sddc, sc, asc, pma, admin);
 
-            String defaultPasswordHash = passwordEncoder.encode("Pass@123");
+            if (!StringUtils.hasText(defaultPassword) || !StringUtils.hasText(adminPassword)) {
+                log.warn("Default user seeding is enabled, but seed passwords are missing.");
+                return;
+            }
+
+            String defaultPasswordHash = passwordEncoder.encode(defaultPassword);
 
             ensureUser(userRepository, "dc", "Director Customs", defaultPasswordHash, dc);
             ensureUser(userRepository, "ddc", "Deputy Director Customs", defaultPasswordHash, ddc);
             ensureUser(userRepository, "sc", "Senior Superintendent", defaultPasswordHash, sc);
             ensureUser(userRepository, "asc", "Assistant Superintendent", defaultPasswordHash, asc);
             ensureUser(userRepository, "pma", "Personal Management Assistant", defaultPasswordHash, pma);
-            ensureUser(userRepository, "admin", "System Administrator", passwordEncoder.encode("Admin@123"), admin);
+            ensureUser(userRepository, "admin", "System Administrator", passwordEncoder.encode(adminPassword), admin);
         };
     }
 

@@ -11,20 +11,22 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DB_USERNAME: root
-      DB_PASSWORD: root123
-      JWT_SECRET: cW1TNXUxM0xURnRjWnJmU3BsaDl6Z3VweFY4QnQ4V3hNQ3I1S1V0VXA9
+      DB_PASSWORD: ci_only_db_password
+      JWT_SECRET: Y2lfdGVzdF9qd3Rfc2VjcmV0XzEyMzQ1Njc4OTBfMTIzNDU2Nzg5MF8xMjM0NTY3ODkwXzEyMzQ1Njc4OTA=
       SPRING_PROFILES_ACTIVE: dev
       APP_SEED_ENABLED: "true"
+      APP_SEED_DEFAULT_PASSWORD: CiWorkflowPass123!
+      APP_SEED_ADMIN_PASSWORD: CiWorkflowAdmin123!
     services:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: root123
+          MYSQL_ROOT_PASSWORD: ci_only_db_password
           MYSQL_DATABASE: customs_rms
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h localhost -proot123"
+          --health-cmd="mysqladmin ping -h localhost -pci_only_db_password"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10
@@ -52,20 +54,26 @@ jobs:
     needs: backend-tests
     env:
       DB_USERNAME: root
-      DB_PASSWORD: root123
-      JWT_SECRET: cW1TNXUxM0xURnRjWnJmU3BsaDl6Z3VweFY4QnQ4V3hNQ3I1S1V0VXA9
+      DB_PASSWORD: ci_only_db_password
+      JWT_SECRET: Y2lfdGVzdF9qd3Rfc2VjcmV0XzEyMzQ1Njc4OTBfMTIzNDU2Nzg5MF8xMjM0NTY3ODkwXzEyMzQ1Njc4OTA=
       SPRING_PROFILES_ACTIVE: dev
       APP_SEED_ENABLED: "true"
+      APP_SEED_DEFAULT_PASSWORD: CiWorkflowPass123!
+      APP_SEED_ADMIN_PASSWORD: CiWorkflowAdmin123!
+      RMS_E2E_ADMIN_USER: admin
+      RMS_E2E_ADMIN_PASS: CiWorkflowAdmin123!
+      RMS_E2E_DC_USER: dc
+      RMS_E2E_DC_PASS: CiWorkflowPass123!
     services:
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ROOT_PASSWORD: root123
+          MYSQL_ROOT_PASSWORD: ci_only_db_password
           MYSQL_DATABASE: customs_rms
         ports:
           - 3306:3306
         options: >-
-          --health-cmd="mysqladmin ping -h localhost -proot123"
+          --health-cmd="mysqladmin ping -h localhost -pci_only_db_password"
           --health-interval=10s
           --health-timeout=5s
           --health-retries=10

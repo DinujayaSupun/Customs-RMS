@@ -209,6 +209,7 @@ const duplicateGroups = ref([]);
 const deactivateModalOpen = ref(false);
 const deactivateTargetUser = ref(null);
 const deactivateFallbackDcUserId = ref(null);
+const fallbackDcOptions = ref([]);
 
 const search = ref("");
 const role = ref("");
@@ -321,6 +322,7 @@ async function resetUserPassword(u) {
 }
 
 async function deactivateUser(u) {
+  await loadFallbackDcOptions();
   const activeDcs = availableFallbackDcs(u.id);
   if (activeDcs.length === 0) {
     error.value = "No active fallback DC user available.";
@@ -332,14 +334,24 @@ async function deactivateUser(u) {
   deactivateModalOpen.value = true;
 }
 
+async function loadFallbackDcOptions() {
+  try {
+    const data = await adminListUsers({ page: 0, size: 200, role: "DC", active: true });
+    fallbackDcOptions.value = Array.isArray(data?.content) ? data.content : [];
+  } catch {
+    fallbackDcOptions.value = [];
+  }
+}
+
 function availableFallbackDcs(excludeUserId) {
-  return rows.value.filter((x) => x.active && x.role === "DC" && Number(x.id) !== Number(excludeUserId));
+  return fallbackDcOptions.value.filter((x) => x.active && x.role === "DC" && Number(x.id) !== Number(excludeUserId));
 }
 
 function closeDeactivateModal() {
   deactivateModalOpen.value = false;
   deactivateTargetUser.value = null;
   deactivateFallbackDcUserId.value = null;
+  fallbackDcOptions.value = [];
 }
 
 async function confirmDeactivate() {

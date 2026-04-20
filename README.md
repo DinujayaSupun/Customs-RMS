@@ -70,26 +70,37 @@ Customs-RMS/
 
 ## Local Run
 
-### 1) Start backend
+### 1) Create local environment file
 
 ```powershell
-cd rms-backend
-setx DB_USERNAME "root"
-setx DB_PASSWORD "your_password"
-setx JWT_SECRET "PUT_BASE64_SECRET_HERE"
-setx APP_UPLOAD_DIR "C:/customs_uploads"
-mvn spring-boot:run
+Copy-Item .env.example .env
+```
+
+Edit `.env` with your local DB password and a Base64 JWT secret. The `.env` file is ignored by Git.
+
+Generate a local JWT secret:
+
+```powershell
+[Convert]::ToBase64String((1..64 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 } | ForEach-Object { [byte]$_ }))
+```
+
+### 2) Start backend and frontend
+
+```powershell
+npm run dev:all
 ```
 
 Backend default URL: `http://localhost:8080`
+Frontend default URL: `http://localhost:5173`
 
 Notes:
 - DB URL default is `jdbc:mysql://localhost:3306/customs_rms?...` from `application.properties`
+- `DB_USERNAME`, `DB_PASSWORD`, and `JWT_SECRET` are required through `.env` or server environment variables
 - Upload directory default is `C:/customs_uploads`
 - Local template: `rms-backend/src/main/resources/application-local.example.properties`
 - Hibernate SQL console spam is disabled by default (`spring.jpa.show-sql=false`) to keep terminal logs readable
 
-### 2) Start frontend
+### 3) Start frontend only
 
 ```powershell
 cd rms-frontend
@@ -100,7 +111,7 @@ npm run dev
 Frontend default URL: `http://localhost:5173`  
 Frontend calls backend at `http://localhost:8080/api`.
 
-### 3) Start backend + frontend together (single command)
+### 4) Start backend + frontend together (single command)
 
 From repository root:
 
@@ -123,7 +134,7 @@ Stop both with `Ctrl + C`.
 
 If logs scroll too fast, increase terminal history/scrollback size (for example in Windows Terminal profile settings).
 
-## Seeded Roles and Default Users
+## Seeded Roles and Optional Default Users
 
 Roles:
 - `ADMIN`
@@ -134,16 +145,19 @@ Roles:
 - `ASC`
 - `PMA`
 
-Default users:
+Default user seeding is only active for local/dev profile usage when `APP_SEED_ENABLED=true`.
 
-| Username | Password | Role |
-|----------|----------|------|
-| `dc` | `Pass@123` | `DC` |
-| `ddc` | `Pass@123` | `DDC` |
-| `sc` | `Pass@123` | `SC` |
-| `asc` | `Pass@123` | `ASC` |
-| `pma` | `Pass@123` | `PMA` |
-| `admin` | `Admin@123` | `ADMIN` |
+When enabled, these usernames are created if missing:
+- `dc`
+- `ddc`
+- `sc`
+- `asc`
+- `pma`
+- `admin`
+
+Passwords come from local-only env values:
+- `APP_SEED_DEFAULT_PASSWORD`
+- `APP_SEED_ADMIN_PASSWORD`
 
 ## Testing
 
@@ -158,6 +172,10 @@ mvn test
 
 ```powershell
 cd rms-frontend
+setx RMS_E2E_ADMIN_USER "admin"
+setx RMS_E2E_ADMIN_PASS "your_admin_password"
+setx RMS_E2E_DC_USER "dc"
+setx RMS_E2E_DC_PASS "your_dc_password"
 npm run test:e2e
 ```
 
