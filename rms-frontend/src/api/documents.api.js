@@ -53,6 +53,14 @@ export async function getMyWorkloadStats() {
   }
 }
 
+export async function getWorkflowRules() {
+  try {
+    return (await http.get("/workflow-rules")).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
 export async function listSentMessages(params = {}) {
   try {
     return (await http.get(`${BASE}/sent-messages`, {

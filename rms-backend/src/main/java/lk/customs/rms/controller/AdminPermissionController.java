@@ -79,10 +79,11 @@ public class AdminPermissionController {
                 0L,
                 "DC_AUTO_FORWARD_CONFIG_UPDATE",
                 actorId,
-                "Admin updated DC auto-forward configuration",
+                "Admin updated permission workflow configuration",
                 "{\"enabled\":" + updated.getEnabled()
                         + ",\"timeoutMinutes\":" + updated.getTimeoutMinutes()
-                        + ",\"receiverUserId\":" + updated.getReceiverUserId() + "}"
+                        + ",\"receiverUserId\":" + updated.getReceiverUserId()
+                        + ",\"forwardReturnAllowedStatuses\":\"" + String.join(",", updated.getForwardReturnAllowedStatuses()) + "\"}"
         );
 
         return updated;

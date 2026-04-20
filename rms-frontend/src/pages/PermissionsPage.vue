@@ -60,6 +60,24 @@
           </div>
         </div>
 
+        <div class="section">
+          <div class="sectionHead">
+            <h3>Workflow Forward/Return Rules</h3>
+            <p>Choose which document statuses allow Forward and Return. This controls both the buttons and the backend workflow guard.</p>
+          </div>
+
+          <div class="statusRuleGrid">
+            <label v-for="statusName in workflowStatuses" :key="statusName" class="toggleWrap statusToggle">
+              <input
+                type="checkbox"
+                :checked="isForwardReturnStatusAllowed(statusName)"
+                @change="setForwardReturnStatus(statusName, $event.target.checked)"
+              />
+              <span>{{ displayStatus(statusName) }}</span>
+            </label>
+          </div>
+        </div>
+
         <div class="tableWrap">
           <table class="table">
             <thead>
@@ -128,6 +146,8 @@ const allUsers = ref([]);
 const dcAutoForwardEnabled = ref(false);
 const dcTimeoutMinutes = ref(60);
 const dcReceiverUserId = ref(null);
+const workflowStatuses = ["PENDING", "IN_PROGRESS", "RETURNED", "APPROVED", "REJECTED", "ISSUED"];
+const forwardReturnAllowedStatuses = ref(["PENDING", "IN_PROGRESS", "RETURNED"]);
 
 const eligibleReceivers = computed(() =>
   allUsers.value.filter((u) => ["DDC", "SDDC"].includes(String(u.role || "").toUpperCase()))
@@ -174,6 +194,25 @@ function friendlyLabel(permission) {
     .join(" ");
 }
 
+function displayStatus(statusName) {
+  return statusName === "ISSUED" ? "DONE" : friendlyLabel(statusName);
+}
+
+function isForwardReturnStatusAllowed(statusName) {
+  return forwardReturnAllowedStatuses.value.includes(statusName);
+}
+
+function setForwardReturnStatus(statusName, allowed) {
+  const next = new Set(forwardReturnAllowedStatuses.value);
+  if (allowed) {
+    next.add(statusName);
+  } else {
+    next.delete(statusName);
+  }
+  forwardReturnAllowedStatuses.value = workflowStatuses.filter((status) => next.has(status));
+  markConfigDirty();
+}
+
 async function load() {
   loading.value = true;
   error.value = "";
@@ -194,6 +233,9 @@ async function load() {
     dcAutoForwardEnabled.value = !!config?.enabled;
     dcTimeoutMinutes.value = Number(config?.timeoutMinutes || 60);
     dcReceiverUserId.value = config?.receiverUserId == null ? null : Number(config.receiverUserId);
+    forwardReturnAllowedStatuses.value = Array.isArray(config?.forwardReturnAllowedStatuses) && config.forwardReturnAllowedStatuses.length > 0
+      ? workflowStatuses.filter((statusName) => config.forwardReturnAllowedStatuses.includes(statusName))
+      : ["PENDING", "IN_PROGRESS", "RETURNED"];
 
     dirty.value = false;
     configDirty.value = false;
@@ -237,16 +279,23 @@ async function save() {
       if (dcAutoForwardEnabled.value && !dcReceiverUserId.value) {
         throw new Error("Select a DDC/SDDC receiver when DC auto forward is enabled.");
       }
+      if (forwardReturnAllowedStatuses.value.length === 0) {
+        throw new Error("Select at least one status where Forward/Return is allowed.");
+      }
 
       const updatedConfig = await adminUpdateDcAutoForwardConfig({
         enabled: !!dcAutoForwardEnabled.value,
         timeoutMinutes: timeout,
         receiverUserId: dcReceiverUserId.value == null ? null : Number(dcReceiverUserId.value),
+        forwardReturnAllowedStatuses: forwardReturnAllowedStatuses.value,
       });
 
       dcAutoForwardEnabled.value = !!updatedConfig?.enabled;
       dcTimeoutMinutes.value = Number(updatedConfig?.timeoutMinutes || timeout);
       dcReceiverUserId.value = updatedConfig?.receiverUserId == null ? null : Number(updatedConfig.receiverUserId);
+      forwardReturnAllowedStatuses.value = Array.isArray(updatedConfig?.forwardReturnAllowedStatuses) && updatedConfig.forwardReturnAllowedStatuses.length > 0
+        ? workflowStatuses.filter((statusName) => updatedConfig.forwardReturnAllowedStatuses.includes(statusName))
+        : forwardReturnAllowedStatuses.value;
       configDirty.value = false;
     }
 
@@ -351,6 +400,21 @@ h2 {
   align-items: center;
 }
 
+.statusRuleGrid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.statusToggle {
+  justify-content: space-between;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 10px 12px;
+}
+
 .controlBlock {
   display: flex;
   flex-direction: column;
@@ -452,6 +516,10 @@ h2 {
 
   .headActions .btn {
     flex: 1;
+  }
+
+  .statusRuleGrid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

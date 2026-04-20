@@ -19,6 +19,7 @@ import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.DocumentUserViewRepository;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.service.AuditLogService;
+import lk.customs.rms.service.DcAutoForwardConfigService;
 import lk.customs.rms.service.DocumentService;
 import lk.customs.rms.service.PermissionService;
 import lk.customs.rms.service.RealtimeNotificationService;
@@ -84,6 +85,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final AuditLogService auditLogService;
     private final PermissionService permissionService;
     private final RealtimeNotificationService realtimeNotificationService;
+    private final DcAutoForwardConfigService dcAutoForwardConfigService;
 
     public DocumentServiceImpl(
             DocumentRepository documentRepository,
@@ -94,7 +96,8 @@ public class DocumentServiceImpl implements DocumentService {
             UserRepository userRepository,
             AuditLogService auditLogService,
                 PermissionService permissionService,
-                RealtimeNotificationService realtimeNotificationService
+                RealtimeNotificationService realtimeNotificationService,
+                DcAutoForwardConfigService dcAutoForwardConfigService
     ) {
         this.documentRepository = documentRepository;
         this.attachmentRepository = attachmentRepository;
@@ -105,6 +108,7 @@ public class DocumentServiceImpl implements DocumentService {
         this.auditLogService = auditLogService;
         this.permissionService = permissionService;
         this.realtimeNotificationService = realtimeNotificationService;
+        this.dcAutoForwardConfigService = dcAutoForwardConfigService;
     }
 
     // ==========================================================
@@ -707,14 +711,13 @@ public class DocumentServiceImpl implements DocumentService {
     // ==========================================================
 
     private void ensureCanForwardOrReturn(Document d) {
-        if (d.getStatus() == Status.ISSUED) {
-            throw new BadRequestException("Cannot forward/return an ISSUED document.");
-        }
-        if (d.getStatus() == Status.REJECTED) {
-            throw new BadRequestException("Cannot forward/return a REJECTED document.");
-        }
-        if (d.getStatus() == Status.APPROVED) {
-            throw new BadRequestException("Cannot forward/return an APPROVED document. Only ISSUE is allowed.");
+        if (!dcAutoForwardConfigService.isForwardReturnAllowed(d.getStatus())) {
+            String allowed = dcAutoForwardConfigService.getForwardReturnAllowedStatuses()
+                    .stream()
+                    .map(Status::name)
+                    .collect(Collectors.joining(", "));
+            throw new BadRequestException("Cannot forward/return a " + d.getStatus()
+                    + " document. Allowed statuses: " + allowed + ".");
         }
     }
 

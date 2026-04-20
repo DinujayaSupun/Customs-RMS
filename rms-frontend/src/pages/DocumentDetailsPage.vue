@@ -254,10 +254,10 @@
               </button>
             </div>
 
-            <div class="hintInline">
-              <span class="hintLabel">Forward rules</span>
-              <HoverHint text="Forward/Return are available only to the current owner with the relevant permission. PMA can send only to DC. Forward/Return are blocked when status is APPROVED, REJECTED, or ISSUED." />
-            </div>
+              <div class="hintInline">
+                <span class="hintLabel">Forward rules</span>
+                <HoverHint :text="`Forward/Return are available only to the current owner with the relevant permission. PMA can send only to DC. Allowed statuses are managed from Permissions: ${forwardReturnAllowedStatusesLabel}.`" />
+              </div>
           </div>
 
           <div class="formRow">
@@ -593,6 +593,7 @@ import {
   issueDocument,
   reopenDocument,
   buildAttachmentUrl,
+  getWorkflowRules,
 } from "../api/documents.api";
 
 const route = useRoute();
@@ -603,9 +604,11 @@ const documentId = Number(route.params.id);
 const currentUser = ref(getCurrentUser());
 function refreshCurrentUser() {
   currentUser.value = getCurrentUser();
+  loadWorkflowRules();
 }
 
 const users = ref([]);
+const forwardReturnAllowedStatuses = ref(["PENDING", "IN_PROGRESS", "RETURNED"]);
 
 const doc = ref(null);
 const movements = ref([]);
@@ -661,8 +664,10 @@ const availableForwardVisibilities = computed(() => {
   if (canForwardPrivate.value) options.push("PRIVATE");
   return options;
 });
-const canForward = computed(() => !!doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "FORWARD_DOCUMENT") && availableForwardVisibilities.value.length > 0);
-const canReturn  = computed(() => !!doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "RETURN_DOCUMENT"));
+const canForwardReturnByStatus = computed(() => !!doc.value && forwardReturnAllowedStatuses.value.includes(String(doc.value.status || "").toUpperCase()));
+const forwardReturnAllowedStatusesLabel = computed(() => forwardReturnAllowedStatuses.value.map(displayStatusLabel).join(", ") || "none");
+const canForward = computed(() => !!doc.value && canForwardReturnByStatus.value && isOwner.value && hasPermission(currentUser.value, "FORWARD_DOCUMENT") && availableForwardVisibilities.value.length > 0);
+const canReturn  = computed(() => !!doc.value && canForwardReturnByStatus.value && isOwner.value && hasPermission(currentUser.value, "RETURN_DOCUMENT"));
 
 const canApprove = computed(() => doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "APPROVE_DOCUMENT") && doc.value.status !== "APPROVED");
 const canReject  = computed(() => doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "REJECT_DOCUMENT") && doc.value.status !== "REJECTED");
@@ -1008,6 +1013,17 @@ async function reloadAll() {
   }
 }
 
+async function loadWorkflowRules() {
+  try {
+    const rules = await getWorkflowRules();
+    if (Array.isArray(rules?.forwardReturnAllowedStatuses) && rules.forwardReturnAllowedStatuses.length > 0) {
+      forwardReturnAllowedStatuses.value = rules.forwardReturnAllowedStatuses.map((status) => String(status).toUpperCase());
+    }
+  } catch {
+    forwardReturnAllowedStatuses.value = ["PENDING", "IN_PROGRESS", "RETURNED"];
+  }
+}
+
 onMounted(async () => {
   window.addEventListener("rms_auth_changed", refreshCurrentUser);
   window.addEventListener("rms_permissions_updated", refreshCurrentUser);
@@ -1016,6 +1032,7 @@ onMounted(async () => {
   } catch {
     users.value = [];
   }
+  await loadWorkflowRules();
   await reloadAll();
 });
 

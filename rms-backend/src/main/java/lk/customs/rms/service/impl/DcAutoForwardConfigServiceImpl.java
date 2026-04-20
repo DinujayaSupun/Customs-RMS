@@ -4,6 +4,7 @@ import lk.customs.rms.dto.DcAutoForwardConfigResponse;
 import lk.customs.rms.dto.UpdateDcAutoForwardConfigRequest;
 import lk.customs.rms.entity.DcAutoForwardConfig;
 import lk.customs.rms.entity.User;
+import lk.customs.rms.enums.Status;
 import lk.customs.rms.exception.BadRequestException;
 import lk.customs.rms.repository.DcAutoForwardConfigRepository;
 import lk.customs.rms.repository.UserRepository;
@@ -12,11 +13,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 @Service
 public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigService {
 
     private static final Long SINGLETON_ID = 1L;
+    private static final List<Status> DEFAULT_FORWARD_RETURN_ALLOWED_STATUSES =
+            List.of(Status.PENDING, Status.IN_PROGRESS, Status.RETURNED);
 
     private final DcAutoForwardConfigRepository configRepository;
     private final UserRepository userRepository;
@@ -57,8 +64,26 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
             }
         }
 
+        if (request.getForwardReturnAllowedStatuses() != null) {
+            List<Status> allowedStatuses = normalizeStatuses(request.getForwardReturnAllowedStatuses());
+            config.setForwardReturnAllowedStatuses(toCsv(allowedStatuses));
+        }
+
         config.setUpdatedAt(LocalDateTime.now());
         return toResponse(configRepository.save(config));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Status> getForwardReturnAllowedStatuses() {
+        return parseStatuses(getOrCreateEntity().getForwardReturnAllowedStatuses());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isForwardReturnAllowed(Status status) {
+        if (status == null) return false;
+        return getForwardReturnAllowedStatuses().contains(status);
     }
 
     @Override
@@ -70,6 +95,7 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
                     config.setId(SINGLETON_ID);
                     config.setEnabled(false);
                     config.setTimeoutMinutes(60);
+                    config.setForwardReturnAllowedStatuses(toCsv(DEFAULT_FORWARD_RETURN_ALLOWED_STATUSES));
                     config.setUpdatedAt(LocalDateTime.now());
                     return configRepository.save(config);
                 });
@@ -103,6 +129,45 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
                 .receiverUserId(config.getReceiverUserId())
                 .receiverName(receiver == null ? null : receiver.getFullName())
                 .receiverRole(receiver == null || receiver.getRole() == null ? null : receiver.getRole().getRoleName())
+                .forwardReturnAllowedStatuses(parseStatuses(config.getForwardReturnAllowedStatuses())
+                        .stream()
+                        .map(Status::name)
+                        .toList())
                 .build();
+    }
+
+    private List<Status> normalizeStatuses(List<String> values) {
+        Set<Status> statuses = new LinkedHashSet<>();
+        for (String raw : values) {
+            if (raw == null || raw.isBlank()) continue;
+            try {
+                statuses.add(Status.valueOf(raw.trim().toUpperCase()));
+            } catch (IllegalArgumentException ex) {
+                throw new BadRequestException("Invalid workflow status: " + raw);
+            }
+        }
+
+        if (statuses.isEmpty()) {
+            throw new BadRequestException("Select at least one status where Forward/Return is allowed.");
+        }
+
+        return new ArrayList<>(statuses);
+    }
+
+    private List<Status> parseStatuses(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return DEFAULT_FORWARD_RETURN_ALLOWED_STATUSES;
+        }
+
+        List<String> parts = List.of(csv.split(","));
+        try {
+            return normalizeStatuses(parts);
+        } catch (BadRequestException ex) {
+            return DEFAULT_FORWARD_RETURN_ALLOWED_STATUSES;
+        }
+    }
+
+    private String toCsv(List<Status> statuses) {
+        return String.join(",", statuses.stream().map(Status::name).toList());
     }
 }

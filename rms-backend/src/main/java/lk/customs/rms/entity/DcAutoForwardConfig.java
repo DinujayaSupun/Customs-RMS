@@ -25,6 +25,9 @@ public class DcAutoForwardConfig {
     @Column(name = "receiver_user_id")
     private Long receiverUserId;
 
+    @Column(name = "forward_return_allowed_statuses", nullable = false, length = 200)
+    private String forwardReturnAllowedStatuses = "PENDING,IN_PROGRESS,RETURNED";
+
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt = LocalDateTime.now();
 }

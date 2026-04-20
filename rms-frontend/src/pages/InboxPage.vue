@@ -171,9 +171,262 @@
             <div class="mailRight">
               <span class="pill" :class="'pill-'+d.status">{{ displayStatusLabel(d.status) }}</span>
               <span class="timeText">{{ displayDate(d) }}</span>
-              <button class="btn btn-sm" @click.stop="open(resolveDocumentId(d))">Open</button>
+              <div class="rowActions">
+                <button
+                  type="button"
+                  class="iconAction"
+                  title="Preview document"
+                  aria-label="Preview document"
+                  @click.stop="openPreview(d)"
+                >
+                  <Eye class="actionIcon" aria-hidden="true" />
+                </button>
+                <button
+                  v-if="inboxMode === 'received'"
+                  type="button"
+                  class="iconAction"
+                  :class="{ disabled: !canForwardRow(d) }"
+                  :disabled="!canForwardRow(d)"
+                  :title="canForwardRow(d) ? 'Forward document' : 'Forward is not available for this document'"
+                  :aria-label="canForwardRow(d) ? 'Forward document' : 'Forward not available'"
+                  @click.stop="openForwardDialog(d)"
+                >
+                  <Send class="actionIcon" aria-hidden="true" />
+                </button>
+                <button class="btn btn-sm" @click.stop="open(resolveDocumentId(d))">Open</button>
+              </div>
             </div>
           </article>
+        </div>
+      </div>
+
+      <div v-if="previewOpen" class="overlay" @click.self="closePreview">
+        <div class="modal previewModal">
+          <div class="modalHead">
+            <div>
+              <div class="modalEyebrow">Quick Look</div>
+              <div class="modalTitle">Document Preview</div>
+              <div class="modalSub">{{ previewDoc?.refNo || '-' }} - {{ previewDoc?.title || 'Untitled document' }}</div>
+            </div>
+            <button class="iconBtn modalClose" @click="closePreview" aria-label="Close preview">x</button>
+          </div>
+
+          <div class="modalBody">
+            <div class="previewPills">
+              <span class="pill" :class="'pill-'+previewDoc?.status">{{ displayStatusLabel(previewDoc?.status) || '-' }}</span>
+              <span class="pill" :class="'pill-'+previewDoc?.priority">{{ previewDoc?.priority || '-' }}</span>
+              <span class="pill pill-PENDING">Current Owner: {{ ownerLabel(previewDoc?.currentOwnerUserId) }}</span>
+            </div>
+
+            <div class="previewGrid">
+              <div><span class="label">Company</span>{{ previewDoc?.companyName || '-' }}</div>
+              <div><span class="label">Received</span>{{ formatDateSafe(previewDoc?.receivedDate) }}</div>
+              <div><span class="label">Days Open</span>{{ previewDaysOpen }}</div>
+              <div><span class="label">Main File Type</span>{{ previewMainAttachmentType }}</div>
+              <div><span class="label">Attachments</span>{{ previewAttachmentCount }}</div>
+              <div><span class="label">Main File Previewable</span>{{ previewIsMainFilePreviewable ? 'Yes' : 'No' }}</div>
+            </div>
+
+            <div v-if="previewLoadingExtras" class="note">Loading additional preview details...</div>
+            <div v-else-if="previewExtrasError" class="note noteWarn">{{ previewExtrasError }}</div>
+
+            <div v-if="previewCanSeeOperational" class="opsCard">
+              <div class="opsTitle">Latest Activity</div>
+              <div class="opsRow">
+                <span class="label">Last Action</span>
+                <span>
+                  {{ previewLastMovement?.actionType || '-' }}
+                  <span v-if="previewLastMovement"> • {{ formatDateTimeSafe(previewLastMovement.actionAt) }}</span>
+                </span>
+              </div>
+              <div class="opsRow">
+                <span class="label">Action By</span>
+                <span>{{ previewLastMovement ? ownerLabel(previewLastMovement.actionByUserId) : '-' }}</span>
+              </div>
+              <div class="opsRow">
+                <span class="label">Latest Minute</span>
+                <span>{{ previewLastRemark?.remarkText || 'No minute recorded.' }}</span>
+              </div>
+            </div>
+
+            <div class="note decisionNote">Preview shows a quick decision summary. Open full document for complete workflow, files, and timeline.</div>
+          </div>
+
+          <div class="modalFoot">
+            <button class="btn" @click="closePreview">Close</button>
+            <button class="btn btn-primary" @click="openPreviewDocument">Open Full Document</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="forwardOpen" class="overlay" @click.self="closeForwardDialog">
+        <div class="modal forwardModal">
+          <div class="modalHead">
+            <div>
+              <div class="modalEyebrow">Workflow Shortcut</div>
+              <div class="modalTitle">Forward Document</div>
+              <div class="modalSub">{{ forwardDoc?.refNo || '-' }} - {{ forwardDoc?.title || 'Untitled document' }}</div>
+            </div>
+            <button class="iconBtn modalClose" :disabled="forwardBusy" @click="closeForwardDialog" aria-label="Close forward dialog">x</button>
+          </div>
+
+          <div class="modalBody">
+            <div class="forwardDocPreview">
+              <div class="forwardFileBox">
+                <div v-if="forwardAttachments.length > 1" class="forwardFileSwitcher">
+                  <button
+                    type="button"
+                    class="miniSwitchBtn"
+                    :disabled="!canGoPreviousForwardAttachment"
+                    @click="selectPreviousForwardAttachment"
+                    aria-label="Previous attachment"
+                  >
+                    ‹
+                  </button>
+                  <select
+                    v-model="selectedForwardAttachmentId"
+                    class="forwardAttachmentSelect"
+                    aria-label="Select attachment preview"
+                  >
+                    <option v-for="a in forwardAttachmentsSorted" :key="a.id" :value="a.id">
+                      v{{ a.versionNo }} - {{ a.fileName }}
+                    </option>
+                  </select>
+                  <button
+                    type="button"
+                    class="miniSwitchBtn"
+                    :disabled="!canGoNextForwardAttachment"
+                    @click="selectNextForwardAttachment"
+                    aria-label="Next attachment"
+                  >
+                    ›
+                  </button>
+                </div>
+                <div v-if="forwardAttachmentsLoading" class="forwardFileEmpty">Loading file preview...</div>
+                <iframe
+                  v-else-if="selectedForwardAttachment && isPdfFileName(selectedForwardAttachment.fileName)"
+                  :src="forwardAttachmentPreviewUrl(selectedForwardAttachment)"
+                  class="forwardMiniFrame"
+                  title="Attachment PDF preview"
+                ></iframe>
+                <img
+                  v-else-if="selectedForwardAttachment && isImageFileName(selectedForwardAttachment.fileName)"
+                  :src="forwardAttachmentPreviewUrl(selectedForwardAttachment)"
+                  class="forwardMiniImage"
+                  alt="Attachment preview"
+                />
+                <div v-else class="forwardFileEmpty">
+                  <span
+                    class="docTypeBadge"
+                    :class="'docType-' + docTypeClass(selectedForwardAttachmentType)"
+                    :title="attachmentTypeLabel(selectedForwardAttachmentType)"
+                  >
+                    <component :is="attachmentIconComponent(selectedForwardAttachmentType)" class="docIcon" aria-hidden="true" />
+                  </span>
+                  <b>{{ selectedForwardAttachmentType }}</b>
+                  <span>{{ selectedForwardAttachment?.fileName || 'No attachment available' }}</span>
+                </div>
+              </div>
+
+              <div class="forwardDocSummary">
+                <div class="summaryTop">
+                  <div>
+                    <div class="summaryRef">{{ forwardDoc?.refNo || '-' }}</div>
+                    <div class="summaryTitle">{{ forwardDoc?.title || 'Untitled document' }}</div>
+                  </div>
+                  <div class="summaryPills">
+                    <span class="pill" :class="'pill-'+forwardDoc?.status">{{ displayStatusLabel(forwardDoc?.status) || '-' }}</span>
+                    <span class="pill" :class="'pill-'+forwardDoc?.priority">{{ forwardDoc?.priority || '-' }}</span>
+                  </div>
+                </div>
+
+                <div class="summaryGrid">
+                  <div><span class="label">Company</span>{{ forwardDoc?.companyName || '-' }}</div>
+                  <div><span class="label">Received</span>{{ formatDateSafe(forwardDoc?.receivedDate) }}</div>
+                  <div><span class="label">Days Open</span>{{ forwardDaysOpen }}</div>
+                  <div><span class="label">Viewing File</span>{{ selectedForwardAttachment?.fileName || selectedForwardAttachmentType }}</div>
+                  <div><span class="label">Attachments</span>{{ forwardAttachmentCount }}</div>
+                  <div><span class="label">Forwarding As</span>{{ formatUserLabel(currentUser) }}</div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="forwardAttachmentsError" class="note noteWarn">{{ forwardAttachmentsError }}</div>
+
+            <div v-if="!canForwardSelectedDoc" class="note noteWarn">
+              Forward is available only to the current owner with forward permission, and allowed statuses are managed from Permissions.
+            </div>
+
+            <div class="formRow">
+              <label class="label">Minute (optional)</label>
+              <textarea
+                v-model="forwardRemark"
+                class="textarea"
+                :disabled="forwardBusy || !canForwardSelectedDoc"
+                placeholder="Type minute before forwarding..."
+              ></textarea>
+            </div>
+
+            <div class="formRow">
+              <label class="label">Forward To</label>
+              <div class="forwardSearchWrap">
+                <input
+                  v-model="forwardUserSearch"
+                  class="input"
+                  :disabled="forwardBusy || !canForwardSelectedDoc"
+                  placeholder="Search user by name, role, department, or ID..."
+                  spellcheck="false"
+                  @focus="forwardSearchFocused = true"
+                  @blur="forwardSearchFocused = false"
+                  @keydown.escape="forwardSearchFocused = false"
+                />
+
+                <div v-if="showForwardSearchDropdown" class="forwardSearchDropdown">
+                  <button
+                    v-for="u in filteredForwardTargets"
+                    :key="u.id"
+                    type="button"
+                    class="forwardSearchOption"
+                    :class="{ active: Number(u.id) === Number(forwardToUserId) }"
+                    @mousedown.prevent="selectForwardUser(u)"
+                  >
+                    <span class="forwardUserName">{{ u.fullName || u.name || u.username || `ID ${u.id}` }}</span>
+                    <span class="forwardUserMeta">{{ u.username || '-' }} • {{ u.role || '-' }} • ID {{ u.id }}</span>
+                  </button>
+                  <div v-if="filteredForwardTargets.length === 0" class="forwardSearchEmpty">No matching users</div>
+                </div>
+              </div>
+
+              <div v-if="selectedForwardUser" class="forwardSelected">
+                <span>Selected user</span>
+                <b>{{ formatUserLabel(selectedForwardUser) }}</b>
+              </div>
+              <div v-else class="forwardSelected muted">Select a user before forwarding.</div>
+
+              <div class="forwardSearchMeta">
+                <span>{{ forwardUserSearch.trim() ? `${filteredForwardTargets.length} of ${forwardTargets.length} users shown` : `${forwardTargets.length} users available` }}</span>
+                <button v-if="forwardUserSearch" type="button" class="linkBtn" :disabled="forwardBusy" @click="clearForwardSearch">
+                  Clear search
+                </button>
+              </div>
+            </div>
+
+            <div class="formRow">
+              <label class="label">Forward Visibility</label>
+              <select v-model="forwardVisibility" class="input" :disabled="forwardBusy || !canForwardSelectedDoc">
+                <option v-for="opt in availableForwardVisibilities" :key="opt" :value="opt">
+                  {{ opt.charAt(0) + opt.slice(1).toLowerCase() }}
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <div class="modalFoot">
+            <button class="btn" :disabled="forwardBusy" @click="closeForwardDialog">Cancel</button>
+            <button class="btn btn-primary" :disabled="forwardBusy || !canForwardSelectedDoc || !forwardToUserId" @click="submitForward">
+              {{ forwardBusy ? 'Forwarding...' : 'Forward' }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -183,11 +436,23 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
-import { File, FileText, FileSpreadsheet, Image, Archive } from "lucide-vue-next";
+import { File, FileText, FileSpreadsheet, Image, Archive, Eye, Send } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
-import { listDocuments, listSentMessages } from "../api/documents.api";
+import { listUsers } from "../api/auth.api";
+import {
+  forwardDocument,
+  getDocument,
+  getWorkflowRules,
+  buildAttachmentUrl,
+  listAttachments,
+  listDocuments,
+  listMovements,
+  listRemarks,
+  listSentMessages,
+} from "../api/documents.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
+import { formatUserLabel, formatUserLabelById } from "../auth/userLabel";
 
 const router = useRouter();
 
@@ -202,9 +467,37 @@ const sortBy = ref("recent");
 const viewFilter = ref("all");
 const inboxMode = ref("received");
 const authTick = ref(0);
+const users = ref([]);
+const forwardReturnAllowedStatuses = ref(["PENDING", "IN_PROGRESS", "RETURNED"]);
+
+const previewOpen = ref(false);
+const previewDoc = ref(null);
+const previewLoadingExtras = ref(false);
+const previewExtrasError = ref("");
+const previewMovements = ref([]);
+const previewRemarks = ref([]);
+const previewAttachments = ref([]);
+
+const forwardOpen = ref(false);
+const forwardDoc = ref(null);
+const forwardBusy = ref(false);
+const forwardRemark = ref("");
+const forwardVisibility = ref("PUBLIC");
+const forwardToUserId = ref(null);
+const forwardUserSearch = ref("");
+const forwardSearchFocused = ref(false);
+const forwardAttachments = ref([]);
+const forwardAttachmentsLoading = ref(false);
+const forwardAttachmentsError = ref("");
+const selectedForwardAttachmentId = ref(null);
+
+const currentUser = computed(() => {
+  authTick.value;
+  return getCurrentUser();
+});
 const canViewSentMessages = computed(() => {
   authTick.value;
-  return hasPermission(getCurrentUser(), "VIEW_SENT_MESSAGES");
+  return hasPermission(currentUser.value, "VIEW_SENT_MESSAGES");
 });
 
 const sortHint = computed(() => {
@@ -227,6 +520,174 @@ const sortHint = computed(() => {
 
 const PRIORITY_ORDER = { LOW: 1, MEDIUM: 2, HIGH: 3, URGENT: 4 };
 const STATUS_ORDER = { PENDING: 1, IN_PROGRESS: 2, APPROVED: 3, ISSUED: 4, REJECTED: 5 };
+
+const canForwardPublic = computed(() => hasPermission(currentUser.value, "FORWARD_PUBLIC"));
+const canForwardPrivate = computed(() => hasPermission(currentUser.value, "FORWARD_PRIVATE"));
+const availableForwardVisibilities = computed(() => {
+  const options = [];
+  if (canForwardPublic.value) options.push("PUBLIC");
+  if (canForwardPrivate.value) options.push("PRIVATE");
+  return options;
+});
+
+const forwardTargets = computed(() => {
+  const all = users.value.filter((u) => Number(u.id) !== Number(currentUser.value?.id));
+  if (currentUser.value?.role === "PMA") return all.filter((u) => u.role === "DC");
+  return all;
+});
+
+const selectedForwardUser = computed(() => {
+  return forwardTargets.value.find((u) => Number(u.id) === Number(forwardToUserId.value)) || null;
+});
+
+const filteredForwardTargets = computed(() => {
+  const search = forwardUserSearch.value.trim().toLowerCase();
+  if (!search) return forwardTargets.value;
+
+  return forwardTargets.value.filter((u) => {
+    const searchableText = [
+      formatUserLabel(u),
+      u.username,
+      u.fullName,
+      u.name,
+      u.role,
+      u.department,
+      u.id,
+    ]
+      .filter((part) => part !== null && part !== undefined && String(part).trim() !== "")
+      .join(" ")
+      .toLowerCase();
+
+    return searchableText.includes(search);
+  });
+});
+
+const canForwardSelectedDoc = computed(() => canForwardRow(forwardDoc.value));
+
+const showForwardSearchDropdown = computed(() => {
+  return (
+    canForwardSelectedDoc.value &&
+    forwardSearchFocused.value &&
+    (forwardUserSearch.value.trim() || filteredForwardTargets.value.length > 0)
+  );
+});
+
+const forwardAttachmentsSorted = computed(() => {
+  if (!forwardAttachments.value.length) return [];
+  return [...forwardAttachments.value].sort((a, b) => Number(a.versionNo) - Number(b.versionNo));
+});
+
+const forwardMainAttachment = computed(() => {
+  if (!forwardAttachmentsSorted.value?.length) return null;
+  return forwardAttachmentsSorted.value.find((a) => Number(a.versionNo) === 1) || forwardAttachmentsSorted.value[0];
+});
+
+const selectedForwardAttachment = computed(() => {
+  if (!forwardAttachmentsSorted.value?.length) return null;
+  return (
+    forwardAttachmentsSorted.value.find((a) => Number(a.id) === Number(selectedForwardAttachmentId.value)) ||
+    forwardMainAttachment.value
+  );
+});
+
+const forwardAttachmentCount = computed(() => forwardAttachments.value.length);
+
+const forwardMainAttachmentType = computed(() => {
+  if (forwardMainAttachment.value?.fileName) {
+    return resolveAttachmentTypeFromName(forwardMainAttachment.value.fileName);
+  }
+  return docTypeClass(forwardDoc.value?.mainAttachmentType);
+});
+
+const selectedForwardAttachmentType = computed(() => {
+  if (selectedForwardAttachment.value?.fileName) {
+    return resolveAttachmentTypeFromName(selectedForwardAttachment.value.fileName);
+  }
+  return forwardMainAttachmentType.value;
+});
+
+const selectedForwardAttachmentIndex = computed(() => {
+  if (!forwardAttachmentsSorted.value?.length || !selectedForwardAttachment.value) return -1;
+  return forwardAttachmentsSorted.value.findIndex((a) => Number(a.id) === Number(selectedForwardAttachment.value.id));
+});
+
+const canGoPreviousForwardAttachment = computed(() => selectedForwardAttachmentIndex.value > 0);
+const canGoNextForwardAttachment = computed(() => {
+  return selectedForwardAttachmentIndex.value >= 0 && selectedForwardAttachmentIndex.value < forwardAttachmentsSorted.value.length - 1;
+});
+
+const forwardDaysOpen = computed(() => {
+  const received = forwardDoc.value?.receivedDate;
+  if (!received) return "-";
+
+  const start = new Date(received);
+  if (Number.isNaN(start.getTime())) return "-";
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  return String(Math.max(0, Math.floor((Date.now() - start.getTime()) / dayMs)));
+});
+
+const previewIsOwner = computed(() => {
+  if (!previewDoc.value || !currentUser.value) return false;
+  return Number(previewDoc.value.currentOwnerUserId) === Number(currentUser.value.id);
+});
+
+const previewCanSeeOperational = computed(() => {
+  if (!previewDoc.value || !currentUser.value) return false;
+  return hasPermission(currentUser.value, "VIEW_ALL_HISTORY") || previewIsOwner.value;
+});
+
+const previewLastMovement = computed(() => {
+  if (!previewMovements.value.length) return null;
+  return [...previewMovements.value].sort((a, b) => {
+    const ta = Date.parse(a?.actionAt ?? "");
+    const tb = Date.parse(b?.actionAt ?? "");
+    return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta);
+  })[0];
+});
+
+const previewLastRemark = computed(() => {
+  if (!previewRemarks.value.length) return null;
+  return [...previewRemarks.value].sort((a, b) => {
+    const ta = Date.parse(a?.remarkedAt ?? "");
+    const tb = Date.parse(b?.remarkedAt ?? "");
+    return (Number.isNaN(tb) ? 0 : tb) - (Number.isNaN(ta) ? 0 : ta);
+  })[0];
+});
+
+const previewMainAttachment = computed(() => {
+  if (!previewAttachments.value.length) return null;
+  return (
+    previewAttachments.value.find((a) => Number(a.versionNo) === 1) ||
+    [...previewAttachments.value].sort((a, b) => Number(a.versionNo) - Number(b.versionNo))[0]
+  );
+});
+
+const previewAttachmentCount = computed(() => previewAttachments.value.length);
+
+const previewMainAttachmentType = computed(() => {
+  if (previewMainAttachment.value?.fileName) {
+    return resolveAttachmentTypeFromName(previewMainAttachment.value.fileName);
+  }
+  return docTypeClass(previewDoc.value?.mainAttachmentType);
+});
+
+const previewIsMainFilePreviewable = computed(() => {
+  const name = previewMainAttachment.value?.fileName;
+  if (!name) return ["PDF", "IMG", "TXT"].includes(previewMainAttachmentType.value);
+  return isPreviewableFileName(name);
+});
+
+const previewDaysOpen = computed(() => {
+  const received = previewDoc.value?.receivedDate;
+  if (!received) return "-";
+
+  const start = new Date(received);
+  if (Number.isNaN(start.getTime())) return "-";
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  return String(Math.max(0, Math.floor((Date.now() - start.getTime()) / dayMs)));
+});
 
 function toText(value) {
   return String(value ?? "").trim().toLowerCase();
@@ -262,6 +723,54 @@ function attachmentIconComponent(type) {
 
 function attachmentTypeLabel(type) {
   return `Main attachment type: ${docTypeClass(type)}`;
+}
+
+function resolveAttachmentTypeFromName(fileName) {
+  const name = String(fileName || "").toLowerCase();
+  if (name.endsWith(".pdf")) return "PDF";
+  if (/\.(doc|docx)$/.test(name)) return "DOC";
+  if (/\.(xls|xlsx|csv)$/.test(name)) return "XLS";
+  if (/\.(png|jpe?g|gif|webp|bmp)$/.test(name)) return "IMG";
+  if (name.endsWith(".txt")) return "TXT";
+  if (/\.(zip|rar|7z)$/.test(name)) return "ZIP";
+  return "FILE";
+}
+
+function isPreviewableFileName(fileName) {
+  const type = resolveAttachmentTypeFromName(fileName);
+  return type === "PDF" || type === "IMG" || type === "TXT";
+}
+
+function isPdfFileName(fileName) {
+  return String(fileName || "").toLowerCase().endsWith(".pdf");
+}
+
+function isImageFileName(fileName) {
+  return /\.(png|jpe?g|gif|webp|bmp)$/i.test(String(fileName || ""));
+}
+
+function forwardAttachmentPreviewUrl(attachment) {
+  if (!attachment?.id) return "";
+  return buildAttachmentUrl(attachment.id, { inline: true });
+}
+
+function ownerLabel(userId) {
+  if (userId === null || userId === undefined || userId === "") return "-";
+  return formatUserLabelById(userId, users.value);
+}
+
+function formatDateSafe(value) {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleDateString();
+}
+
+function formatDateTimeSafe(value) {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleString();
 }
 
 function toRecentScore(doc) {
@@ -321,6 +830,30 @@ function applyNow() {
 watch([q, status, priority, sortBy, viewFilter], () => {
   applyNow();
 });
+
+watch(
+  forwardTargets,
+  (list) => {
+    const valid = new Set(list.map((x) => Number(x.id)));
+    const current = forwardToUserId.value;
+    if (current == null || !valid.has(Number(current))) {
+      forwardToUserId.value = list[0] ? Number(list[0].id) : null;
+      forwardUserSearch.value = list[0] ? formatUserLabel(list[0]) : "";
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  availableForwardVisibilities,
+  (list) => {
+    const selected = String(forwardVisibility.value || "").toUpperCase();
+    if (!list.includes(selected)) {
+      forwardVisibility.value = list[0] || "PUBLIC";
+    }
+  },
+  { immediate: true }
+);
 
 async function load() {
   if (inboxMode.value === "sent") {
@@ -401,6 +934,25 @@ async function loadSent() {
   }
 }
 
+async function loadUsers() {
+  try {
+    users.value = await listUsers();
+  } catch {
+    users.value = [];
+  }
+}
+
+async function loadWorkflowRules() {
+  try {
+    const rules = await getWorkflowRules();
+    if (Array.isArray(rules?.forwardReturnAllowedStatuses) && rules.forwardReturnAllowedStatuses.length > 0) {
+      forwardReturnAllowedStatuses.value = rules.forwardReturnAllowedStatuses.map((statusName) => String(statusName).toUpperCase());
+    }
+  } catch {
+    forwardReturnAllowedStatuses.value = ["PENDING", "IN_PROGRESS", "RETURNED"];
+  }
+}
+
 function open(id) {
   router.push(`/documents/${id}`);
 }
@@ -425,6 +977,202 @@ function setMode(mode) {
 
 function isViewedByMe(doc) {
   return !!doc?.viewedByMe;
+}
+
+function canForwardRow(doc) {
+  if (!doc || inboxMode.value !== "received") return false;
+
+  const user = currentUser.value;
+  const ownerId = Number(doc?.currentOwnerUserId ?? doc?.currentOwnerId ?? doc?.ownerUserId);
+  const userId = Number(user?.id);
+  const docStatus = String(doc?.status || "").toUpperCase();
+
+  return (
+    Number.isFinite(userId) &&
+    ownerId === userId &&
+    forwardReturnAllowedStatuses.value.includes(docStatus) &&
+    hasPermission(user, "FORWARD_DOCUMENT") &&
+    availableForwardVisibilities.value.length > 0
+  );
+}
+
+function resetPreviewExtras() {
+  previewLoadingExtras.value = false;
+  previewExtrasError.value = "";
+  previewMovements.value = [];
+  previewRemarks.value = [];
+  previewAttachments.value = [];
+}
+
+async function openPreview(row) {
+  const documentId = resolveDocumentId(row);
+  if (!documentId) return;
+
+  previewDoc.value = row;
+  previewOpen.value = true;
+  resetPreviewExtras();
+
+  try {
+    const fullDoc = await getDocument(documentId);
+    previewDoc.value = { ...row, ...fullDoc };
+  } catch (e) {
+    previewExtrasError.value = e?.message || "Could not load full preview details.";
+  }
+
+  await loadPreviewExtras(documentId);
+}
+
+async function loadPreviewExtras(documentId) {
+  previewLoadingExtras.value = true;
+
+  const results = await Promise.allSettled([
+    listMovements(documentId),
+    listRemarks(documentId),
+    listAttachments(documentId),
+  ]);
+
+  previewMovements.value = results[0].status === "fulfilled" && Array.isArray(results[0].value) ? results[0].value : [];
+  previewRemarks.value = results[1].status === "fulfilled" && Array.isArray(results[1].value) ? results[1].value : [];
+  previewAttachments.value = results[2].status === "fulfilled" && Array.isArray(results[2].value) ? results[2].value : [];
+
+  if (results.some((result) => result.status === "rejected") && !previewExtrasError.value) {
+    previewExtrasError.value = "Some preview details are unavailable for your account.";
+  }
+
+  previewLoadingExtras.value = false;
+}
+
+function closePreview() {
+  previewOpen.value = false;
+  previewDoc.value = null;
+  resetPreviewExtras();
+}
+
+function openPreviewDocument() {
+  const id = resolveDocumentId(previewDoc.value);
+  if (!id) return;
+  closePreview();
+  open(id);
+}
+
+function resetForwardForm() {
+  forwardRemark.value = "";
+  forwardVisibility.value = availableForwardVisibilities.value[0] || "PUBLIC";
+  const firstTarget = forwardTargets.value[0] || null;
+  forwardToUserId.value = firstTarget ? Number(firstTarget.id) : null;
+  forwardUserSearch.value = firstTarget ? formatUserLabel(firstTarget) : "";
+  forwardSearchFocused.value = false;
+  forwardAttachments.value = [];
+  forwardAttachmentsLoading.value = false;
+  forwardAttachmentsError.value = "";
+  selectedForwardAttachmentId.value = null;
+}
+
+async function openForwardDialog(row) {
+  const documentId = resolveDocumentId(row);
+  if (!documentId) return;
+
+  forwardDoc.value = row;
+  forwardOpen.value = true;
+  resetForwardForm();
+
+  try {
+    const fullDoc = await getDocument(documentId);
+    forwardDoc.value = { ...row, ...fullDoc };
+  } catch (e) {
+    error.value = e?.message || "Could not load document before forwarding.";
+  }
+
+  await loadForwardAttachments(documentId);
+}
+
+async function loadForwardAttachments(documentId) {
+  forwardAttachmentsLoading.value = true;
+  forwardAttachmentsError.value = "";
+  try {
+    const data = await listAttachments(documentId);
+    forwardAttachments.value = Array.isArray(data) ? data : [];
+    selectedForwardAttachmentId.value = forwardMainAttachment.value?.id ?? forwardAttachmentsSorted.value[0]?.id ?? null;
+  } catch (e) {
+    forwardAttachments.value = [];
+    selectedForwardAttachmentId.value = null;
+    forwardAttachmentsError.value = e?.message || "Could not load file preview.";
+  } finally {
+    forwardAttachmentsLoading.value = false;
+  }
+}
+
+function selectPreviousForwardAttachment() {
+  if (!canGoPreviousForwardAttachment.value) return;
+  selectedForwardAttachmentId.value = forwardAttachmentsSorted.value[selectedForwardAttachmentIndex.value - 1]?.id ?? null;
+}
+
+function selectNextForwardAttachment() {
+  if (!canGoNextForwardAttachment.value) return;
+  selectedForwardAttachmentId.value = forwardAttachmentsSorted.value[selectedForwardAttachmentIndex.value + 1]?.id ?? null;
+}
+
+function closeForwardDialog() {
+  if (forwardBusy.value) return;
+  forwardOpen.value = false;
+  forwardDoc.value = null;
+  resetForwardForm();
+}
+
+function selectForwardUser(user) {
+  if (!user) return;
+  forwardToUserId.value = Number(user.id);
+  forwardUserSearch.value = formatUserLabel(user);
+  forwardSearchFocused.value = false;
+}
+
+function clearForwardSearch() {
+  forwardUserSearch.value = "";
+  forwardToUserId.value = null;
+  forwardSearchFocused.value = true;
+}
+
+async function submitForward() {
+  error.value = "";
+
+  const documentId = resolveDocumentId(forwardDoc.value);
+  if (!documentId) {
+    error.value = "Document is missing. Please refresh and try again.";
+    return;
+  }
+
+  if (!canForwardSelectedDoc.value) {
+    error.value = "You are not allowed to forward this document.";
+    return;
+  }
+
+  if (!forwardToUserId.value) {
+    error.value = "Please select a user to forward.";
+    return;
+  }
+
+  const selectedVisibility = String(forwardVisibility.value || "").toUpperCase();
+  if (!availableForwardVisibilities.value.includes(selectedVisibility)) {
+    error.value = "You do not have permission for selected forward visibility.";
+    return;
+  }
+
+  forwardBusy.value = true;
+  try {
+    await forwardDocument(documentId, {
+      toUserId: Number(forwardToUserId.value),
+      forwardVisibility: selectedVisibility,
+      remarkText: forwardRemark.value.trim() || null,
+    });
+    forwardOpen.value = false;
+    forwardDoc.value = null;
+    resetForwardForm();
+    await load();
+  } catch (e) {
+    error.value = e?.message || "Forward failed.";
+  } finally {
+    forwardBusy.value = false;
+  }
 }
 
 function displayDate(doc) {
@@ -486,6 +1234,7 @@ function onRealtimeDocumentReceived() {
 
 function onAuthChanged() {
   authTick.value += 1;
+  loadWorkflowRules();
   load();
 }
 
@@ -493,6 +1242,8 @@ onMounted(() => {
   window.addEventListener("rms_auth_changed", onAuthChanged);
   window.addEventListener("rms_permissions_updated", onAuthChanged);
   window.addEventListener("rms_document_received", onRealtimeDocumentReceived);
+  loadUsers();
+  loadWorkflowRules();
   load();
 });
 
@@ -787,6 +1538,49 @@ h2 { margin:0; line-height:1.15; }
   gap: 8px;
 }
 
+.rowActions {
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+
+.iconAction,
+.iconBtn {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:36px;
+  height:36px;
+  border-radius:10px;
+  border:1px solid #dbe3ef;
+  background:#ffffff;
+  color:#334155;
+  cursor:pointer;
+  transition:background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.12s ease;
+}
+
+.iconAction:hover,
+.iconBtn:hover {
+  background:#eff6ff;
+  border-color:#bfdbfe;
+  color:#1d4ed8;
+}
+
+.iconAction:disabled,
+.iconAction.disabled,
+.iconBtn:disabled {
+  cursor:not-allowed;
+  opacity:0.45;
+  background:#f8fafc;
+  color:#94a3b8;
+}
+
+.actionIcon {
+  width:16px;
+  height:16px;
+  stroke-width:2.2;
+}
+
 .timeText {
   font-size: 12px;
   color: #64748b;
@@ -802,7 +1596,10 @@ h2 { margin:0; line-height:1.15; }
 
 .btn { padding:10px 12px; border-radius:10px; border:1px solid #e5e7eb; background:#fff; cursor:pointer; }
 .btn:hover { background:#f9fafb; }
+.btn:disabled { cursor:not-allowed; opacity:0.58; }
 .btn-sm { padding:8px 12px; font-size:12px; font-weight:700; }
+.btn-primary { background:#2563eb; border-color:#2563eb; color:#fff; }
+.btn-primary:hover { background:#1d4ed8; border-color:#1d4ed8; }
 
 .pill {
   display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700;
@@ -823,6 +1620,473 @@ h2 { margin:0; line-height:1.15; }
   margin-bottom:12px;
   background:#fef2f2; border:1px solid #fecaca; color:#991b1b;
   padding:10px 12px; border-radius:8px;
+}
+
+.overlay {
+  position:fixed;
+  inset:0;
+  z-index:3000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:16px;
+  background:rgba(17, 24, 39, 0.56);
+  backdrop-filter:blur(2px);
+}
+
+.modal {
+  width:min(760px, 100%);
+  max-height:calc(100vh - 32px);
+  overflow:auto;
+  border-radius:18px;
+  background:#ffffff;
+  border:1px solid #e5e7eb;
+  box-shadow:0 28px 80px rgba(15, 23, 42, 0.28);
+}
+
+.forwardModal {
+  width:min(900px, 100%);
+}
+
+.modalHead {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  padding:18px 20px;
+  border-bottom:1px solid #eef2f7;
+  background:
+    radial-gradient(80% 110% at 100% 0%, rgba(37, 99, 235, 0.1), transparent 55%),
+    linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.modalEyebrow {
+  margin-bottom:3px;
+  color:#2563eb;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+}
+
+.modalTitle {
+  color:#0f172a;
+  font-size:19px;
+  font-weight:900;
+  letter-spacing:-0.02em;
+}
+
+.modalSub {
+  color:#64748b;
+  font-size:13px;
+  margin-top:4px;
+}
+
+.modalClose {
+  flex:0 0 auto;
+  font-size:18px;
+}
+
+.modalBody {
+  padding:20px;
+}
+
+.modalFoot {
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+  padding:16px 20px;
+  border-top:1px solid #eef2f7;
+  background:#f9fafb;
+}
+
+.previewPills {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-bottom:16px;
+}
+
+.previewGrid {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:0;
+  overflow:hidden;
+  border:1px solid #e5e7eb;
+  border-radius:14px;
+  background:#fff;
+}
+
+.previewGrid > div {
+  padding:12px 14px;
+  border-right:1px solid #eef2f7;
+  border-bottom:1px solid #eef2f7;
+  color:#111827;
+  font-size:13px;
+}
+
+.previewGrid > div:nth-child(2n) {
+  border-right:0;
+}
+
+.previewGrid > div:nth-last-child(-n + 2) {
+  border-bottom:0;
+}
+
+.label {
+  display:block;
+  color:#64748b;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:0.06em;
+  text-transform:uppercase;
+  margin-bottom:5px;
+}
+
+.note {
+  margin-top:14px;
+  padding:12px 14px;
+  border-radius:12px;
+  border:1px solid #e5e7eb;
+  background:#f8fafc;
+  color:#64748b;
+  font-size:13px;
+}
+
+.noteWarn {
+  background:#fff7ed;
+  border-color:#fed7aa;
+  color:#9a3412;
+}
+
+.opsCard {
+  margin-top:14px;
+  border:1px solid #dbeafe;
+  border-radius:14px;
+  background:#f8fbff;
+  padding:14px;
+}
+
+.opsTitle {
+  color:#1d4ed8;
+  font-size:12px;
+  font-weight:900;
+  letter-spacing:0.06em;
+  text-transform:uppercase;
+  margin-bottom:6px;
+}
+
+.opsRow {
+  display:grid;
+  grid-template-columns:130px 1fr;
+  align-items:start;
+  padding:7px 0;
+  border-bottom:1px solid #e5edf8;
+  color:#111827;
+  font-size:13px;
+}
+
+.opsRow:last-child {
+  border-bottom:0;
+}
+
+.formRow {
+  margin-top:14px;
+}
+
+.forwardDocPreview {
+  display:grid;
+  grid-template-columns:250px 1fr;
+  gap:16px;
+  align-items:stretch;
+  margin-bottom:16px;
+  padding:12px;
+  border:1px solid #dbeafe;
+  border-radius:18px;
+  background:
+    radial-gradient(80% 120% at 0% 0%, rgba(37, 99, 235, 0.08), transparent 58%),
+    #f8fbff;
+}
+
+.forwardFileBox {
+  position:relative;
+  min-height:260px;
+  overflow:hidden;
+  border:1px solid #e2e8f0;
+  border-radius:16px;
+  background:#ffffff;
+  box-shadow:inset 0 0 0 1px rgba(255, 255, 255, 0.75);
+}
+
+.forwardFileSwitcher {
+  position:absolute;
+  z-index:2;
+  left:8px;
+  right:8px;
+  bottom:8px;
+  display:grid;
+  grid-template-columns:30px 1fr 30px;
+  gap:6px;
+  padding:6px;
+  border:1px solid rgba(191, 219, 254, 0.9);
+  border-radius:12px;
+  background:rgba(248, 251, 255, 0.94);
+  box-shadow:0 10px 24px rgba(15, 23, 42, 0.12);
+  backdrop-filter:blur(4px);
+}
+
+.forwardAttachmentSelect {
+  min-width:0;
+  height:30px;
+  border:1px solid #dbe3ef;
+  border-radius:9px;
+  background:#ffffff;
+  color:#334155;
+  font-size:12px;
+  font-weight:700;
+  padding:0 8px;
+}
+
+.miniSwitchBtn {
+  width:30px;
+  height:30px;
+  border:1px solid #dbe3ef;
+  border-radius:9px;
+  background:#ffffff;
+  color:#1d4ed8;
+  cursor:pointer;
+  font-size:20px;
+  line-height:1;
+}
+
+.miniSwitchBtn:disabled {
+  cursor:not-allowed;
+  opacity:0.45;
+  color:#94a3b8;
+}
+
+.forwardMiniFrame,
+.forwardMiniImage {
+  display:block;
+  width:100%;
+  height:260px;
+  border:0;
+  background:#f8fafc;
+}
+
+.forwardMiniImage {
+  object-fit:contain;
+  padding:8px;
+  box-sizing:border-box;
+}
+
+.forwardFileEmpty {
+  height:260px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  padding:18px;
+  text-align:center;
+  color:#64748b;
+  font-size:12px;
+}
+
+.forwardFileSwitcher + .forwardFileEmpty {
+  padding-bottom:58px;
+}
+
+.forwardFileEmpty b {
+  color:#0f172a;
+  font-size:15px;
+}
+
+.forwardDocSummary {
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+.summaryTop {
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:flex-start;
+}
+
+.summaryRef {
+  color:#1d4ed8;
+  font-size:12px;
+  font-weight:900;
+  letter-spacing:0.06em;
+  text-transform:uppercase;
+}
+
+.summaryTitle {
+  margin-top:3px;
+  color:#0f172a;
+  font-size:18px;
+  font-weight:900;
+  line-height:1.2;
+}
+
+.summaryPills {
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+
+.summaryGrid {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:0;
+  overflow:hidden;
+  border:1px solid #e5e7eb;
+  border-radius:14px;
+  background:#fff;
+}
+
+.summaryGrid > div {
+  min-width:0;
+  padding:11px 12px;
+  border-right:1px solid #eef2f7;
+  border-bottom:1px solid #eef2f7;
+  color:#111827;
+  font-size:13px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.summaryGrid > div:nth-child(2n) {
+  border-right:0;
+}
+
+.summaryGrid > div:nth-last-child(-n + 2) {
+  border-bottom:0;
+}
+
+.formRow .input {
+  width:100%;
+  box-sizing:border-box;
+}
+
+.textarea {
+  width:100%;
+  box-sizing:border-box;
+  min-height:94px;
+  resize:vertical;
+  border-radius:12px;
+  border:1px solid #e5e7eb;
+  padding:12px;
+  font:inherit;
+  outline:none;
+  background:#fff;
+}
+
+.textarea:focus {
+  border-color:#9ca3af;
+  box-shadow:0 0 0 3px rgba(229, 231, 235, 0.9);
+}
+
+.forwardSearchWrap {
+  position:relative;
+}
+
+.forwardSearchDropdown {
+  position:absolute;
+  top:calc(100% + 6px);
+  left:0;
+  right:0;
+  z-index:10;
+  max-height:240px;
+  overflow:auto;
+  border:1px solid #dbe3ef;
+  border-radius:14px;
+  background:#fff;
+  box-shadow:0 18px 40px rgba(15, 23, 42, 0.16);
+}
+
+.forwardSearchOption {
+  width:100%;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:3px;
+  border:0;
+  border-bottom:1px solid #eef2f7;
+  background:#fff;
+  padding:10px 12px;
+  text-align:left;
+  cursor:pointer;
+}
+
+.forwardSearchOption:hover,
+.forwardSearchOption.active {
+  background:#eff6ff;
+}
+
+.forwardUserName {
+  color:#0f172a;
+  font-size:13px;
+  font-weight:800;
+}
+
+.forwardUserMeta,
+.forwardSearchMeta,
+.forwardSelected span {
+  color:#64748b;
+  font-size:12px;
+}
+
+.forwardSearchEmpty {
+  padding:12px;
+  color:#64748b;
+  font-size:13px;
+}
+
+.forwardSelected {
+  margin-top:8px;
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  padding:10px 12px;
+  border:1px solid #dbeafe;
+  border-radius:12px;
+  background:#f8fbff;
+  color:#0f172a;
+  font-size:13px;
+}
+
+.forwardSelected.muted {
+  border-color:#e5e7eb;
+  background:#f8fafc;
+  color:#64748b;
+}
+
+.forwardSearchMeta {
+  margin-top:8px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+
+.linkBtn {
+  border:0;
+  background:transparent;
+  color:#2563eb;
+  font-weight:800;
+  cursor:pointer;
+  padding:0;
+}
+
+.linkBtn:disabled {
+  cursor:not-allowed;
+  opacity:0.55;
 }
 
 @media (max-width: 900px) {
@@ -850,6 +2114,47 @@ h2 { margin:0; line-height:1.15; }
     grid-area: right;
     justify-content: space-between;
   }
+
+  .previewGrid,
+  .forwardDocPreview,
+  .summaryGrid {
+    grid-template-columns:1fr;
+  }
+
+  .previewGrid > div,
+  .previewGrid > div:nth-child(2n),
+  .previewGrid > div:nth-last-child(-n + 2) {
+    border-right:0;
+    border-bottom:1px solid #eef2f7;
+  }
+
+  .previewGrid > div:last-child {
+    border-bottom:0;
+  }
+
+  .summaryGrid > div,
+  .summaryGrid > div:nth-child(2n),
+  .summaryGrid > div:nth-last-child(-n + 2) {
+    border-right:0;
+    border-bottom:1px solid #eef2f7;
+  }
+
+  .summaryGrid > div:last-child {
+    border-bottom:0;
+  }
+
+  .forwardFileBox,
+  .forwardMiniFrame,
+  .forwardMiniImage,
+  .forwardFileEmpty {
+    min-height:220px;
+    height:220px;
+  }
+
+  .opsRow {
+    grid-template-columns:1fr;
+    gap:2px;
+  }
 }
 
 @media (max-width: 640px) {
@@ -870,6 +2175,33 @@ h2 { margin:0; line-height:1.15; }
   .btn,
   .btn-sm {
     min-height:36px;
+  }
+
+  .rowActions {
+    flex-wrap:wrap;
+    justify-content:flex-end;
+  }
+
+  .modalHead,
+  .modalFoot,
+  .modalBody {
+    padding:14px;
+  }
+
+  .modalFoot {
+    flex-direction:column;
+  }
+
+  .modalFoot .btn {
+    width:100%;
+  }
+
+  .summaryTop {
+    flex-direction:column;
+  }
+
+  .summaryPills {
+    justify-content:flex-start;
   }
 }
 </style>
