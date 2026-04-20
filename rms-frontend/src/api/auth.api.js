@@ -16,6 +16,10 @@ http.interceptors.request.use((config) => {
 });
 
 function getMsg(e) {
+  const details = e?.response?.data?.details;
+  if (Array.isArray(details) && details.length > 0) {
+    return details.join(" ");
+  }
   return (
     e?.response?.data?.message ||
     e?.response?.data?.error ||

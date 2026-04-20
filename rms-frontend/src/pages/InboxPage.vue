@@ -116,7 +116,10 @@
             v-for="d in rows"
             :key="rowKey(d)"
             class="mailRow"
-            :class="{ unopened: inboxMode === 'received' && !isViewedByMe(d) }"
+            :class="{
+              unopened: inboxMode === 'received' && !isViewedByMe(d),
+              opened: inboxMode === 'received' && isViewedByMe(d),
+            }"
             @click="open(resolveDocumentId(d))"
           >
             <div class="mailLeft">
@@ -664,6 +667,27 @@ h2 { margin:0; line-height:1.15; }
   background: #f5f9ff;
 }
 
+.mailRow.opened {
+  background: #fbfcfe;
+}
+
+.mailRow.opened .docTypeBadge,
+.mailRow.opened .pill {
+  opacity: 0.68;
+}
+
+.mailRow.opened .refNo,
+.mailRow.opened .titleText {
+  color: #475569;
+  font-weight: 600;
+}
+
+.mailRow.opened .mailPreview,
+.mailRow.opened .timeText,
+.mailRow.opened .sentMetaLine {
+  color: #94a3b8;
+}
+
 .mailLeft {
   display: flex;
   align-items: center;
@@ -739,6 +763,7 @@ h2 { margin:0; line-height:1.15; }
 .mailRow.unopened .titleText,
 .mailRow.unopened .refNo {
   font-weight: 800;
+  color: #0f172a;
 }
 
 .mailPreview {
