@@ -8,7 +8,7 @@
         <div class="meta">
           <span class="pill">Status: {{ displayStatusLabel(doc?.status) || "-" }}</span>
           <span class="pill">Priority: {{ doc?.priority || "-" }}</span>
-          <span class="pill">Owner: {{ ownerLabel }}</span>
+          <span class="pill">Current Owner: {{ ownerLabel }}</span>
         </div>
 
         <div class="subMeta">
@@ -164,7 +164,7 @@
               <b>{{ formatUserLabel(currentUser) }}</b>
             </div>
             <div>
-              <span class="ownershipLabel">Ownership</span>
+              <span class="ownershipLabel">Current Owner Status</span>
               <b>
                 {{ isOwner ? "You can act on this document" : "Read-only for this document" }}
               </b>
@@ -328,7 +328,7 @@
 
           <!-- (Keeping your existing file visibility rule) -->
           <div v-if="!canViewHistory" class="lockBox">
-            Only the <b>current owner</b> can view file history. DC can view all.
+            Only the <b>current owner</b> can view file history.
           </div>
 
           <template v-else>
@@ -437,7 +437,7 @@
           <div class="cardSub">Track every workflow handoff and action history.</div>
 
           <div v-if="!canViewHistory" class="lockBox">
-            Only the <b>current owner</b> can view movement history. DC can view all.
+            Only the <b>current owner</b> can view movement history.
           </div>
 
           <template v-else>
