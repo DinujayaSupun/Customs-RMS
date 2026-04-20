@@ -196,13 +196,56 @@
           <div class="formRow">
             <div class="label">Forward To</div>
 
-            <!-- ✅ fixed dropdown -->
-            <select class="input" v-model="toUserId" :disabled="busy || !canForward">
-              <option :value="null">-- Select user --</option>
-              <option v-for="u in forwardTargets" :key="u.id" :value="Number(u.id)">
-                {{ formatUserLabel(u) }}
-              </option>
-            </select>
+            <div class="forwardSearchWrap">
+              <input
+                class="input forwardSearch"
+                v-model="forwardUserSearch"
+                :disabled="busy || !canForward"
+                placeholder="Search user by name, role, department, or ID..."
+                spellcheck="false"
+                @focus="forwardSearchFocused = true"
+                @blur="forwardSearchFocused = false"
+                @keydown.escape="forwardSearchFocused = false"
+              />
+
+              <div v-if="showForwardSearchDropdown" class="forwardSearchDropdown">
+                <button
+                  v-for="u in filteredForwardTargets"
+                  :key="u.id"
+                  type="button"
+                  class="forwardSearchOption"
+                  :class="{ active: Number(u.id) === Number(toUserId) }"
+                  @mousedown.prevent="selectForwardUser(u)"
+                >
+                  <span class="forwardUserName">{{ u.fullName || u.name || u.username || `ID ${u.id}` }}</span>
+                  <span class="forwardUserMeta">{{ u.username || "-" }} • {{ u.role || "-" }} • ID {{ u.id }}</span>
+                </button>
+                <div v-if="filteredForwardTargets.length === 0" class="forwardSearchEmpty">
+                  No matching users
+                </div>
+              </div>
+            </div>
+
+            <div v-if="selectedForwardUser" class="forwardSelected">
+              <span>Selected user</span>
+              <b>{{ formatUserLabel(selectedForwardUser) }}</b>
+            </div>
+            <div v-else class="forwardSelected muted">
+              Select a user from the search results before forwarding.
+            </div>
+
+            <div class="forwardSearchMeta">
+              <span>{{ forwardUserSearch.trim() ? `${filteredForwardTargets.length} of ${forwardTargets.length} users shown` : `${forwardTargets.length} users available` }}</span>
+              <button
+                v-if="forwardUserSearch"
+                type="button"
+                class="linkBtn"
+                :disabled="busy"
+                @click="forwardUserSearch = ''"
+              >
+                Clear search
+              </button>
+            </div>
 
             <div class="hintInline">
               <span class="hintLabel">Forward rules</span>
@@ -574,6 +617,8 @@ const detailsForm = ref({
 
 const toUserId = ref(null);
 const forwardVisibility = ref("PUBLIC");
+const forwardUserSearch = ref("");
+const forwardSearchFocused = ref(false);
 
 // ✅ ONE remark box
 const remarkDraft = ref("");
@@ -661,6 +706,43 @@ const forwardTargets = computed(() => {
   if (currentUser.value.role === "PMA") return all.filter((u) => u.role === "DC");
   return all;
 });
+
+const selectedForwardUser = computed(() => {
+  return forwardTargets.value.find((u) => Number(u.id) === Number(toUserId.value)) || null;
+});
+
+const filteredForwardTargets = computed(() => {
+  const q = forwardUserSearch.value.trim().toLowerCase();
+  if (!q) return forwardTargets.value;
+
+  return forwardTargets.value.filter((u) => {
+    const searchableText = [
+      formatUserLabel(u),
+      u.username,
+      u.fullName,
+      u.name,
+      u.role,
+      u.department,
+      u.id,
+    ]
+      .filter((part) => part !== null && part !== undefined && String(part).trim() !== "")
+      .join(" ")
+      .toLowerCase();
+
+    return searchableText.includes(q);
+  });
+});
+
+const showForwardSearchDropdown = computed(() => {
+  return canForward.value && forwardSearchFocused.value && (forwardUserSearch.value.trim() || filteredForwardTargets.value.length > 0);
+});
+
+function selectForwardUser(user) {
+  if (!user) return;
+  toUserId.value = Number(user.id);
+  forwardUserSearch.value = formatUserLabel(user);
+  forwardSearchFocused.value = false;
+}
 
 // ✅ Keep toUserId valid
 watch(
@@ -1246,6 +1328,98 @@ async function removeAttachment(a) {
 .formRow { margin-top:10px; }
 .label { font-size:12px; font-weight:800; margin-bottom:6px; color:#374151; }
 .input { height:38px; width:100%; border:1px solid #e5e7eb; border-radius:8px; padding:0 10px; outline:none; }
+.forwardSearchWrap {
+  position:relative;
+  margin-bottom:8px;
+}
+.forwardSearch { background:#f9fafb; }
+.forwardSearchDropdown {
+  position:absolute;
+  z-index:25;
+  top:calc(100% + 4px);
+  left:0;
+  right:0;
+  max-height:230px;
+  overflow:auto;
+  border:1px solid #dbe3ef;
+  border-radius:10px;
+  background:#fff;
+  box-shadow:0 14px 30px rgba(15, 23, 42, 0.14);
+  padding:6px;
+}
+.forwardSearchOption {
+  width:100%;
+  border:0;
+  border-radius:8px;
+  background:transparent;
+  cursor:pointer;
+  display:grid;
+  gap:3px;
+  padding:9px 10px;
+  text-align:left;
+}
+.forwardSearchOption:hover,
+.forwardSearchOption.active {
+  background:#eff6ff;
+}
+.forwardUserName {
+  color:#111827;
+  font-size:13px;
+  font-weight:800;
+}
+.forwardUserMeta,
+.forwardSearchEmpty {
+  color:#6b7280;
+  font-size:12px;
+}
+.forwardSearchEmpty {
+  padding:10px;
+}
+.forwardSelected {
+  display:grid;
+  gap:3px;
+  margin-top:8px;
+  padding:9px 10px;
+  border:1px solid #dbeafe;
+  border-radius:8px;
+  background:#eff6ff;
+  color:#1e3a8a;
+  font-size:12px;
+}
+.forwardSelected span {
+  color:#64748b;
+  font-weight:700;
+}
+.forwardSelected b {
+  color:#111827;
+  font-size:13px;
+}
+.forwardSelected.muted {
+  display:block;
+  color:#6b7280;
+  background:#f9fafb;
+  border-color:#e5e7eb;
+}
+.forwardSearchMeta {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-top:6px;
+  color:#6b7280;
+  font-size:12px;
+}
+.linkBtn {
+  border:0;
+  background:transparent;
+  color:#2563eb;
+  cursor:pointer;
+  font-size:12px;
+  font-weight:700;
+  padding:0;
+}
+.linkBtn:hover:not(:disabled) { text-decoration:underline; }
+.linkBtn:disabled { opacity:0.6; cursor:not-allowed; }
 .textarea { width:100%; min-height:80px; border:1px solid #e5e7eb; border-radius:8px; padding:10px; outline:none; resize:vertical; }
 .smallHint { margin-top:6px; font-size:12px; color:#6b7280; }
 
