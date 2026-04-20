@@ -150,20 +150,21 @@
 
     <!-- Preview Modal -->
     <div v-if="previewOpen" class="overlay" @click.self="previewOpen=false">
-      <div class="modal">
+      <div class="modal previewModal">
         <div class="modalHead">
           <div>
+            <div class="modalEyebrow">Quick Look</div>
             <div class="modalTitle">Document Preview</div>
             <div class="modalSub">{{ previewDoc?.refNo }} — {{ previewDoc?.title }}</div>
           </div>
-          <button class="iconBtn" @click="previewOpen=false">✕</button>
+          <button class="iconBtn modalClose" @click="previewOpen=false" aria-label="Close preview">✕</button>
         </div>
 
         <div class="modalBody">
           <div class="previewPills">
             <span class="pill" :class="'pill-'+previewDoc?.status">{{ displayStatusLabel(previewDoc?.status) || '-' }}</span>
             <span class="pill" :class="'pill-'+previewDoc?.priority">{{ previewDoc?.priority || '-' }}</span>
-            <span class="pill pill-PENDING">Owner: {{ ownerLabel(previewDoc?.currentOwnerUserId) }}</span>
+            <span class="pill pill-PENDING">Current Owner: {{ ownerLabel(previewDoc?.currentOwnerUserId) }}</span>
           </div>
 
           <div class="previewGrid">
@@ -197,7 +198,7 @@
             </div>
           </div>
 
-          <div class="note">
+          <div class="note decisionNote">
             Preview shows a quick decision summary. Open full document for complete workflow, files, and timeline.
           </div>
         </div>
@@ -862,6 +863,139 @@ h2 { margin:0; line-height:1.15; }
   overflow:hidden;
 }
 
+/* Polished preview modal */
+.overlay {
+  background:rgba(17, 24, 39, 0.56);
+  backdrop-filter: blur(2px);
+}
+
+.previewModal {
+  max-width:760px;
+  border-radius:18px;
+  box-shadow:0 28px 80px rgba(15, 23, 42, 0.28);
+}
+
+.previewModal .modalHead {
+  align-items:center;
+  padding:18px 20px;
+  border-bottom:1px solid #eef2f7;
+  background:
+    radial-gradient(80% 110% at 100% 0%, rgba(37, 99, 235, 0.1), transparent 55%),
+    linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.modalEyebrow {
+  color:#2563eb;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:0.1em;
+  text-transform:uppercase;
+  margin-bottom:3px;
+}
+
+.previewModal .modalTitle {
+  color:#0f172a;
+  font-size:19px;
+  letter-spacing:-0.02em;
+}
+
+.previewModal .modalSub {
+  color:#64748b;
+  font-size:13px;
+  margin-top:4px;
+}
+
+.modalClose {
+  border-radius:999px;
+  color:#374151;
+}
+
+.previewModal .modalBody {
+  padding:20px;
+}
+
+.previewModal .previewPills {
+  margin-bottom:16px;
+}
+
+.previewModal .previewGrid {
+  gap:0;
+  overflow:hidden;
+  border:1px solid #e5e7eb;
+  border-radius:14px;
+  background:#fff;
+}
+
+.previewModal .previewGrid > div {
+  padding:12px 14px;
+  border-right:1px solid #eef2f7;
+  border-bottom:1px solid #eef2f7;
+  color:#111827;
+  font-size:13px;
+}
+
+.previewModal .previewGrid > div:nth-child(2n) {
+  border-right:0;
+}
+
+.previewModal .previewGrid > div:nth-last-child(-n + 2) {
+  border-bottom:0;
+}
+
+.previewModal .label {
+  display:block;
+  color:#64748b;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:0.06em;
+  text-transform:uppercase;
+  margin-bottom:5px;
+}
+
+.previewModal .opsCard {
+  border-color:#dbeafe;
+  border-radius:14px;
+  background:#f8fbff;
+  padding:14px;
+}
+
+.previewModal .opsTitle {
+  color:#1d4ed8;
+}
+
+.previewModal .opsRow {
+  grid-template-columns:130px 1fr;
+  align-items:start;
+  padding:7px 0;
+  border-bottom:1px solid #e5edf8;
+}
+
+.previewModal .opsRow:last-child {
+  border-bottom:0;
+}
+
+.previewModal .note {
+  border-radius:12px;
+}
+
+.decisionNote {
+  background:#f8fafc;
+}
+
+.previewModal .modalFoot {
+  padding:16px 20px;
+  border-top:1px solid #eef2f7;
+  background:#f9fafb;
+}
+
+.previewModal .modalFoot .btn {
+  min-width:86px;
+}
+
+.previewModal .modalFoot .btn-primary {
+  min-width:180px;
+}
+
 @media (max-width: 960px) {
   .filters {
     grid-template-columns:1fr 1fr;
@@ -889,6 +1023,17 @@ h2 { margin:0; line-height:1.15; }
     grid-template-columns:1fr;
   }
 
+  .previewModal .previewGrid > div,
+  .previewModal .previewGrid > div:nth-child(2n),
+  .previewModal .previewGrid > div:nth-last-child(-n + 2) {
+    border-right:0;
+    border-bottom:1px solid #eef2f7;
+  }
+
+  .previewModal .previewGrid > div:last-child {
+    border-bottom:0;
+  }
+
   .opsRow {
     grid-template-columns:1fr;
     gap:2px;
@@ -898,6 +1043,28 @@ h2 { margin:0; line-height:1.15; }
   .btn-sm,
   .iconBtn {
     min-height:36px;
+  }
+
+  .previewModal {
+    max-height:calc(100vh - 28px);
+    overflow:auto;
+  }
+
+  .previewModal .modalHead,
+  .previewModal .modalFoot {
+    padding:14px;
+  }
+
+  .previewModal .modalBody {
+    padding:14px;
+  }
+
+  .previewModal .modalFoot {
+    flex-direction:column;
+  }
+
+  .previewModal .modalFoot .btn {
+    width:100%;
   }
 }
 </style>

@@ -56,9 +56,12 @@
       <!-- LEFT -->
       <div class="col">
         <!-- DETAILS -->
-        <div class="card">
+        <div class="card detailsCard">
           <div class="cardHead">
-            <div class="cardTitle">Details</div>
+            <div>
+              <div class="cardTitle">Details</div>
+              <div class="cardSub">Core document metadata and lifecycle dates.</div>
+            </div>
             <div class="btnRow" style="margin-top:0;">
               <button
                 v-if="canEditDetails && !isEditingDetails"
@@ -151,17 +154,21 @@
         </div>
 
         <!-- ACTIONS -->
-        <div class="card">
+        <div class="card workflowCard">
           <div class="cardTitle">Workflow Actions</div>
+          <div class="cardSub">Add a minute, choose the next officer, and run the allowed action.</div>
 
-          <div class="hint">
-            Current User:
-            <b>{{ formatUserLabel(currentUser) }}</b>
-            <span class="dot">•</span>
-            Owner:
-            <b :style="{ color: isOwner ? '#065f46' : '#991b1b' }">
-              {{ isOwner ? "YES" : "NO" }}
-            </b>
+          <div class="ownershipBanner" :class="{ owner: isOwner }">
+            <div>
+              <span class="ownershipLabel">Current User</span>
+              <b>{{ formatUserLabel(currentUser) }}</b>
+            </div>
+            <div>
+              <span class="ownershipLabel">Ownership</span>
+              <b>
+                {{ isOwner ? "You can act on this document" : "Read-only for this document" }}
+              </b>
+            </div>
           </div>
 
           <!-- ✅ ONE remark box (used for forward + manual save) -->
@@ -291,8 +298,9 @@
         </div>
 
         <!-- ✅ REMARKS LIST (ALWAYS VISIBLE) -->
-        <div class="card">
+        <div class="card minutesCard">
           <div class="cardTitle">Minutes</div>
+          <div class="cardSub">Saved notes and action minutes for this document.</div>
 
           <div v-if="remarks.length === 0" class="empty">No minutes yet.</div>
 
@@ -314,8 +322,9 @@
       <!-- RIGHT -->
       <div class="col">
         <!-- FILES -->
-        <div class="card">
+        <div class="card filesCard">
           <div class="cardTitle">Files</div>
+          <div class="cardSub">Preview, open, upload, or remove document attachments.</div>
 
           <!-- (Keeping your existing file visibility rule) -->
           <div v-if="!canViewHistory" class="lockBox">
@@ -423,8 +432,9 @@
         </div>
 
         <!-- MOVEMENTS -->
-        <div class="card">
+        <div class="card timelineCard">
           <div class="cardTitle">Movement Timeline</div>
+          <div class="cardSub">Track every workflow handoff and action history.</div>
 
           <div v-if="!canViewHistory" class="lockBox">
             Only the <b>current owner</b> can view movement history. DC can view all.
@@ -1630,6 +1640,289 @@ async function removeAttachment(a) {
 .docType-TXT { background:#eef2ff; border-color:#c7d2fe; color:#3730a3; }
 .docType-ZIP { background:#fffbeb; border-color:#fde68a; color:#92400e; }
 .docType-FILE { background:#f3f4f6; border-color:#e5e7eb; color:#4b5563; }
+
+/* Polished document workspace */
+.topbar {
+  background:
+    radial-gradient(90% 120% at 100% 0%, rgba(37, 99, 235, 0.12), transparent 58%),
+    linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border:1px solid #e5e7eb;
+  border-radius:14px;
+  padding:16px;
+  box-shadow:0 8px 24px rgba(17, 24, 39, 0.06);
+}
+
+.title {
+  color:#0f172a;
+  letter-spacing:-0.02em;
+}
+
+.meta .pill {
+  background:#f8fafc;
+  color:#1f2937;
+  border-color:#dbe3ef;
+  font-weight:800;
+}
+
+.meta .pill:first-child {
+  background:#eff6ff;
+  color:#1d4ed8;
+  border-color:#bfdbfe;
+}
+
+.subMeta {
+  flex-wrap:wrap;
+}
+
+.grid {
+  align-items:start;
+}
+
+.card {
+  border-radius:14px;
+  border-color:#e2e8f0;
+  box-shadow:0 8px 22px rgba(17, 24, 39, 0.045);
+}
+
+.cardTitle {
+  margin-bottom:2px;
+  color:#0f172a;
+  font-size:16px;
+  letter-spacing:-0.01em;
+}
+
+.cardSub {
+  color:#6b7280;
+  font-size:12px;
+  line-height:1.45;
+  margin-bottom:12px;
+}
+
+.detailsCard .kv {
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap:0;
+  overflow:hidden;
+  border:1px solid #eef2f7;
+  border-radius:12px;
+}
+
+.detailsCard .k,
+.detailsCard .v {
+  padding:10px 12px;
+  border-bottom:1px solid #eef2f7;
+}
+
+.detailsCard .k {
+  background:#f8fafc;
+  color:#64748b;
+}
+
+.detailsCard .v {
+  min-width:0;
+  background:#fff;
+  overflow-wrap:anywhere;
+}
+
+.detailsCard .k:nth-last-child(2),
+.detailsCard .v:last-child {
+  border-bottom:0;
+}
+
+.workflowCard {
+  border-color:#bfdbfe;
+  background:
+    linear-gradient(180deg, #ffffff 0%, #f8fbff 100%),
+    #fff;
+}
+
+.ownershipBanner {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin:12px 0 14px;
+}
+
+.ownershipBanner > div {
+  display:grid;
+  gap:4px;
+  padding:11px 12px;
+  border:1px solid #fecaca;
+  border-radius:12px;
+  background:#fef2f2;
+}
+
+.ownershipBanner.owner > div {
+  border-color:#bfdbfe;
+  background:#eff6ff;
+}
+
+.ownershipLabel {
+  color:#64748b;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:0.07em;
+  text-transform:uppercase;
+}
+
+.ownershipBanner b {
+  color:#111827;
+  font-size:13px;
+}
+
+.formRow {
+  margin-top:14px;
+}
+
+.label {
+  letter-spacing:0.01em;
+}
+
+.input,
+.textarea,
+.search {
+  transition:border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.input:focus,
+.textarea:focus,
+.search:focus {
+  border-color:#93c5fd;
+  box-shadow:0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.textarea {
+  min-height:96px;
+  line-height:1.5;
+}
+
+.forwardSelected {
+  border-color:#bfdbfe;
+}
+
+.btn {
+  font-weight:800;
+  transition:background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+}
+
+.btn:hover:not(:disabled) {
+  transform:translateY(-1px);
+  box-shadow:0 8px 18px rgba(17, 24, 39, 0.08);
+}
+
+.btnRow .spacer + .btn {
+  border-color:#bfdbfe;
+  color:#1d4ed8;
+}
+
+.btnRow .spacer + .btn + .btn {
+  border-color:#fecaca;
+  color:#991b1b;
+}
+
+.btnRow .spacer + .btn + .btn + .btn,
+.btnRow .spacer + .btn + .btn + .btn + .btn {
+  color:#374151;
+}
+
+.filesCard .fileRow {
+  padding:12px;
+  border:1px solid #eef2f7;
+  border-radius:12px;
+  background:#f8fafc;
+}
+
+.miniPreview {
+  overflow:hidden;
+  border-radius:12px;
+}
+
+.attachRow {
+  padding:12px;
+  border:1px dashed #cbd5e1;
+  border-radius:12px;
+  background:#f9fafb;
+}
+
+.item {
+  background:#fff;
+  border-color:#e2e8f0;
+  box-shadow:0 4px 12px rgba(17, 24, 39, 0.035);
+}
+
+.minutesCard .item {
+  border-left:4px solid #2563eb;
+}
+
+.empty {
+  border:1px dashed #d1d5db;
+  border-radius:10px;
+  background:#f9fafb;
+  text-align:center;
+}
+
+.lockBox,
+.errorBox,
+.successBox {
+  box-shadow:0 6px 16px rgba(17, 24, 39, 0.04);
+}
+
+@media (max-width: 1100px) {
+  .grid {
+    grid-template-columns:1fr;
+  }
+
+  .rightBtns {
+    justify-content:flex-start;
+  }
+}
+
+@media (max-width: 720px) {
+  .topbar,
+  .card {
+    border-radius:12px;
+  }
+
+  .topbar,
+  .cardHead,
+  .fileRow,
+  .viewerHead {
+    flex-direction:column;
+    align-items:stretch;
+  }
+
+  .detailsCard .kv {
+    grid-template-columns:1fr;
+  }
+
+  .detailsCard .k {
+    border-bottom:0;
+    padding-bottom:3px;
+  }
+
+  .detailsCard .v {
+    padding-top:3px;
+  }
+
+  .ownershipBanner {
+    grid-template-columns:1fr;
+  }
+
+  .btnRow,
+  .rightBtns,
+  .viewerBtns,
+  .attachRow {
+    align-items:stretch;
+    flex-direction:column;
+  }
+
+  .btn {
+    width:100%;
+  }
+
+  .itemTop {
+    flex-direction:column;
+  }
+}
 
 /* Busy overlay */
 .busyOverlay {
