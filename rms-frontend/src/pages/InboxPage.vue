@@ -201,65 +201,114 @@
       </div>
 
       <div v-if="previewOpen" class="overlay" @click.self="closePreview">
-        <div class="modal previewModal">
+        <div class="modal previewModal fullPreviewModal">
           <div class="modalHead">
             <div>
-              <div class="modalEyebrow">Quick Look</div>
-              <div class="modalTitle">Document Preview</div>
+              <div class="modalEyebrow">Full Screen Preview</div>
+              <div class="modalTitle">{{ previewDoc?.refNo || '-' }} - {{ previewDoc?.title || 'Untitled document' }}</div>
               <div class="modalSub">{{ previewDoc?.refNo || '-' }} - {{ previewDoc?.title || 'Untitled document' }}</div>
             </div>
-            <button class="iconBtn modalClose" @click="closePreview" aria-label="Close preview">x</button>
+            <div class="previewHeaderActions">
+              <div v-if="previewAttachmentsSorted.length > 1" class="fullPreviewToolbar">
+                <button
+                  type="button"
+                  class="miniSwitchBtn"
+                  :disabled="!canGoPreviousPreviewAttachment"
+                  @click="selectPreviousPreviewAttachment"
+                  aria-label="Previous attachment"
+                >
+                  ‹
+                </button>
+                <select v-model="selectedPreviewAttachmentId" class="fullPreviewSelect" aria-label="Select attachment preview">
+                  <option v-for="a in previewAttachmentsSorted" :key="a.id" :value="a.id">
+                    v{{ a.versionNo }} - {{ a.fileName }}
+                  </option>
+                </select>
+                <button
+                  type="button"
+                  class="miniSwitchBtn"
+                  :disabled="!canGoNextPreviewAttachment"
+                  @click="selectNextPreviewAttachment"
+                  aria-label="Next attachment"
+                >
+                  ›
+                </button>
+              </div>
+              <button class="btn" @click="openPreviewDocument">Open Full Document</button>
+              <button class="iconBtn modalClose" @click="closePreview" aria-label="Close preview">x</button>
+            </div>
           </div>
 
-          <div class="modalBody">
-            <div class="previewPills">
-              <span class="pill" :class="'pill-'+previewDoc?.status">{{ displayStatusLabel(previewDoc?.status) || '-' }}</span>
-              <span class="pill" :class="'pill-'+previewDoc?.priority">{{ previewDoc?.priority || '-' }}</span>
-              <span class="pill pill-PENDING">Current Owner: {{ ownerLabel(previewDoc?.currentOwnerUserId) }}</span>
-            </div>
-
-            <div class="previewGrid">
-              <div><span class="label">Company</span>{{ previewDoc?.companyName || '-' }}</div>
-              <div><span class="label">Received</span>{{ formatDateSafe(previewDoc?.receivedDate) }}</div>
-              <div><span class="label">Days Open</span>{{ previewDaysOpen }}</div>
-              <div><span class="label">Main File Type</span>{{ previewMainAttachmentType }}</div>
-              <div><span class="label">Attachments</span>{{ previewAttachmentCount }}</div>
-              <div><span class="label">Main File Previewable</span>{{ previewIsMainFilePreviewable ? 'Yes' : 'No' }}</div>
-            </div>
-
-            <div v-if="previewLoadingExtras" class="note">Loading additional preview details...</div>
-            <div v-else-if="previewExtrasError" class="note noteWarn">{{ previewExtrasError }}</div>
-
-            <div v-if="previewCanSeeOperational" class="opsCard">
-              <div class="opsTitle">Latest Activity</div>
-              <div class="opsRow">
-                <span class="label">Last Action</span>
-                <span>
-                  {{ previewLastMovement?.actionType || '-' }}
-                  <span v-if="previewLastMovement"> • {{ formatDateTimeSafe(previewLastMovement.actionAt) }}</span>
+          <div class="modalBody fullPreviewBody">
+            <div class="fullPreviewViewer">
+              <div v-if="previewLoadingExtras" class="fullPreviewEmpty">Loading document preview...</div>
+              <iframe
+                v-else-if="selectedPreviewAttachment && isPdfFileName(selectedPreviewAttachment.fileName)"
+                :src="previewAttachmentPreviewUrl(selectedPreviewAttachment)"
+                class="fullPreviewFrame"
+                title="Document PDF preview"
+              ></iframe>
+              <img
+                v-else-if="selectedPreviewAttachment && isImageFileName(selectedPreviewAttachment.fileName)"
+                :src="previewAttachmentPreviewUrl(selectedPreviewAttachment)"
+                class="fullPreviewImage"
+                alt="Document preview"
+              />
+              <div v-else class="fullPreviewEmpty">
+                <span
+                  class="docTypeBadge"
+                  :class="'docType-' + docTypeClass(selectedPreviewAttachmentType)"
+                  :title="attachmentTypeLabel(selectedPreviewAttachmentType)"
+                >
+                  <component :is="attachmentIconComponent(selectedPreviewAttachmentType)" class="docIcon" aria-hidden="true" />
                 </span>
-              </div>
-              <div class="opsRow">
-                <span class="label">Action By</span>
-                <span>{{ previewLastMovement ? ownerLabel(previewLastMovement.actionByUserId) : '-' }}</span>
-              </div>
-              <div class="opsRow">
-                <span class="label">Latest Minute</span>
-                <span>{{ previewLastRemark?.remarkText || 'No minute recorded.' }}</span>
+                <b>{{ selectedPreviewAttachmentType }}</b>
+                <span>{{ selectedPreviewAttachment?.fileName || 'No attachment available to preview' }}</span>
+                <button v-if="selectedPreviewAttachment" class="btn" @click="openAttachmentInNewTab(selectedPreviewAttachment)">Open File</button>
               </div>
             </div>
 
-            <div class="note decisionNote">Preview shows a quick decision summary. Open full document for complete workflow, files, and timeline.</div>
-          </div>
+            <aside class="fullPreviewSide">
+              <div class="previewPills">
+                <span class="pill" :class="'pill-'+previewDoc?.status">{{ displayStatusLabel(previewDoc?.status) || '-' }}</span>
+                <span class="pill" :class="'pill-'+previewDoc?.priority">{{ previewDoc?.priority || '-' }}</span>
+              </div>
 
-          <div class="modalFoot">
-            <button class="btn" @click="closePreview">Close</button>
-            <button class="btn btn-primary" @click="openPreviewDocument">Open Full Document</button>
+              <div class="previewGrid">
+                <div><span class="label">Company</span>{{ previewDoc?.companyName || '-' }}</div>
+                <div><span class="label">Received</span>{{ formatDateSafe(previewDoc?.receivedDate) }}</div>
+                <div><span class="label">Days Open</span>{{ previewDaysOpen }}</div>
+                <div><span class="label">Viewing File</span>{{ selectedPreviewAttachment?.fileName || selectedPreviewAttachmentType }}</div>
+                <div><span class="label">Attachments</span>{{ previewAttachmentCount }}</div>
+                <div><span class="label">Current Owner</span>{{ ownerLabel(previewDoc?.currentOwnerUserId) }}</div>
+              </div>
+
+              <div v-if="previewExtrasError" class="note noteWarn">{{ previewExtrasError }}</div>
+
+              <div v-if="previewCanSeeOperational" class="opsCard">
+                <div class="opsTitle">Latest Activity</div>
+                <div class="opsRow">
+                  <span class="label">Last Action</span>
+                  <span>
+                    {{ previewLastMovement?.actionType || '-' }}
+                    <span v-if="previewLastMovement"> • {{ formatDateTimeSafe(previewLastMovement.actionAt) }}</span>
+                  </span>
+                </div>
+                <div class="opsRow">
+                  <span class="label">Action By</span>
+                  <span>{{ previewLastMovement ? ownerLabel(previewLastMovement.actionByUserId) : '-' }}</span>
+                </div>
+                <div class="opsRow">
+                  <span class="label">Latest Minute</span>
+                  <span>{{ previewLastRemark?.remarkText || 'No minute recorded.' }}</span>
+                </div>
+              </div>
+            </aside>
           </div>
         </div>
       </div>
 
-      <div v-if="forwardOpen" class="overlay" @click.self="closeForwardDialog">
+      <div v-if="forwardOpen" class="overlay">
         <div class="modal forwardModal">
           <div class="modalHead">
             <div>
@@ -477,6 +526,7 @@ const previewExtrasError = ref("");
 const previewMovements = ref([]);
 const previewRemarks = ref([]);
 const previewAttachments = ref([]);
+const selectedPreviewAttachmentId = ref(null);
 
 const forwardOpen = ref(false);
 const forwardDoc = ref(null);
@@ -655,11 +705,21 @@ const previewLastRemark = computed(() => {
   })[0];
 });
 
+const previewAttachmentsSorted = computed(() => {
+  if (!previewAttachments.value.length) return [];
+  return [...previewAttachments.value].sort((a, b) => Number(a.versionNo) - Number(b.versionNo));
+});
+
 const previewMainAttachment = computed(() => {
-  if (!previewAttachments.value.length) return null;
+  if (!previewAttachmentsSorted.value.length) return null;
+  return previewAttachmentsSorted.value.find((a) => Number(a.versionNo) === 1) || previewAttachmentsSorted.value[0];
+});
+
+const selectedPreviewAttachment = computed(() => {
+  if (!previewAttachmentsSorted.value.length) return null;
   return (
-    previewAttachments.value.find((a) => Number(a.versionNo) === 1) ||
-    [...previewAttachments.value].sort((a, b) => Number(a.versionNo) - Number(b.versionNo))[0]
+    previewAttachmentsSorted.value.find((a) => Number(a.id) === Number(selectedPreviewAttachmentId.value)) ||
+    previewMainAttachment.value
   );
 });
 
@@ -670,6 +730,23 @@ const previewMainAttachmentType = computed(() => {
     return resolveAttachmentTypeFromName(previewMainAttachment.value.fileName);
   }
   return docTypeClass(previewDoc.value?.mainAttachmentType);
+});
+
+const selectedPreviewAttachmentType = computed(() => {
+  if (selectedPreviewAttachment.value?.fileName) {
+    return resolveAttachmentTypeFromName(selectedPreviewAttachment.value.fileName);
+  }
+  return previewMainAttachmentType.value;
+});
+
+const selectedPreviewAttachmentIndex = computed(() => {
+  if (!previewAttachmentsSorted.value.length || !selectedPreviewAttachment.value) return -1;
+  return previewAttachmentsSorted.value.findIndex((a) => Number(a.id) === Number(selectedPreviewAttachment.value.id));
+});
+
+const canGoPreviousPreviewAttachment = computed(() => selectedPreviewAttachmentIndex.value > 0);
+const canGoNextPreviewAttachment = computed(() => {
+  return selectedPreviewAttachmentIndex.value >= 0 && selectedPreviewAttachmentIndex.value < previewAttachmentsSorted.value.length - 1;
 });
 
 const previewIsMainFilePreviewable = computed(() => {
@@ -752,6 +829,16 @@ function isImageFileName(fileName) {
 function forwardAttachmentPreviewUrl(attachment) {
   if (!attachment?.id) return "";
   return buildAttachmentUrl(attachment.id, { inline: true });
+}
+
+function previewAttachmentPreviewUrl(attachment) {
+  if (!attachment?.id) return "";
+  return buildAttachmentUrl(attachment.id, { inline: true });
+}
+
+function openAttachmentInNewTab(attachment) {
+  if (!attachment?.id) return;
+  window.open(buildAttachmentUrl(attachment.id), "_blank");
 }
 
 function ownerLabel(userId) {
@@ -1002,6 +1089,7 @@ function resetPreviewExtras() {
   previewMovements.value = [];
   previewRemarks.value = [];
   previewAttachments.value = [];
+  selectedPreviewAttachmentId.value = null;
 }
 
 async function openPreview(row) {
@@ -1034,6 +1122,7 @@ async function loadPreviewExtras(documentId) {
   previewMovements.value = results[0].status === "fulfilled" && Array.isArray(results[0].value) ? results[0].value : [];
   previewRemarks.value = results[1].status === "fulfilled" && Array.isArray(results[1].value) ? results[1].value : [];
   previewAttachments.value = results[2].status === "fulfilled" && Array.isArray(results[2].value) ? results[2].value : [];
+  selectedPreviewAttachmentId.value = previewMainAttachment.value?.id ?? previewAttachmentsSorted.value[0]?.id ?? null;
 
   if (results.some((result) => result.status === "rejected") && !previewExtrasError.value) {
     previewExtrasError.value = "Some preview details are unavailable for your account.";
@@ -1053,6 +1142,16 @@ function openPreviewDocument() {
   if (!id) return;
   closePreview();
   open(id);
+}
+
+function selectPreviousPreviewAttachment() {
+  if (!canGoPreviousPreviewAttachment.value) return;
+  selectedPreviewAttachmentId.value = previewAttachmentsSorted.value[selectedPreviewAttachmentIndex.value - 1]?.id ?? null;
+}
+
+function selectNextPreviewAttachment() {
+  if (!canGoNextPreviewAttachment.value) return;
+  selectedPreviewAttachmentId.value = previewAttachmentsSorted.value[selectedPreviewAttachmentIndex.value + 1]?.id ?? null;
 }
 
 function resetForwardForm() {
@@ -1648,6 +1747,15 @@ h2 { margin:0; line-height:1.15; }
   width:min(900px, 100%);
 }
 
+.fullPreviewModal {
+  width:calc(100vw - 28px);
+  height:calc(100vh - 28px);
+  max-height:calc(100vh - 28px);
+  display:flex;
+  flex-direction:column;
+  border-radius:16px;
+}
+
 .modalHead {
   display:flex;
   align-items:center;
@@ -1687,8 +1795,106 @@ h2 { margin:0; line-height:1.15; }
   font-size:18px;
 }
 
+.previewHeaderActions {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+
 .modalBody {
   padding:20px;
+}
+
+.fullPreviewBody {
+  flex:1;
+  min-height:0;
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) 340px;
+  gap:14px;
+  padding:14px;
+  background:#f8fafc;
+}
+
+.fullPreviewViewer {
+  min-width:0;
+  min-height:0;
+  position:relative;
+  overflow:hidden;
+  border:1px solid #dbe3ef;
+  border-radius:16px;
+  background:#0f172a;
+}
+
+.fullPreviewToolbar {
+  display:grid;
+  grid-template-columns:34px minmax(0, 360px) 34px;
+  gap:8px;
+  width:min(520px, 45vw);
+  padding:7px;
+  border:1px solid rgba(191, 219, 254, 0.88);
+  border-radius:13px;
+  background:rgba(248, 251, 255, 0.94);
+  box-shadow:0 12px 28px rgba(15, 23, 42, 0.18);
+  backdrop-filter:blur(4px);
+}
+
+.fullPreviewSelect {
+  min-width:0;
+  height:34px;
+  border:1px solid #dbe3ef;
+  border-radius:10px;
+  background:#ffffff;
+  color:#334155;
+  font-size:12px;
+  font-weight:800;
+  padding:0 10px;
+}
+
+.fullPreviewFrame,
+.fullPreviewImage,
+.fullPreviewEmpty {
+  width:100%;
+  height:100%;
+  min-height:0;
+}
+
+.fullPreviewFrame {
+  border:0;
+  background:#ffffff;
+}
+
+.fullPreviewImage {
+  display:block;
+  object-fit:contain;
+  background:#111827;
+}
+
+.fullPreviewEmpty {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  padding:24px;
+  box-sizing:border-box;
+  text-align:center;
+  color:#cbd5e1;
+}
+
+.fullPreviewEmpty b {
+  color:#ffffff;
+  font-size:18px;
+}
+
+.fullPreviewSide {
+  min-width:0;
+  overflow:auto;
+  border:1px solid #e2e8f0;
+  border-radius:16px;
+  background:#ffffff;
+  padding:14px;
 }
 
 .modalFoot {
@@ -2117,8 +2323,21 @@ h2 { margin:0; line-height:1.15; }
 
   .previewGrid,
   .forwardDocPreview,
+  .fullPreviewBody,
   .summaryGrid {
     grid-template-columns:1fr;
+  }
+
+  .fullPreviewBody {
+    overflow:auto;
+  }
+
+  .fullPreviewViewer {
+    min-height:65vh;
+  }
+
+  .fullPreviewSide {
+    overflow:visible;
   }
 
   .previewGrid > div,
@@ -2186,6 +2405,28 @@ h2 { margin:0; line-height:1.15; }
   .modalFoot,
   .modalBody {
     padding:14px;
+  }
+
+  .fullPreviewModal {
+    width:100vw;
+    height:100vh;
+    max-height:100vh;
+    border-radius:0;
+  }
+
+  .fullPreviewBody {
+    padding:10px;
+  }
+
+  .fullPreviewToolbar {
+    grid-template-columns:30px minmax(0, 1fr) 30px;
+    width:100%;
+  }
+
+  .previewHeaderActions {
+    align-items:stretch;
+    flex-direction:column;
+    gap:8px;
   }
 
   .modalFoot {
