@@ -257,7 +257,7 @@ onUnmounted(() => {
   align-items: stretch;
   gap: 10px;
   overflow: hidden;
-  transition: width .2s ease, padding .2s ease, box-shadow .2s ease;
+  transition: width .38s ease, padding .38s ease, box-shadow .38s ease, flex-basis .38s ease;
   border-right: 1px solid rgba(255,255,255,0.06);
   box-sizing: border-box;
 }
@@ -304,7 +304,7 @@ onUnmounted(() => {
 .sidebar-text {
   opacity: 0;
   transform: translateX(-8px);
-  transition: opacity .18s ease, transform .18s ease;
+  transition: opacity .24s ease, transform .32s ease;
   white-space: nowrap;
 }
 
@@ -346,7 +346,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
   min-height: 50px;
-  transition: background .18s ease, transform .18s ease, box-shadow .18s ease;
+  transition: background .24s ease, transform .24s ease, box-shadow .24s ease;
   width: 100%;
   box-sizing: border-box;
 }
@@ -380,7 +380,7 @@ onUnmounted(() => {
   justify-content: center;
   background: rgba(255,255,255,0.07);
   color: #dbeafe;
-  transition: background .18s ease, color .18s ease, transform .18s ease;
+  transition: background .24s ease, color .24s ease, transform .24s ease;
 }
 
 .nav-svg {

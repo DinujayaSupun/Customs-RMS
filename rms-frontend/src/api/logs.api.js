@@ -1,8 +1,10 @@
 import axios from "axios";
 import { getAccessToken } from "../auth/currentUser";
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8080").replace(/\/$/, "");
+
 const http = axios.create({
-  baseURL: `${import.meta.env.VITE_API_BASE_URL || "http://localhost:8080"}/api`,
+  baseURL: `${API_BASE_URL}/api`,
   timeout: 20000,
 });
 
@@ -32,17 +34,30 @@ export async function listAuditLogs(params = {}) {
   }
 }
 
-export function buildAuditLogsExportUrl(params = {}) {
-  const url = new URL("http://localhost:8080/api/audit-logs/export");
-
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && String(value).trim() !== "") {
-      url.searchParams.set(key, String(value));
-    }
+export async function getAuditLogFilterOptions() {
+  try {
+    return (await http.get("/audit-logs/filter-options")).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
   }
+}
 
-  const token = getAccessToken();
-  if (token) url.searchParams.set("access_token", token);
+export async function exportAuditLogsCsv(params = {}) {
+  try {
+    const response = await http.get("/audit-logs/export", {
+      params,
+      responseType: "blob",
+    });
 
-  return url.toString();
+    const disposition = response.headers?.["content-disposition"] || "";
+    const match = disposition.match(/filename="?([^"]+)"?/i);
+    const fileName = match?.[1] || "audit-logs.csv";
+
+    return {
+      blob: response.data,
+      fileName,
+    };
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
 }

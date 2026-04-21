@@ -1,7 +1,10 @@
 package lk.customs.rms.controller;
 
+import lk.customs.rms.dto.AuditLogFilterOptionsResponse;
+import lk.customs.rms.dto.AuditLogPerformerOptionResponse;
 import lk.customs.rms.dto.AuditLogResponse;
 import lk.customs.rms.entity.AuditLog;
+import lk.customs.rms.entity.User;
 import lk.customs.rms.enums.AppPermission;
 import lk.customs.rms.exception.BadRequestException;
 import lk.customs.rms.repository.AuditLogRepository;
@@ -28,7 +31,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @RestController
 @CrossOrigin
@@ -85,6 +92,38 @@ public class LogsController {
                 documentId,
                 pageable
         ).map(this::toResponse);
+    }
+
+    @GetMapping("/filter-options")
+    public AuditLogFilterOptionsResponse filterOptions(Authentication authentication) {
+        ensureCanViewLogs(authentication);
+
+        List<String> actionTypes = auditLogRepository.findDistinctActionTypes();
+
+        List<Long> performerIds = auditLogRepository.findDistinctPerformedByUserIds();
+        Map<Long, User> usersById = userRepository.findAllById(performerIds).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+
+        List<AuditLogPerformerOptionResponse> performers = performerIds.stream()
+                .map(userId -> {
+                    User user = usersById.get(userId);
+                    String name = user == null
+                            ? "User ID " + userId
+                            : firstNonBlank(user.getFullName(), user.getUsername(), "User ID " + userId);
+
+                    return AuditLogPerformerOptionResponse.builder()
+                            .id(userId)
+                            .name(name)
+                            .build();
+                })
+                .sorted(Comparator.comparing(AuditLogPerformerOptionResponse::getName, String.CASE_INSENSITIVE_ORDER)
+                        .thenComparing(AuditLogPerformerOptionResponse::getId))
+                .toList();
+
+        return AuditLogFilterOptionsResponse.builder()
+                .actionTypes(actionTypes)
+                .performers(performers)
+                .build();
     }
 
     @GetMapping("/export")
@@ -164,6 +203,15 @@ public class LogsController {
         if (value == null) return null;
         String v = value.trim();
         return v.isEmpty() ? null : v;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "";
     }
 
     private Long parseLongOrNull(String value) {
