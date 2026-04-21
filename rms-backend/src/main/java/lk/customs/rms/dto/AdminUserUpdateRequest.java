@@ -13,6 +13,9 @@ public class AdminUserUpdateRequest {
     @NotBlank
     private String fullName;
 
+    @NotBlank
+    private String username;
+
     @Email
     private String email;
 

@@ -14,7 +14,10 @@ public interface AdminUserService {
     AdminUserResponse create(AdminUserCreateRequest request);
     AdminUserResponse update(Long userId, AdminUserUpdateRequest request);
     AdminUserResponse activate(Long userId);
-    AdminUserResponse deactivate(Long userId, Long fallbackDcUserId);
+    AdminUserResponse deactivate(Long userId, Long fallbackDcUserId, Long actorUserId);
+    void deactivateMany(List<Long> userIds, Long fallbackDcUserId, Long actorUserId);
+    void delete(Long userId, Long actorUserId);
+    void deleteMany(List<Long> userIds, Long actorUserId);
     void resetPassword(Long userId, String newPassword);
     String exportCsv(String search, String role, Boolean active);
     List<DuplicateUserCandidateResponse> findDuplicateCandidates();

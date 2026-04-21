@@ -3,6 +3,8 @@ package lk.customs.rms.controller;
 import jakarta.validation.Valid;
 import lk.customs.rms.dto.DcAutoForwardConfigResponse;
 import lk.customs.rms.dto.PermissionMatrixResponse;
+import lk.customs.rms.dto.PermissionsPageSaveRequest;
+import lk.customs.rms.dto.PermissionsPageSaveResponse;
 import lk.customs.rms.dto.UpdateDcAutoForwardConfigRequest;
 import lk.customs.rms.dto.UpdatePermissionMatrixRequest;
 import lk.customs.rms.security.CurrentUserService;
@@ -13,6 +15,7 @@ import lk.customs.rms.service.RealtimeNotificationService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.transaction.annotation.Transactional;
 
 @RestController
 @CrossOrigin
@@ -87,5 +90,34 @@ public class AdminPermissionController {
         );
 
         return updated;
+    }
+
+    @PutMapping("/page")
+    @Transactional
+    public PermissionsPageSaveResponse savePermissionsPage(@Valid @RequestBody PermissionsPageSaveRequest request,
+                                                           Authentication authentication) {
+        PermissionMatrixResponse updatedMatrix = permissionService.updatePermissionMatrix(request.getPermissionMatrix());
+        DcAutoForwardConfigResponse updatedConfig = dcAutoForwardConfigService.updateConfig(request.getDcAutoForwardConfig());
+
+        Long actorId = currentUserService.requireUser(authentication).getId();
+        auditLogService.logEvent(
+                "ROLE_PERMISSION",
+                0L,
+                "PERMISSION_PAGE_UPDATE",
+                actorId,
+                "Admin updated permission page settings",
+                "{\"entryCount\":" + request.getPermissionMatrix().getEntries().size()
+                        + ",\"enabled\":" + updatedConfig.getEnabled()
+                        + ",\"timeoutMinutes\":" + updatedConfig.getTimeoutMinutes()
+                        + ",\"receiverUserId\":" + updatedConfig.getReceiverUserId()
+                        + ",\"forwardReturnAllowedStatuses\":\"" + String.join(",", updatedConfig.getForwardReturnAllowedStatuses()) + "\"}"
+        );
+
+        realtimeNotificationService.notifyPermissionsUpdated();
+
+        return PermissionsPageSaveResponse.builder()
+                .permissionMatrix(updatedMatrix)
+                .dcAutoForwardConfig(updatedConfig)
+                .build();
     }
 }

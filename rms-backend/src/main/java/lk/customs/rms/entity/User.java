@@ -46,6 +46,15 @@ public class User {
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
 
+    @Column(name = "is_deleted", nullable = false)
+    private Boolean isDeleted = false;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    @Column(name = "deleted_by_user_id")
+    private Long deletedByUserId;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
@@ -57,6 +66,7 @@ public class User {
         this.passwordHash = passwordHash;
         this.role = role;
         this.isActive = true;
+        this.isDeleted = false;
         this.createdAt = LocalDateTime.now();
     }
 
@@ -112,6 +122,18 @@ public class User {
         return createdAt;
     }
 
+    public Boolean getIsDeleted() {
+        return isDeleted;
+    }
+
+    public LocalDateTime getDeletedAt() {
+        return deletedAt;
+    }
+
+    public Long getDeletedByUserId() {
+        return deletedByUserId;
+    }
+
     public void setId(Long id) {
         this.id = id;
     }
@@ -158,6 +180,18 @@ public class User {
 
     public void setIsActive(Boolean active) {
         isActive = active;
+    }
+
+    public void setIsDeleted(Boolean deleted) {
+        isDeleted = deleted;
+    }
+
+    public void setDeletedAt(LocalDateTime deletedAt) {
+        this.deletedAt = deletedAt;
+    }
+
+    public void setDeletedByUserId(Long deletedByUserId) {
+        this.deletedByUserId = deletedByUserId;
     }
 
     public void setCreatedAt(LocalDateTime createdAt) {

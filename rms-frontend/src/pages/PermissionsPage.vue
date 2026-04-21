@@ -123,6 +123,7 @@ import AppLayout from "../layouts/AppLayout.vue";
 import {
   adminGetDcAutoForwardConfig,
   adminGetPermissionsMatrix,
+  adminSavePermissionsPage,
   adminUpdateDcAutoForwardConfig,
   adminUpdatePermissionsMatrix,
   listUsers,
@@ -252,52 +253,54 @@ async function save() {
   success.value = "";
 
   try {
-    if (dirty.value) {
-      const entries = [];
-      for (const permission of permissions.value) {
-        for (const roleName of roles.value) {
-          entries.push({
-            roleName,
-            permission,
-            enabled: isEnabled(roleName, permission),
-          });
-        }
-      }
-
-      const data = await adminUpdatePermissionsMatrix(entries);
-      roles.value = Array.isArray(data?.roles) ? data.roles : roles.value;
-      permissions.value = Array.isArray(data?.permissions) ? data.permissions : permissions.value;
-      matrix.value = buildMatrix(data?.entries);
-      dirty.value = false;
+    const timeout = Number(dcTimeoutMinutes.value);
+    if (!Number.isFinite(timeout) || timeout < 1 || timeout > 10080) {
+      throw new Error("Timeout must be between 1 and 10080 minutes.");
+    }
+    if (dcAutoForwardEnabled.value && !dcReceiverUserId.value) {
+      throw new Error("Select a DDC/SDDC receiver when DC auto forward is enabled.");
+    }
+    if (forwardReturnAllowedStatuses.value.length === 0) {
+      throw new Error("Select at least one status where Forward/Return is allowed.");
     }
 
-    if (configDirty.value) {
-      const timeout = Number(dcTimeoutMinutes.value);
-      if (!Number.isFinite(timeout) || timeout < 1 || timeout > 10080) {
-        throw new Error("Timeout must be between 1 and 10080 minutes.");
+    const entries = [];
+    for (const permission of permissions.value) {
+      for (const roleName of roles.value) {
+        entries.push({
+          roleName,
+          permission,
+          enabled: isEnabled(roleName, permission),
+        });
       }
-      if (dcAutoForwardEnabled.value && !dcReceiverUserId.value) {
-        throw new Error("Select a DDC/SDDC receiver when DC auto forward is enabled.");
-      }
-      if (forwardReturnAllowedStatuses.value.length === 0) {
-        throw new Error("Select at least one status where Forward/Return is allowed.");
-      }
+    }
 
-      const updatedConfig = await adminUpdateDcAutoForwardConfig({
+    const savedPage = await adminSavePermissionsPage({
+      permissionMatrix: { entries },
+      dcAutoForwardConfig: {
         enabled: !!dcAutoForwardEnabled.value,
         timeoutMinutes: timeout,
         receiverUserId: dcReceiverUserId.value == null ? null : Number(dcReceiverUserId.value),
         forwardReturnAllowedStatuses: forwardReturnAllowedStatuses.value,
-      });
+      },
+    });
 
-      dcAutoForwardEnabled.value = !!updatedConfig?.enabled;
-      dcTimeoutMinutes.value = Number(updatedConfig?.timeoutMinutes || timeout);
-      dcReceiverUserId.value = updatedConfig?.receiverUserId == null ? null : Number(updatedConfig.receiverUserId);
-      forwardReturnAllowedStatuses.value = Array.isArray(updatedConfig?.forwardReturnAllowedStatuses) && updatedConfig.forwardReturnAllowedStatuses.length > 0
-        ? workflowStatuses.filter((statusName) => updatedConfig.forwardReturnAllowedStatuses.includes(statusName))
-        : forwardReturnAllowedStatuses.value;
-      configDirty.value = false;
-    }
+    const data = savedPage?.permissionMatrix;
+    const updatedConfig = savedPage?.dcAutoForwardConfig;
+
+    roles.value = Array.isArray(data?.roles) ? data.roles : roles.value;
+    permissions.value = Array.isArray(data?.permissions) ? data.permissions : permissions.value;
+    matrix.value = buildMatrix(data?.entries);
+
+    dcAutoForwardEnabled.value = !!updatedConfig?.enabled;
+    dcTimeoutMinutes.value = Number(updatedConfig?.timeoutMinutes || timeout);
+    dcReceiverUserId.value = updatedConfig?.receiverUserId == null ? null : Number(updatedConfig.receiverUserId);
+    forwardReturnAllowedStatuses.value = Array.isArray(updatedConfig?.forwardReturnAllowedStatuses) && updatedConfig.forwardReturnAllowedStatuses.length > 0
+      ? workflowStatuses.filter((statusName) => updatedConfig.forwardReturnAllowedStatuses.includes(statusName))
+      : forwardReturnAllowedStatuses.value;
+
+    dirty.value = false;
+    configDirty.value = false;
 
     success.value = "Permissions updated successfully.";
   } catch (e) {
@@ -307,7 +310,9 @@ async function save() {
   }
 }
 
-load();
+if (isAdmin.value) {
+  load();
+}
 </script>
 
 <style scoped>

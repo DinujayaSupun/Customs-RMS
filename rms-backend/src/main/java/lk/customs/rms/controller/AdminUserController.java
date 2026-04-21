@@ -106,8 +106,8 @@ public class AdminUserController {
     public AdminUserResponse deactivate(@PathVariable Long userId,
                                         @Valid @RequestBody DeactivateUserRequest request,
                                         Authentication authentication) {
-        AdminUserResponse deactivated = adminUserService.deactivate(userId, request.getFallbackDcUserId());
         Long actorId = currentUserService.requireUser(authentication).getId();
+        AdminUserResponse deactivated = adminUserService.deactivate(userId, request.getFallbackDcUserId(), actorId);
         auditLogService.logEvent(
                 "USER",
                 deactivated.getId(),
@@ -117,6 +117,24 @@ public class AdminUserController {
                 "{\"fallbackDcUserId\":" + request.getFallbackDcUserId() + "}"
         );
         return deactivated;
+    }
+
+    @PostMapping("/bulk-deactivate")
+    public void bulkDeactivate(@Valid @RequestBody BulkDeactivateUsersRequest request,
+                               Authentication authentication) {
+        Long actorId = currentUserService.requireUser(authentication).getId();
+        adminUserService.deactivateMany(request.getUserIds(), request.getFallbackDcUserId(), actorId);
+        for (Long userId : request.getUserIds()) {
+            if (userId == null) continue;
+            auditLogService.logEvent(
+                    "USER",
+                    userId,
+                    "USER_DEACTIVATE",
+                    actorId,
+                    "Admin bulk deactivated user and transferred active ownership",
+                    "{\"fallbackDcUserId\":" + request.getFallbackDcUserId() + ",\"mode\":\"bulk\"}"
+            );
+        }
     }
 
     @PatchMapping("/{userId}/reset-password")
@@ -133,6 +151,39 @@ public class AdminUserController {
                 "Admin reset user password",
                 null
         );
+    }
+
+    @DeleteMapping("/{userId}")
+    public void delete(@PathVariable Long userId,
+                       Authentication authentication) {
+        Long actorId = currentUserService.requireUser(authentication).getId();
+        adminUserService.delete(userId, actorId);
+        auditLogService.logEvent(
+                "USER",
+                userId,
+                "USER_DELETE",
+                actorId,
+                "Admin deleted inactive user account while preserving history",
+                null
+        );
+    }
+
+    @PostMapping("/bulk-delete")
+    public void bulkDelete(@Valid @RequestBody BulkDeleteUsersRequest request,
+                           Authentication authentication) {
+        Long actorId = currentUserService.requireUser(authentication).getId();
+        adminUserService.deleteMany(request.getUserIds(), actorId);
+        for (Long userId : request.getUserIds()) {
+            if (userId == null) continue;
+            auditLogService.logEvent(
+                    "USER",
+                    userId,
+                    "USER_DELETE",
+                    actorId,
+                    "Admin deleted inactive user account while preserving history",
+                    "{\"mode\":\"bulk\"}"
+            );
+        }
     }
 
     @PostMapping("/merge")

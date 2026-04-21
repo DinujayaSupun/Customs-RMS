@@ -83,7 +83,7 @@ public class AuthController {
             throw new BadRequestException("Invalid username or password.");
         }
 
-        var user = userRepository.findByUsernameAndIsActiveTrue(request.getUsername())
+        var user = userRepository.findByUsernameIgnoreCaseAndIsActiveTrue(request.getUsername())
                 .orElseThrow(() -> new BadRequestException("User not found."));
 
         String role = user.getRole() == null ? "USER" : user.getRole().getRoleName();

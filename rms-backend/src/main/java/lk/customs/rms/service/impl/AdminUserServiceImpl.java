@@ -13,6 +13,7 @@ import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.RoleRepository;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.service.AdminUserService;
+import lk.customs.rms.service.FileStorageService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -20,6 +21,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -34,15 +37,18 @@ public class AdminUserServiceImpl implements AdminUserService {
     private final RoleRepository roleRepository;
     private final DocumentRepository documentRepository;
     private final PasswordEncoder passwordEncoder;
+    private final FileStorageService fileStorageService;
 
     public AdminUserServiceImpl(UserRepository userRepository,
                                 RoleRepository roleRepository,
                                 DocumentRepository documentRepository,
-                                PasswordEncoder passwordEncoder) {
+                                PasswordEncoder passwordEncoder,
+                                FileStorageService fileStorageService) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.documentRepository = documentRepository;
         this.passwordEncoder = passwordEncoder;
+        this.fileStorageService = fileStorageService;
     }
 
     @Override
@@ -84,7 +90,13 @@ public class AdminUserServiceImpl implements AdminUserService {
     @Transactional
     public AdminUserResponse update(Long userId, AdminUserUpdateRequest request) {
         User user = requireUser(userId);
+        String username = normalizeRequired(request.getUsername(), "Username is required.");
+        if (userRepository.existsByUsernameIgnoreCaseAndIdNot(username, userId)) {
+            throw new BadRequestException("Username is already in use.");
+        }
+
         user.setFullName(normalizeRequired(request.getFullName(), "Full name is required."));
+        user.setUsername(username);
         user.setEmail(normalizeNullable(request.getEmail()));
         user.setPhone(normalizeNullable(request.getPhone()));
         user.setDepartment(normalizeNullable(request.getDepartment()));
@@ -101,14 +113,13 @@ public class AdminUserServiceImpl implements AdminUserService {
 
     @Override
     @Transactional
-    public AdminUserResponse deactivate(Long userId, Long fallbackDcUserId) {
+    public AdminUserResponse deactivate(Long userId, Long fallbackDcUserId, Long actorUserId) {
         User user = requireUser(userId);
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             return AdminUserResponse.from(user);
         }
-        if ("ADMIN".equalsIgnoreCase(user.getRole().getRoleName())) {
-            throw new BadRequestException("Admin user cannot be deactivated through workflow transfer endpoint.");
-        }
+
+        ensureAdminMutationAllowed(user, actorUserId, "deactivate");
 
         User fallbackDc = requireUser(fallbackDcUserId);
         if (!Boolean.TRUE.equals(fallbackDc.getIsActive()) || !"DC".equalsIgnoreCase(fallbackDc.getRole().getRoleName())) {
@@ -121,6 +132,63 @@ public class AdminUserServiceImpl implements AdminUserService {
         documentRepository.transferOwnershipForActiveDocuments(user.getId(), fallbackDc.getId(), Status.ISSUED);
         user.setIsActive(false);
         return AdminUserResponse.from(userRepository.save(user));
+    }
+
+    @Override
+    @Transactional
+    public void deactivateMany(List<Long> userIds, Long fallbackDcUserId, Long actorUserId) {
+        if (userIds == null || userIds.isEmpty()) {
+            throw new BadRequestException("Select at least one user to deactivate.");
+        }
+
+        for (Long userId : new LinkedHashSet<>(userIds)) {
+            if (userId == null) continue;
+            deactivate(userId, fallbackDcUserId, actorUserId);
+        }
+    }
+
+    @Override
+    @Transactional
+    public void delete(Long userId, Long actorUserId) {
+        User user = requireUser(userId);
+        if (Boolean.TRUE.equals(user.getIsDeleted())) {
+            return;
+        }
+        ensureAdminMutationAllowed(user, actorUserId, "delete");
+        if (user.getId().equals(actorUserId)) {
+            throw new BadRequestException("You cannot delete your own account.");
+        }
+        if (Boolean.TRUE.equals(user.getIsActive())) {
+            throw new BadRequestException("Only deactivated users can be deleted.");
+        }
+
+        if (user.getProfilePicturePath() != null && !user.getProfilePicturePath().isBlank()) {
+            fileStorageService.deleteIfExists(user.getProfilePicturePath());
+        }
+
+        user.setIsDeleted(true);
+        user.setDeletedAt(LocalDateTime.now());
+        user.setDeletedByUserId(actorUserId);
+        user.setEmail(null);
+        user.setPhone(null);
+        user.setDepartment(null);
+        user.setProfilePicturePath(null);
+        user.setProfilePictureContentType(null);
+        user.setProfilePictureUpdatedAt(null);
+        userRepository.save(user);
+    }
+
+    @Override
+    @Transactional
+    public void deleteMany(List<Long> userIds, Long actorUserId) {
+        if (userIds == null || userIds.isEmpty()) {
+            throw new BadRequestException("Select at least one user to delete.");
+        }
+
+        for (Long userId : new LinkedHashSet<>(userIds)) {
+            if (userId == null) continue;
+            delete(userId, actorUserId);
+        }
     }
 
     @Override
@@ -156,6 +224,7 @@ public class AdminUserServiceImpl implements AdminUserService {
     @Override
     public List<DuplicateUserCandidateResponse> findDuplicateCandidates() {
         List<User> activeUsers = userRepository.findAll().stream()
+                .filter(user -> !Boolean.TRUE.equals(user.getIsDeleted()))
                 .filter(user -> Boolean.TRUE.equals(user.getIsActive()))
                 .filter(user -> user.getRole() != null)
                 .toList();
@@ -207,7 +276,26 @@ public class AdminUserServiceImpl implements AdminUserService {
 
     private User requireUser(Long userId) {
         return userRepository.findById(userId)
+                .filter(user -> !Boolean.TRUE.equals(user.getIsDeleted()))
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+    }
+
+    private void ensureAdminMutationAllowed(User targetUser, Long actorUserId, String action) {
+        if (!isAdmin(targetUser)) {
+            return;
+        }
+        if (targetUser.getId().equals(actorUserId)) {
+            throw new BadRequestException("You cannot " + action + " your own admin account.");
+        }
+        if ("deactivate".equalsIgnoreCase(action) && userRepository.countActiveNotDeletedByRoleName("ADMIN") <= 1) {
+            throw new BadRequestException("At least one active admin must remain in the system.");
+        }
+    }
+
+    private boolean isAdmin(User user) {
+        return user != null
+                && user.getRole() != null
+                && "ADMIN".equalsIgnoreCase(user.getRole().getRoleName());
     }
 
     private Role requireRole(String roleName) {
