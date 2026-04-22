@@ -33,7 +33,7 @@ test("non-admin route guard redirects /users to /documents", async ({ page, requ
   await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible();
 });
 
-test("permission update enables Approve button live for affected role", async ({ browser, request }) => {
+test("permission update enables Approve button live for affected role when approve/reject buttons are enabled", async ({ browser, request }) => {
   const creator = await createTempUserByAdmin(request, "DC");
   const user = await createTempUserByAdmin(request, "SC");
   const document = await createDocumentByApi(request, creator);
@@ -43,6 +43,7 @@ test("permission update enables Approve button live for affected role", async ({
   const userPage = await userContext.newPage();
 
   let originalEntries = null;
+  let originalWorkflowConfig = null;
 
   try {
     await loginFromUI(userPage, user);
@@ -64,6 +65,12 @@ test("permission update enables Approve button live for affected role", async ({
     expect(matrixResp.status()).toBe(200);
     const matrixData = await matrixResp.json();
 
+    const workflowResp = await request.get(`${apiBaseUrl}/admin/permissions/dc-auto-forward`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(workflowResp.status()).toBe(200);
+    originalWorkflowConfig = await workflowResp.json();
+
     originalEntries = Array.isArray(matrixData?.entries) ? matrixData.entries : [];
     const updatedEntries = originalEntries.map((entry) => {
       if (String(entry?.roleName || "").toUpperCase() === "SC" && String(entry?.permission || "").toUpperCase() === "APPROVE_DOCUMENT") {
@@ -81,6 +88,23 @@ test("permission update enables Approve button live for affected role", async ({
     });
     expect(updateResp.status()).toBe(200);
 
+    const workflowUpdateResp = await request.put(`${apiBaseUrl}/admin/permissions/dc-auto-forward`, {
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        "Content-Type": "application/json",
+      },
+      data: {
+        enabled: !!originalWorkflowConfig?.enabled,
+        timeoutMinutes: Number(originalWorkflowConfig?.timeoutMinutes ?? 0),
+        receiverUserId: originalWorkflowConfig?.receiverUserId ?? null,
+        forwardReturnAllowedStatuses: Array.isArray(originalWorkflowConfig?.forwardReturnAllowedStatuses)
+          ? originalWorkflowConfig.forwardReturnAllowedStatuses
+          : ["PENDING", "IN_PROGRESS", "RETURNED"],
+        approveRejectButtonsEnabled: true,
+      },
+    });
+    expect(workflowUpdateResp.status()).toBe(200);
+
     await expect(approveBtn).toBeEnabled({ timeout: 12000 });
   } finally {
     try {
@@ -92,6 +116,23 @@ test("permission update enables Approve button live for affected role", async ({
             "Content-Type": "application/json",
           },
           data: { entries: originalEntries },
+        });
+      }
+      if (adminLogin.status === 200 && originalWorkflowConfig) {
+        await request.put(`${apiBaseUrl}/admin/permissions/dc-auto-forward`, {
+          headers: {
+            Authorization: `Bearer ${adminLogin.body?.accessToken}`,
+            "Content-Type": "application/json",
+          },
+          data: {
+            enabled: !!originalWorkflowConfig?.enabled,
+            timeoutMinutes: Number(originalWorkflowConfig?.timeoutMinutes ?? 0),
+            receiverUserId: originalWorkflowConfig?.receiverUserId ?? null,
+            forwardReturnAllowedStatuses: Array.isArray(originalWorkflowConfig?.forwardReturnAllowedStatuses)
+              ? originalWorkflowConfig.forwardReturnAllowedStatuses
+              : ["PENDING", "IN_PROGRESS", "RETURNED"],
+            approveRejectButtonsEnabled: originalWorkflowConfig?.approveRejectButtonsEnabled !== false,
+          },
         });
       }
     } catch {

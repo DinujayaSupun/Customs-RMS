@@ -20,21 +20,21 @@ test("forwarded document appears in recipient inbox and can be opened", async ({
   await expect(page).toHaveURL(new RegExp(`/documents/${document.id}$`));
 });
 
-test("owner can save minute in document details and see it in minutes list", async ({ page, request }) => {
-  const owner = await createTempUserByAdmin(request, "DC");
-  const document = await createDocumentByApi(request, owner);
+test("report-at user can save minute in document details and see it in minutes list", async ({ page, request }) => {
+  const reportAtUser = await createTempUserByAdmin(request, "DC");
+  const document = await createDocumentByApi(request, reportAtUser);
 
-  await loginFromUI(page, owner);
+  await loginFromUI(page, reportAtUser);
   await expect(page).toHaveURL(/\/inbox$/);
   await page.goto(`/documents/${document.id}`);
   await expect(page).toHaveURL(new RegExp(`/documents/${document.id}$`));
   await expect(page.getByPlaceholder("Type minute...")).toBeVisible();
 
-  const remark = `E2E minute ${Date.now()}`;
-  await page.getByPlaceholder("Type minute...").fill(remark);
+  const minute = `E2E minute ${Date.now()}`;
+  await page.getByPlaceholder("Type minute...").fill(minute);
   await page.getByRole("button", { name: "Save Minute" }).click();
 
-  await expect(page.getByText(remark)).toBeVisible();
+  await expect(page.getByText(minute)).toBeVisible();
 });
 
 test("sender can switch to sent inbox and see forwarded document", async ({ page, request }) => {
