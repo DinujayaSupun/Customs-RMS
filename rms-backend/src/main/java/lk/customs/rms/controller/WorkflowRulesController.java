@@ -26,6 +26,7 @@ public class WorkflowRulesController {
                         .stream()
                         .map(Status::name)
                         .toList())
+                .approveRejectButtonsEnabled(dcAutoForwardConfigService.isApproveRejectButtonsEnabled())
                 .build();
     }
 }

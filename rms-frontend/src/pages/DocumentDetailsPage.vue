@@ -8,7 +8,7 @@
         <div class="meta">
           <span class="pill">Status: {{ displayStatusLabel(doc?.status) || "-" }}</span>
           <span class="pill">Priority: {{ doc?.priority || "-" }}</span>
-          <span class="pill">Current Owner: {{ ownerLabel }}</span>
+        <span class="pill">Report At: {{ ownerLabel }}</span>
         </div>
 
         <div class="subMeta">
@@ -116,7 +116,7 @@
             <div class="k">Approved At</div>
             <div class="v mono">{{ completedAtDisplay }}</div>
 
-            <div class="k">Completed (Done) At</div>
+              <div class="k">Done At</div>
             <div class="v mono">{{ issuedAtDisplay }}</div>
           </div>
 
@@ -164,9 +164,9 @@
               <b>{{ formatUserLabel(currentUser) }}</b>
             </div>
             <div>
-              <span class="ownershipLabel">Current Owner Status</span>
+              <span class="ownershipLabel">Report At Status</span>
               <b>
-                {{ isOwner ? "You can act on this document" : "Read-only for this document" }}
+              {{ isOwner ? "You can act on this document" : "Read-only until the document is routed to you in Report At" }}
               </b>
             </div>
           </div>
@@ -185,8 +185,8 @@
             <div class="hintInline">
               <span class="hintLabel">Minute help</span>
               <HoverHint :text="canAddRemark
-                ? 'Your minute will be attached when you run a workflow action (Forward/Return/Approve/Reject/Done/Reopen). You can also save it separately using Save Minute.'
-                : 'You can read minutes, but only the current owner with Add Remark permission can add or save minutes.'" />
+                ? `Your minute will be attached when you run a workflow action (${availableWorkflowActionNames}). You can also save it separately using Save Minute.`
+                : 'You can read minutes, but only the user currently shown in Report At with Add Remark permission can add or save minutes.'" />
             </div>
 
             <div class="btnRow" style="margin-top:8px;">
@@ -207,7 +207,7 @@
               <input
                 class="input forwardSearch"
                 v-model="forwardUserSearch"
-                :disabled="busy || !canForward"
+                :disabled="busy || !canChooseWorkflowTarget"
                 placeholder="Search user by name, role, department, or ID..."
                 spellcheck="false"
                 @focus="forwardSearchFocused = true"
@@ -238,7 +238,7 @@
               <b>{{ formatUserLabel(selectedForwardUser) }}</b>
             </div>
             <div v-else class="forwardSelected muted">
-              Select a user from the search results before forwarding.
+              Select a user from the search results before forwarding or returning.
             </div>
 
             <div class="forwardSearchMeta">
@@ -256,7 +256,7 @@
 
               <div class="hintInline">
                 <span class="hintLabel">Forward rules</span>
-                <HoverHint :text="`Forward/Return are available only to the current owner with the relevant permission. PMA can send only to DC. Allowed statuses are managed from Permissions: ${forwardReturnAllowedStatusesLabel}.`" />
+                <HoverHint :text="`Forward/Return are available only to the user currently shown in Report At with the relevant permission. Return defaults to the most recent sender when available, and you can still change it manually. Allowed statuses are managed from Permissions: ${forwardReturnAllowedStatusesLabel}.`" />
               </div>
           </div>
 
@@ -285,15 +285,15 @@
 
             <div class="spacer"></div>
 
-            <button class="btn" :disabled="busy || !canApprove" @click="doApprove">Approve</button>
-            <button class="btn" :disabled="busy || !canReject" @click="doReject">Reject</button>
+            <button v-if="approveRejectButtonsEnabled" class="btn" :disabled="busy || !canApprove" @click="doApprove">Approve</button>
+            <button v-if="approveRejectButtonsEnabled" class="btn" :disabled="busy || !canReject" @click="doReject">Reject</button>
             <button class="btn" :disabled="busy || !canIssue" @click="doIssue">Done</button>
             <button class="btn" :disabled="busy || !canReopen" @click="doReopen">Reopen</button>
           </div>
 
           <div class="hintInline">
             <span class="hintLabel">Workflow rules</span>
-            <HoverHint text="All workflow actions require current ownership plus the corresponding permission. Done is available only when status is APPROVED (it marks the document as ISSUED). Reopen is allowed only for APPROVED or REJECTED and cannot be done after ISSUED." />
+            <HoverHint :text="workflowRulesHint" />
           </div>
         </div>
 
@@ -328,7 +328,7 @@
 
           <!-- (Keeping your existing file visibility rule) -->
           <div v-if="!canViewHistory" class="lockBox">
-            Only the <b>current owner</b> can view file history.
+              Only the <b>user currently shown in Report At</b> can view file history.
           </div>
 
           <template v-else>
@@ -392,7 +392,7 @@
 
             <div class="hintInline">
               <span class="hintLabel">Upload rules</span>
-              <HoverHint text="Upload is allowed only for the current owner with Upload Attachment permission, and is blocked after ISSUED. First upload becomes main file (v1); later uploads are additional versions/attachments." />
+            <HoverHint text="Upload is allowed only for the user currently shown in Report At with Upload Attachment permission, and is blocked after ISSUED. First upload becomes main file (v1); later uploads are additional versions/attachments." />
             </div>
 
             <div v-if="attachmentsSorted.length === 0" class="empty">No files yet.</div>
@@ -437,7 +437,7 @@
           <div class="cardSub">Track every workflow handoff and action history.</div>
 
           <div v-if="!canViewHistory" class="lockBox">
-            Only the <b>current owner</b> can view movement history.
+              Only the <b>user currently shown in Report At</b> can view movement history.
           </div>
 
           <template v-else>
@@ -609,6 +609,7 @@ function refreshCurrentUser() {
 
 const users = ref([]);
 const forwardReturnAllowedStatuses = ref(["PENDING", "IN_PROGRESS", "RETURNED"]);
+const approveRejectButtonsEnabled = ref(true);
 
 const doc = ref(null);
 const movements = ref([]);
@@ -668,11 +669,33 @@ const canForwardReturnByStatus = computed(() => !!doc.value && forwardReturnAllo
 const forwardReturnAllowedStatusesLabel = computed(() => forwardReturnAllowedStatuses.value.map(displayStatusLabel).join(", ") || "none");
 const canForward = computed(() => !!doc.value && canForwardReturnByStatus.value && isOwner.value && hasPermission(currentUser.value, "FORWARD_DOCUMENT") && availableForwardVisibilities.value.length > 0);
 const canReturn  = computed(() => !!doc.value && canForwardReturnByStatus.value && isOwner.value && hasPermission(currentUser.value, "RETURN_DOCUMENT"));
+const canChooseWorkflowTarget = computed(() => canForward.value || canReturn.value);
 
-const canApprove = computed(() => doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "APPROVE_DOCUMENT") && doc.value.status !== "APPROVED");
-const canReject  = computed(() => doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "REJECT_DOCUMENT") && doc.value.status !== "REJECTED");
-const canIssue   = computed(() => doc.value && isOwner.value && hasPermission(currentUser.value, "ISSUE_DOCUMENT") && doc.value.status === "APPROVED" && !doc.value.issuedAt);
-const canReopen  = computed(() => doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "REOPEN_DOCUMENT") && ["APPROVED","REJECTED"].includes(doc.value.status));
+const canApprove = computed(() => approveRejectButtonsEnabled.value && doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "APPROVE_DOCUMENT") && doc.value.status !== "APPROVED");
+const canReject  = computed(() => approveRejectButtonsEnabled.value && doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "REJECT_DOCUMENT") && doc.value.status !== "REJECTED");
+const canIssue   = computed(() => {
+  if (!doc.value || !isOwner.value || !hasPermission(currentUser.value, "ISSUE_DOCUMENT") || !!doc.value.issuedAt) return false;
+  return approveRejectButtonsEnabled.value
+    ? doc.value.status === "APPROVED"
+    : doc.value.status !== "ISSUED";
+});
+const canReopen  = computed(() => {
+  if (!doc.value || !isOwner.value || !hasPermission(currentUser.value, "REOPEN_DOCUMENT")) return false;
+  return approveRejectButtonsEnabled.value
+    ? !isIssued.value && ["APPROVED","REJECTED"].includes(doc.value.status)
+    : ["ISSUED", "APPROVED", "REJECTED"].includes(doc.value.status);
+});
+const availableWorkflowActionNames = computed(() => {
+  const names = ["Forward", "Return"];
+  if (approveRejectButtonsEnabled.value) {
+    names.push("Approve", "Reject");
+  }
+  names.push("Done", "Reopen");
+  return names.join("/");
+});
+const workflowRulesHint = computed(() => approveRejectButtonsEnabled.value
+    ? "All workflow actions require the document to be assigned to you in Report At, plus the corresponding permission. Done is available only when status is APPROVED (it marks the document as ISSUED). Reopen is allowed only for APPROVED or REJECTED and cannot be done after ISSUED."
+    : "All workflow actions require the document to be assigned to you in Report At, plus the corresponding permission. Approve and Reject are hidden by admin workflow settings. Done can complete documents without a prior approval step, and Reopen can reopen Done documents.");
 
 const daysOpenDisplay = computed(() => {
   const received = doc.value?.receivedDate;
@@ -718,8 +741,25 @@ const canTypeRemark = computed(() => canAddRemark.value || canForward.value || c
 
 const forwardTargets = computed(() => {
   const all = users.value.filter((u) => Number(u.id) !== Number(currentUser.value.id));
-  if (currentUser.value.role === "PMA") return all.filter((u) => u.role === "DC");
   return all;
+});
+
+const preferredReturnTargetId = computed(() => {
+  if (!canReturn.value || !currentUser.value?.id || forwardTargets.value.length === 0) return null;
+
+  const validIds = new Set(forwardTargets.value.map((u) => Number(u.id)));
+  for (let index = movements.value.length - 1; index >= 0; index -= 1) {
+    const movement = movements.value[index];
+    const actionType = String(movement?.actionType || "").toUpperCase();
+    const toUserId = Number(movement?.toUserId);
+    const fromUserId = Number(movement?.fromUserId);
+    if (!["FORWARD", "RETURN"].includes(actionType)) continue;
+    if (toUserId !== Number(currentUser.value.id)) continue;
+    if (!Number.isFinite(fromUserId) || !validIds.has(fromUserId)) continue;
+    return fromUserId;
+  }
+
+  return null;
 });
 
 const selectedForwardUser = computed(() => {
@@ -749,26 +789,43 @@ const filteredForwardTargets = computed(() => {
 });
 
 const showForwardSearchDropdown = computed(() => {
-  return canForward.value && forwardSearchFocused.value && (forwardUserSearch.value.trim() || filteredForwardTargets.value.length > 0);
+  return canChooseWorkflowTarget.value && forwardSearchFocused.value && (forwardUserSearch.value.trim() || filteredForwardTargets.value.length > 0);
 });
+
+const autoSelectedTargetId = ref(null);
 
 function selectForwardUser(user) {
   if (!user) return;
   toUserId.value = Number(user.id);
   forwardUserSearch.value = formatUserLabel(user);
   forwardSearchFocused.value = false;
+  autoSelectedTargetId.value = null;
 }
 
-// ✅ Keep toUserId valid
+// Keep the workflow target valid and default Return to the most recent sender.
 watch(
-  forwardTargets,
-  (list) => {
+  [forwardTargets, preferredReturnTargetId, canChooseWorkflowTarget],
+  ([list, preferredReturnId, canChooseTarget]) => {
+    if (!canChooseTarget) {
+      toUserId.value = null;
+      autoSelectedTargetId.value = null;
+      return;
+    }
+
     const valid = new Set(list.map((x) => Number(x.id)));
     const cur = toUserId.value;
-    if (cur == null || !valid.has(Number(cur))) {
-      toUserId.value = list[0] ? Number(list[0].id) : null;
+    const desiredTargetId = preferredReturnId != null
+      ? Number(preferredReturnId)
+      : (list[0] ? Number(list[0].id) : null);
+    const currentTargetId = cur == null ? null : Number(cur);
+    const currentIsValid = currentTargetId != null && valid.has(currentTargetId);
+    const shouldAutoSelect = !currentIsValid || (autoSelectedTargetId.value != null && Number(autoSelectedTargetId.value) === currentTargetId);
+
+    if (shouldAutoSelect) {
+      toUserId.value = desiredTargetId;
+      autoSelectedTargetId.value = desiredTargetId;
     } else {
-      toUserId.value = Number(cur);
+      toUserId.value = currentTargetId;
     }
   },
   { immediate: true }
@@ -978,6 +1035,58 @@ function remarkOrNull() {
   return t ? t : null;
 }
 
+function ensureWorkflowMinuteAllowed(actionLabel) {
+  if (!remarkDraft.value.trim()) return true;
+  if (canAddRemark.value) return true;
+
+  error.value = `You entered a minute, but your role does not have permission to save minutes during ${actionLabel}. Clear the minute and try again, or ask an admin for Add Remark permission.`;
+  toast.warning(error.value, 5200);
+  return false;
+}
+
+function toWorkflowGuidance(message, actionLabel) {
+  const text = String(message || "").trim();
+  if (!text) return `${actionLabel} failed. Please try again.`;
+
+  if (/not allowed to add minutes/i.test(text)) {
+    return `This ${actionLabel.toLowerCase()} was blocked because the minute box contains text and your role cannot save minutes. Clear the minute and try again, or ask an admin for Add Remark permission.`;
+  }
+  if (/not allowed to complete documents/i.test(text)) {
+    return "Done is blocked because your role does not have the Done permission. Ask an admin to enable ISSUE_DOCUMENT for your role.";
+  }
+  if (/approve action is disabled by admin workflow settings/i.test(text)) {
+    return "Approve is hidden by admin workflow settings for this workflow. Use the visible actions on this page instead.";
+  }
+  if (/reject action is disabled by admin workflow settings/i.test(text)) {
+    return "Reject is hidden by admin workflow settings for this workflow. Use the visible actions on this page instead.";
+  }
+  if (/not allowed to approve documents/i.test(text)) {
+    return "Approve is blocked because your role does not have the Approve permission. Ask an admin to enable APPROVE_DOCUMENT for your role.";
+  }
+  if (/not allowed to reject documents/i.test(text)) {
+    return "Reject is blocked because your role does not have the Reject permission. Ask an admin to enable REJECT_DOCUMENT for your role.";
+  }
+  if (/not allowed to forward documents/i.test(text)) {
+    return "Forward is blocked because your role does not have the Forward permission. Ask an admin to enable FORWARD_DOCUMENT for your role.";
+  }
+  if (/not allowed to return documents/i.test(text)) {
+    return "Return is blocked because your role does not have the Return permission. Ask an admin to enable RETURN_DOCUMENT for your role.";
+  }
+  if (/only the current owner/i.test(text)) {
+    return `${actionLabel} is available only to the user currently shown in Report At for this document. Ask that user to act, or have the document routed to you first.`;
+  }
+  if (/must be approved first|document must be approved first/i.test(text)) {
+    return "Done is available only after the document has been approved. Approve it first, then try Done again.";
+  }
+  if (/already issued/i.test(text)) {
+    return "This document is already marked Done, so there is nothing more to complete.";
+  }
+  if (/rejected document/i.test(text) && /issue/i.test(text)) {
+    return "Done cannot be used on a rejected document. Reopen or reprocess the document first if it needs more work.";
+  }
+  return text;
+}
+
 async function reloadAll() {
   error.value = "";
   busy.value = true;
@@ -1019,8 +1128,10 @@ async function loadWorkflowRules() {
     if (Array.isArray(rules?.forwardReturnAllowedStatuses) && rules.forwardReturnAllowedStatuses.length > 0) {
       forwardReturnAllowedStatuses.value = rules.forwardReturnAllowedStatuses.map((status) => String(status).toUpperCase());
     }
+    approveRejectButtonsEnabled.value = rules?.approveRejectButtonsEnabled !== false;
   } catch {
     forwardReturnAllowedStatuses.value = ["PENDING", "IN_PROGRESS", "RETURNED"];
+    approveRejectButtonsEnabled.value = true;
   }
 }
 
@@ -1144,6 +1255,7 @@ async function saveRemarkOnly() {
 
 async function doForward() {
   error.value = "";
+  if (!ensureWorkflowMinuteAllowed("Forward")) return;
   if (!toUserId.value) {
     error.value = "Please select a user to forward.";
     toast.warning(error.value);
@@ -1175,7 +1287,7 @@ async function doForward() {
     toast.success(successMessage.value);
     router.push("/inbox");
   } catch (e) {
-    error.value = e?.message || "Forward failed.";
+    error.value = toWorkflowGuidance(e?.message || "Forward failed.", "Forward");
     toast.error(error.value);
   } finally {
     busy.value = false;
@@ -1184,6 +1296,12 @@ async function doForward() {
 
 async function doReturn() {
   error.value = "";
+  if (!ensureWorkflowMinuteAllowed("Return")) return;
+  if (!toUserId.value) {
+    error.value = "Please select a user to return.";
+    toast.warning(error.value);
+    return;
+  }
   busy.value = true;
   try {
     await returnDocument(documentId, {
@@ -1195,7 +1313,7 @@ async function doReturn() {
     successMessage.value = "Document returned successfully.";
     toast.success(successMessage.value);
   } catch (e) {
-    error.value = e?.message || "Return failed.";
+    error.value = toWorkflowGuidance(e?.message || "Return failed.", "Return");
     toast.error(error.value);
   } finally {
     busy.value = false;
@@ -1204,6 +1322,7 @@ async function doReturn() {
 
 async function doApprove() {
   error.value = "";
+  if (!ensureWorkflowMinuteAllowed("Approve")) return;
   busy.value = true;
   try {
     await approveDocument(documentId, { remarkText: remarkOrNull() });
@@ -1212,7 +1331,7 @@ async function doApprove() {
     successMessage.value = "Document approved successfully.";
     toast.success(successMessage.value);
   } catch (e) {
-    error.value = e?.message || "Approve failed.";
+    error.value = toWorkflowGuidance(e?.message || "Approve failed.", "Approve");
     toast.error(error.value);
   } finally {
     busy.value = false;
@@ -1221,6 +1340,7 @@ async function doApprove() {
 
 async function doReject() {
   error.value = "";
+  if (!ensureWorkflowMinuteAllowed("Reject")) return;
   busy.value = true;
   try {
     await rejectDocument(documentId, { remarkText: remarkOrNull() });
@@ -1229,7 +1349,7 @@ async function doReject() {
     successMessage.value = "Document rejected successfully.";
     toast.success(successMessage.value);
   } catch (e) {
-    error.value = e?.message || "Reject failed.";
+    error.value = toWorkflowGuidance(e?.message || "Reject failed.", "Reject");
     toast.error(error.value);
   } finally {
     busy.value = false;
@@ -1238,6 +1358,7 @@ async function doReject() {
 
 async function doIssue() {
   error.value = "";
+  if (!ensureWorkflowMinuteAllowed("Done")) return;
   busy.value = true;
   try {
     await issueDocument(documentId, { remarkText: remarkOrNull() });
@@ -1246,7 +1367,7 @@ async function doIssue() {
     successMessage.value = "Document completed successfully.";
     toast.success(successMessage.value);
   } catch (e) {
-    error.value = e?.message || "Issue failed.";
+    error.value = toWorkflowGuidance(e?.message || "Issue failed.", "Done");
     toast.error(error.value);
   } finally {
     busy.value = false;
@@ -1255,6 +1376,7 @@ async function doIssue() {
 
 async function doReopen() {
   error.value = "";
+  if (!ensureWorkflowMinuteAllowed("Reopen")) return;
   const txt = remarkDraft.value.trim();
   if (!txt) {
     error.value = "Reopen requires a reason. Type it in the Remark box first.";
@@ -1270,7 +1392,7 @@ async function doReopen() {
     successMessage.value = "Document reopened successfully.";
     toast.success(successMessage.value);
   } catch (e) {
-    error.value = e?.message || "Reopen failed.";
+    error.value = toWorkflowGuidance(e?.message || "Reopen failed.", "Reopen");
     toast.error(error.value);
   } finally {
     busy.value = false;

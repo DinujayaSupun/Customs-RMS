@@ -23,4 +23,7 @@ public class UpdateDcAutoForwardConfigRequest {
     private Long receiverUserId;
 
     private List<String> forwardReturnAllowedStatuses;
+
+    @NotNull
+    private Boolean approveRejectButtonsEnabled;
 }

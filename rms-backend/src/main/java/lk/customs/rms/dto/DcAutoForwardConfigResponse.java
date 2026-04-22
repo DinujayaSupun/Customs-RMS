@@ -14,4 +14,5 @@ public class DcAutoForwardConfigResponse {
     private String receiverName;
     private String receiverRole;
     private List<String> forwardReturnAllowedStatuses;
+    private Boolean approveRejectButtonsEnabled;
 }

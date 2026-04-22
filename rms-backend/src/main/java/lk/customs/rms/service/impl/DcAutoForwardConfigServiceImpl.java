@@ -47,6 +47,7 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
 
         config.setEnabled(Boolean.TRUE.equals(request.getEnabled()));
         config.setTimeoutMinutes(request.getTimeoutMinutes());
+        config.setApproveRejectButtonsEnabled(Boolean.TRUE.equals(request.getApproveRejectButtonsEnabled()));
 
         Long receiverUserId = request.getReceiverUserId();
         if (config.isEnabled()) {
@@ -87,6 +88,12 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public boolean isApproveRejectButtonsEnabled() {
+        return getOrCreateEntity().isApproveRejectButtonsEnabled();
+    }
+
+    @Override
     @Transactional
     public DcAutoForwardConfig getOrCreateEntity() {
         return configRepository.findById(SINGLETON_ID)
@@ -96,6 +103,7 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
                     config.setEnabled(false);
                     config.setTimeoutMinutes(60);
                     config.setForwardReturnAllowedStatuses(toCsv(DEFAULT_FORWARD_RETURN_ALLOWED_STATUSES));
+                    config.setApproveRejectButtonsEnabled(true);
                     config.setUpdatedAt(LocalDateTime.now());
                     return configRepository.save(config);
                 });
@@ -133,6 +141,7 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
                         .stream()
                         .map(Status::name)
                         .toList())
+                .approveRejectButtonsEnabled(config.isApproveRejectButtonsEnabled())
                 .build();
     }
 

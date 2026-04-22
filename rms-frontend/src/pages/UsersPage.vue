@@ -388,7 +388,7 @@
         <div class="modalHead">
           <div>
             <div class="modalTitle">Deactivate User</div>
-            <div class="modalSub">Select fallback DC owner for active document transfer.</div>
+          <div class="modalSub">Select the fallback DC who should receive Report At assignment for active documents.</div>
           </div>
           <button class="btn btn-sm" @click="closeDeactivateModal">Close</button>
         </div>
@@ -521,7 +521,7 @@
             </select>
           </div>
           <div class="deleteNotice">
-            Only active non-admin users are selectable here. Their account stays in the system, and document ownership is reassigned safely before deactivation.
+              Only active non-admin users are selectable here. Their account stays in the system, and Report At assignment is moved safely before deactivation.
           </div>
         </div>
 
@@ -650,7 +650,7 @@ const bulkModeTitle = computed(() =>
 );
 const bulkModeDescription = computed(() =>
   bulkMode.value === "deactivate"
-    ? "Select active non-admin users, choose one fallback DC, and transfer active ownership before deactivation."
+              ? "Select active non-admin users, choose one fallback DC, and transfer active Report At assignment before deactivation."
     : "Select inactive users to remove from login and admin management while keeping historical records intact."
 );
 const bulkActionLabel = computed(() =>
@@ -1126,7 +1126,7 @@ async function confirmBulkDeactivateUsers() {
     await adminBulkDeactivateUsers(ids, Number(deactivateFallbackDcUserId.value));
     closeBulkDeactivateModal();
     selectedUserIds.value = selectedUserIds.value.filter((id) => !ids.includes(Number(id)));
-    toast.success(`Deactivated ${ids.length} user${ids.length === 1 ? "" : "s"} safely and transferred active ownership.`);
+      toast.success(`Deactivated ${ids.length} user${ids.length === 1 ? "" : "s"} safely and transferred active Report At assignment.`);
     await load();
   } catch (e) {
     error.value = e?.message || "Bulk deactivate failed";

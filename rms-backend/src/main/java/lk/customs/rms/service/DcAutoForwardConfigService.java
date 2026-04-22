@@ -13,4 +13,5 @@ public interface DcAutoForwardConfigService {
     DcAutoForwardConfig getOrCreateEntity();
     List<Status> getForwardReturnAllowedStatuses();
     boolean isForwardReturnAllowed(Status status);
+    boolean isApproveRejectButtonsEnabled();
 }

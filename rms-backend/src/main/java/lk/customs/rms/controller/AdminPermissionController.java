@@ -86,7 +86,8 @@ public class AdminPermissionController {
                 "{\"enabled\":" + updated.getEnabled()
                         + ",\"timeoutMinutes\":" + updated.getTimeoutMinutes()
                         + ",\"receiverUserId\":" + updated.getReceiverUserId()
-                        + ",\"forwardReturnAllowedStatuses\":\"" + String.join(",", updated.getForwardReturnAllowedStatuses()) + "\"}"
+                        + ",\"forwardReturnAllowedStatuses\":\"" + String.join(",", updated.getForwardReturnAllowedStatuses()) + "\""
+                        + ",\"approveRejectButtonsEnabled\":" + updated.getApproveRejectButtonsEnabled() + "}"
         );
 
         return updated;
@@ -110,7 +111,8 @@ public class AdminPermissionController {
                         + ",\"enabled\":" + updatedConfig.getEnabled()
                         + ",\"timeoutMinutes\":" + updatedConfig.getTimeoutMinutes()
                         + ",\"receiverUserId\":" + updatedConfig.getReceiverUserId()
-                        + ",\"forwardReturnAllowedStatuses\":\"" + String.join(",", updatedConfig.getForwardReturnAllowedStatuses()) + "\"}"
+                        + ",\"forwardReturnAllowedStatuses\":\"" + String.join(",", updatedConfig.getForwardReturnAllowedStatuses()) + "\""
+                        + ",\"approveRejectButtonsEnabled\":" + updatedConfig.getApproveRejectButtonsEnabled() + "}"
         );
 
         realtimeNotificationService.notifyPermissionsUpdated();

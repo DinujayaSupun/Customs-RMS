@@ -233,10 +233,10 @@
               <div class="kv"><span class="k">Priority</span><span class="v">{{ selectedDocument.priority || "-" }}</span></div>
               <div class="kv"><span class="k">Received Date</span><span class="v">{{ selectedDocument.receivedDate || "-" }}</span></div>
               <div class="kv"><span class="k">Created By ID</span><span class="v">{{ selectedDocument.createdByUserId ?? "-" }}</span></div>
-              <div class="kv"><span class="k">Current Owner ID</span><span class="v">{{ selectedDocument.currentOwnerUserId ?? "-" }}</span></div>
+                  <div class="kv"><span class="k">Report At ID</span><span class="v">{{ selectedDocument.currentOwnerUserId ?? "-" }}</span></div>
               <div class="kv"><span class="k">Created At</span><span class="v">{{ formatDateTime(selectedDocument.createdAt) }}</span></div>
-              <div class="kv"><span class="k">Completed At</span><span class="v">{{ formatDateTime(selectedDocument.completedAt) }}</span></div>
-              <div class="kv"><span class="k">Issued At</span><span class="v">{{ formatDateTime(selectedDocument.issuedAt) }}</span></div>
+                  <div class="kv"><span class="k">Approved At</span><span class="v">{{ formatDateTime(selectedDocument.completedAt) }}</span></div>
+                  <div class="kv"><span class="k">Done At</span><span class="v">{{ formatDateTime(selectedDocument.issuedAt) }}</span></div>
             </div>
             <div v-else class="small">No document linked for this log entry.</div>
           </div>

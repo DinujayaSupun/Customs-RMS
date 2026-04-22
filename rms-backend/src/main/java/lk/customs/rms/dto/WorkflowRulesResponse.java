@@ -9,4 +9,5 @@ import java.util.List;
 @Builder
 public class WorkflowRulesResponse {
     private List<String> forwardReturnAllowedStatuses;
+    private Boolean approveRejectButtonsEnabled;
 }

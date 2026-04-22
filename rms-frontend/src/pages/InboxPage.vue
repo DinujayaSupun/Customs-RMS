@@ -280,7 +280,7 @@
                 <div><span class="label">Days Open</span>{{ previewDaysOpen }}</div>
                 <div><span class="label">Viewing File</span>{{ selectedPreviewAttachment?.fileName || selectedPreviewAttachmentType }}</div>
                 <div><span class="label">Attachments</span>{{ previewAttachmentCount }}</div>
-                <div><span class="label">Current Owner</span>{{ ownerLabel(previewDoc?.currentOwnerUserId) }}</div>
+                <div><span class="label">Report At</span>{{ ownerLabel(previewDoc?.currentOwnerUserId) }}</div>
               </div>
 
               <div v-if="previewExtrasError" class="note noteWarn">{{ previewExtrasError }}</div>
@@ -403,7 +403,7 @@
             <div v-if="forwardAttachmentsError" class="note noteWarn">{{ forwardAttachmentsError }}</div>
 
             <div v-if="!canForwardSelectedDoc" class="note noteWarn">
-              Forward is available only to the current owner with forward permission, and allowed statuses are managed from Permissions.
+              Forward is available only to the user currently shown in Report At with forward permission, and allowed statuses are managed from Permissions.
             </div>
 
             <div class="formRow">
@@ -582,7 +582,6 @@ const availableForwardVisibilities = computed(() => {
 
 const forwardTargets = computed(() => {
   const all = users.value.filter((u) => Number(u.id) !== Number(currentUser.value?.id));
-  if (currentUser.value?.role === "PMA") return all.filter((u) => u.role === "DC");
   return all;
 });
 

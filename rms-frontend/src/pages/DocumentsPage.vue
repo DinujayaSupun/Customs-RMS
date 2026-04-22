@@ -84,7 +84,7 @@
               <th>Company</th>
               <th>Priority</th>
               <th>Status</th>
-              <th>Owner</th>
+              <th>Report At</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -130,7 +130,7 @@
                 <button
                   class="iconBtn"
                   :disabled="!canPreview(d)"
-                  :title="canPreview(d) ? 'Preview' : 'Preview allowed only for DC or current owner'"
+                  :title="canPreview(d) ? 'Preview' : 'Preview allowed only for DC or the user shown in Report At'"
                   :aria-label="canPreview(d) ? 'Preview document' : 'Preview not allowed'"
                   @click="openPreview(d)"
                 >
@@ -164,7 +164,7 @@
           <div class="previewPills">
             <span class="pill" :class="'pill-'+previewDoc?.status">{{ displayStatusLabel(previewDoc?.status) || '-' }}</span>
             <span class="pill" :class="'pill-'+previewDoc?.priority">{{ previewDoc?.priority || '-' }}</span>
-            <span class="pill pill-PENDING">Current Owner: {{ ownerLabel(previewDoc?.currentOwnerUserId) }}</span>
+            <span class="pill pill-PENDING">Report At: {{ ownerLabel(previewDoc?.currentOwnerUserId) }}</span>
           </div>
 
           <div class="previewGrid">

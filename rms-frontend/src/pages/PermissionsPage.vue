@@ -78,6 +78,22 @@
           </div>
         </div>
 
+        <div class="section">
+          <div class="sectionHead">
+            <h3>Workflow Decision Buttons</h3>
+            <p>Control whether document details should show Approve and Reject. When disabled, Done can complete documents without a prior approval step and Reopen can reopen Done documents.</p>
+          </div>
+
+          <label class="toggleWrap statusToggle decisionToggle">
+            <input
+              type="checkbox"
+              :checked="approveRejectButtonsEnabled"
+              @change="onApproveRejectButtonsEnabledChange($event.target.checked)"
+            />
+            <span>Enable Approve / Reject Buttons</span>
+          </label>
+        </div>
+
         <div class="tableWrap">
           <table class="table">
             <thead>
@@ -149,6 +165,7 @@ const dcTimeoutMinutes = ref(60);
 const dcReceiverUserId = ref(null);
 const workflowStatuses = ["PENDING", "IN_PROGRESS", "RETURNED", "APPROVED", "REJECTED", "ISSUED"];
 const forwardReturnAllowedStatuses = ref(["PENDING", "IN_PROGRESS", "RETURNED"]);
+const approveRejectButtonsEnabled = ref(true);
 
 const eligibleReceivers = computed(() =>
   allUsers.value.filter((u) => ["DDC", "SDDC"].includes(String(u.role || "").toUpperCase()))
@@ -187,7 +204,15 @@ function onEnabledChange(enabled) {
   markConfigDirty();
 }
 
+function onApproveRejectButtonsEnabledChange(enabled) {
+  approveRejectButtonsEnabled.value = !!enabled;
+  markConfigDirty();
+}
+
 function friendlyLabel(permission) {
+  if (String(permission || "").toUpperCase() === "ISSUE_DOCUMENT") {
+    return "Done Document";
+  }
   return String(permission || "")
     .toLowerCase()
     .split("_")
@@ -237,6 +262,7 @@ async function load() {
     forwardReturnAllowedStatuses.value = Array.isArray(config?.forwardReturnAllowedStatuses) && config.forwardReturnAllowedStatuses.length > 0
       ? workflowStatuses.filter((statusName) => config.forwardReturnAllowedStatuses.includes(statusName))
       : ["PENDING", "IN_PROGRESS", "RETURNED"];
+    approveRejectButtonsEnabled.value = config?.approveRejectButtonsEnabled !== false;
 
     dirty.value = false;
     configDirty.value = false;
@@ -282,6 +308,7 @@ async function save() {
         timeoutMinutes: timeout,
         receiverUserId: dcReceiverUserId.value == null ? null : Number(dcReceiverUserId.value),
         forwardReturnAllowedStatuses: forwardReturnAllowedStatuses.value,
+        approveRejectButtonsEnabled: !!approveRejectButtonsEnabled.value,
       },
     });
 
@@ -298,6 +325,7 @@ async function save() {
     forwardReturnAllowedStatuses.value = Array.isArray(updatedConfig?.forwardReturnAllowedStatuses) && updatedConfig.forwardReturnAllowedStatuses.length > 0
       ? workflowStatuses.filter((statusName) => updatedConfig.forwardReturnAllowedStatuses.includes(statusName))
       : forwardReturnAllowedStatuses.value;
+    approveRejectButtonsEnabled.value = updatedConfig?.approveRejectButtonsEnabled !== false;
 
     dirty.value = false;
     configDirty.value = false;

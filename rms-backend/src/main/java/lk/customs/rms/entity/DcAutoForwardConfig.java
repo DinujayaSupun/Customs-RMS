@@ -28,6 +28,9 @@ public class DcAutoForwardConfig {
     @Column(name = "forward_return_allowed_statuses", nullable = false, length = 200)
     private String forwardReturnAllowedStatuses = "PENDING,IN_PROGRESS,RETURNED";
 
+    @Column(name = "approve_reject_buttons_enabled", nullable = false)
+    private boolean approveRejectButtonsEnabled = true;
+
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt = LocalDateTime.now();
 }

@@ -49,26 +49,23 @@ import java.util.stream.Collectors;
  *   1) Ownership rule:
  *      - Only CURRENT OWNER can forward/return/add remarks.
  *
- *   2) PMA restriction:
- *      - PMA can forward/return ONLY to DC.
- *
- *   3) Permission-controlled decisions:
+ *   2) Permission-controlled decisions:
  *      - Approve / Reject / Issue / Reopen depend on the assigned role permissions.
  *      - User must still be the current owner to do those actions.
  *
- *   4) FINAL STATE LOCK (critical):
+ *   3) FINAL STATE LOCK (critical):
  *      - Once ISSUED or REJECTED => NO further workflow actions allowed.
  *      - If APPROVED => ONLY ISSUE is allowed (no forward/return/approve/reject).
  *      - ISSUE allowed ONLY when status == APPROVED.
  *
- *   5) REOPEN (NEW):
+ *   4) REOPEN (NEW):
  *      - Only users with reopen permission can REOPEN an APPROVED or REJECTED document.
  *      - Not allowed if ISSUED (final).
  *      - Requires a reason (remarkText must not be empty).
  *      - Sets status back to IN_PROGRESS and clears completedAt.
  *      - Logs Movement(REOPEN) + Audit log + Remark.
  *
- *   6) Remarks:
+ *   5) Remarks:
  *      - Can be added standalone OR during workflow action.
  *      - Always saved BEFORE ownership changes.
  * ==========================================================
@@ -499,11 +496,6 @@ public class DocumentServiceImpl implements DocumentService {
             throw new BadRequestException("Only the current owner can forward this document.");
         }
 
-        // PMA restriction
-        if (isRole(actionBy, "PMA") && !isRole(toUser, "DC")) {
-            throw new BadRequestException("PMA can forward ONLY to DC.");
-        }
-
         String forwardVisibility = normalizeForwardVisibility(request.getForwardVisibility());
         if ("PRIVATE".equals(forwardVisibility)) {
             permissionService.ensurePermission(actorUserId, AppPermission.FORWARD_PRIVATE, "You are not allowed to forward as PRIVATE.");
@@ -557,11 +549,6 @@ public class DocumentServiceImpl implements DocumentService {
             throw new BadRequestException("Only the current owner can return this document.");
         }
 
-        // PMA restriction
-        if (isRole(actionBy, "PMA") && !isRole(toUser, "DC")) {
-            throw new BadRequestException("PMA can return ONLY to DC.");
-        }
-
         // Save remark BEFORE ownership change
         saveRemarkIfPresent(d, actionBy.getId(), request.getRemarkText(), "Remark added during return");
 
@@ -582,6 +569,9 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     public void approve(Long documentId, DecisionRequest request, Long actorUserId) {
+        if (!dcAutoForwardConfigService.isApproveRejectButtonsEnabled()) {
+            throw new BadRequestException("Approve action is disabled by admin workflow settings.");
+        }
         permissionService.ensurePermission(actorUserId, AppPermission.APPROVE_DOCUMENT, "You are not allowed to approve documents.");
 
         Document d = requireDocument(documentId);
@@ -608,6 +598,9 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     public void reject(Long documentId, DecisionRequest request, Long actorUserId) {
+        if (!dcAutoForwardConfigService.isApproveRejectButtonsEnabled()) {
+            throw new BadRequestException("Reject action is disabled by admin workflow settings.");
+        }
         permissionService.ensurePermission(actorUserId, AppPermission.REJECT_DOCUMENT, "You are not allowed to reject documents.");
 
         Document d = requireDocument(documentId);
@@ -666,14 +659,20 @@ public class DocumentServiceImpl implements DocumentService {
 
         Document d = requireDocument(documentId);
 
-        // ISSUED is final - cannot reopen
-        if (d.getStatus() == Status.ISSUED) {
-            throw new BadRequestException("Cannot reopen an ISSUED document.");
-        }
+        if (!dcAutoForwardConfigService.isApproveRejectButtonsEnabled()) {
+            if (d.getStatus() != Status.ISSUED && d.getStatus() != Status.APPROVED && d.getStatus() != Status.REJECTED) {
+                throw new BadRequestException("Reopen is allowed only for DONE, APPROVED, or REJECTED documents.");
+            }
+        } else {
+            // ISSUED is final - cannot reopen
+            if (d.getStatus() == Status.ISSUED) {
+                throw new BadRequestException("Cannot reopen an ISSUED document.");
+            }
 
-        // Only APPROVED or REJECTED can be reopened
-        if (d.getStatus() != Status.APPROVED && d.getStatus() != Status.REJECTED) {
-            throw new BadRequestException("Reopen is allowed only for APPROVED or REJECTED documents.");
+            // Only APPROVED or REJECTED can be reopened
+            if (d.getStatus() != Status.APPROVED && d.getStatus() != Status.REJECTED) {
+                throw new BadRequestException("Reopen is allowed only for APPROVED or REJECTED documents.");
+            }
         }
 
         // DC must also be the current owner (strong integrity)
@@ -734,6 +733,12 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     private void ensureCanIssue(Document d) {
+        if (!dcAutoForwardConfigService.isApproveRejectButtonsEnabled()) {
+            if (d.getStatus() == Status.ISSUED) {
+                throw new BadRequestException("Document is already ISSUED.");
+            }
+            return;
+        }
         if (d.getStatus() == Status.ISSUED) {
             throw new BadRequestException("Document is already ISSUED.");
         }
