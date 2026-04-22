@@ -137,6 +137,11 @@
             </div>
 
             <div class="formRow">
+              <div class="label">Received Date</div>
+              <input class="input" type="date" v-model="detailsForm.receivedDate" :disabled="busy" />
+            </div>
+
+            <div class="formRow">
               <div class="label">Priority</div>
               <select class="input" v-model="detailsForm.priority" :disabled="busy">
                 <option value="LOW">LOW</option>
@@ -146,10 +151,6 @@
               </select>
             </div>
 
-            <div class="formRow">
-              <div class="label">Received Date (Read Only)</div>
-              <input class="input" :value="formatDate(doc.receivedDate)" disabled />
-            </div>
           </div>
         </div>
 
@@ -632,6 +633,7 @@ const detailsForm = ref({
   refNo: "",
   title: "",
   companyName: "",
+  receivedDate: "",
   priority: "MEDIUM",
 });
 
@@ -1174,6 +1176,7 @@ function startEditDetails() {
     refNo: doc.value.refNo || "",
     title: doc.value.title || "",
     companyName: doc.value.companyName || "",
+    receivedDate: String(doc.value.receivedDate || ""),
     priority: doc.value.priority || "MEDIUM",
   };
   isEditingDetails.value = true;
@@ -1198,6 +1201,7 @@ async function saveDetails() {
     refNo: String(detailsForm.value.refNo || "").trim(),
     title: String(detailsForm.value.title || "").trim(),
     companyName: String(detailsForm.value.companyName || "").trim(),
+    receivedDate: String(detailsForm.value.receivedDate || "").trim(),
     priority: detailsForm.value.priority,
   };
 
@@ -1213,6 +1217,11 @@ async function saveDetails() {
   }
   if (!payload.companyName) {
     error.value = "Company is required.";
+    toast.warning(error.value);
+    return;
+  }
+  if (!payload.receivedDate) {
+    error.value = "Received date is required.";
     toast.warning(error.value);
     return;
   }

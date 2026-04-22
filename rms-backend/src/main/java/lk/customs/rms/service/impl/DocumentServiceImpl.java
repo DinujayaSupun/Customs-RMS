@@ -426,6 +426,7 @@ public class DocumentServiceImpl implements DocumentService {
         d.setRefNo(newRefNo);
         d.setTitle(request.getTitle().trim());
         d.setCompanyName(request.getCompanyName().trim());
+        d.setReceivedDate(request.getReceivedDate());
         d.setPriority(request.getPriority());
 
         Document saved = documentRepository.save(d);
