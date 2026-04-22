@@ -241,12 +241,13 @@ public class DocumentServiceImpl implements DocumentService {
             String createdByName = userRepository.findById(d.getCreatedByUserId()).map(User::getFullName).orElse(null);
             String ownerName = userRepository.findById(d.getCurrentOwnerUserId()).map(User::getFullName).orElse(null);
             boolean viewedByMe = viewedDocIds.contains(d.getId());
+            String latestRemarkPreview = canViewRemarks(d, actorUserId) ? latestRemarkPreviews.get(d.getId()) : null;
             return DocumentResponse.from(
                 d,
                 createdByName,
                 ownerName,
                 mainAttachmentTypes.get(d.getId()),
-                latestRemarkPreviews.get(d.getId()),
+                latestRemarkPreview,
                 viewedByMe,
                 inboxReceivedAtByDoc.get(d.getId())
             );
@@ -341,6 +342,9 @@ public class DocumentServiceImpl implements DocumentService {
                 inboundByDoc.getOrDefault(movement.getDocumentId(), List.of()),
                 ownRemarksByDoc.getOrDefault(movement.getDocumentId(), List.of())
             );
+            if (!canViewRemarks(doc, actorUserId)) {
+                ownMinutePreview = null;
+            }
             return SentMessageResponse.builder()
                 .movementId(movement.getId())
                 .documentId(movement.getDocumentId())
@@ -372,9 +376,11 @@ public class DocumentServiceImpl implements DocumentService {
         String createdByName = userRepository.findById(d.getCreatedByUserId()).map(User::getFullName).orElse(null);
         String ownerName = userRepository.findById(d.getCurrentOwnerUserId()).map(User::getFullName).orElse(null);
         String mainAttachmentType = resolveMainAttachmentType(d.getId());
-        String latestRemarkPreview = remarkRepository.findFirstByDocumentIdOrderByRemarkedAtDesc(d.getId())
-            .map(this::toRemarkPreview)
-            .orElse(null);
+        String latestRemarkPreview = canViewRemarks(d, actorUserId)
+            ? remarkRepository.findFirstByDocumentIdOrderByRemarkedAtDesc(d.getId())
+                .map(this::toRemarkPreview)
+                .orElse(null)
+            : null;
 
         return DocumentResponse.from(d, createdByName, ownerName, mainAttachmentType, latestRemarkPreview, true);
     }
@@ -909,6 +915,16 @@ public class DocumentServiceImpl implements DocumentService {
             .orElse(null);
 
         return matched == null ? null : toRemarkPreview(matched);
+    }
+
+    private boolean canViewRemarks(Document document, Long actorUserId) {
+        if (document == null || actorUserId == null) {
+            return false;
+        }
+        if (document.getCurrentOwnerUserId() != null && document.getCurrentOwnerUserId().equals(actorUserId)) {
+            return true;
+        }
+        return permissionService.hasPermission(actorUserId, AppPermission.VIEW_REMARKS_WHEN_NOT_REPORT_AT);
     }
 
     private String toRemarkPreview(String value) {

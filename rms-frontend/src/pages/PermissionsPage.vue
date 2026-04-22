@@ -210,8 +210,15 @@ function onApproveRejectButtonsEnabledChange(enabled) {
 }
 
 function friendlyLabel(permission) {
-  if (String(permission || "").toUpperCase() === "ISSUE_DOCUMENT") {
+  const normalized = String(permission || "").toUpperCase();
+  if (normalized === "ISSUE_DOCUMENT") {
     return "Done Document";
+  }
+  if (normalized === "ADD_REMARK") {
+    return "Add Minute";
+  }
+  if (normalized === "VIEW_REMARKS_WHEN_NOT_REPORT_AT") {
+    return "View Minutes When Not Report At";
   }
   return String(permission || "")
     .toLowerCase()

@@ -99,10 +99,21 @@ public class DocumentRemarkController {
 
     // ✅ LIST REMARKS FOR DOCUMENT
     @GetMapping
-    public List<RemarkResponse> getRemarks(@PathVariable Long documentId) {
+    public List<RemarkResponse> getRemarks(@PathVariable Long documentId, Authentication authentication) {
 
-        documentRepository.findByIdAndDeletedFalse(documentId)
+        Document doc = documentRepository.findByIdAndDeletedFalse(documentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
+
+        Long actorUserId = currentUserService.requireUserId(authentication);
+        boolean canViewRemarks = doc.getCurrentOwnerUserId() != null
+                && doc.getCurrentOwnerUserId().equals(actorUserId);
+        if (!canViewRemarks) {
+            permissionService.ensurePermission(
+                    actorUserId,
+                    AppPermission.VIEW_REMARKS_WHEN_NOT_REPORT_AT,
+                    "You are not allowed to view minutes unless the document is assigned to you in Report At."
+            );
+        }
 
         return remarkRepository.findByDocumentIdOrderByRemarkedAtAsc(documentId)
                 .stream()

@@ -61,7 +61,7 @@
             <label>Action</label>
             <select v-model="actionType" class="input">
               <option value="">All Actions</option>
-              <option v-for="a in actionOptions" :key="a" :value="a">{{ a }}</option>
+              <option v-for="a in actionOptions" :key="a" :value="a">{{ displayActionTypeLabel(a) }}</option>
             </select>
           </div>
 
@@ -147,7 +147,7 @@
               </tr>
               <tr v-else v-for="row in rows" :key="row.id" class="tableRow" @click="openView(row)">
                 <td class="mono">{{ formatDateTime(row.performedAt) }}</td>
-                <td><span class="pill">{{ row.actionType || "-" }}</span></td>
+                <td><span class="pill">{{ displayActionTypeLabel(row.actionType) || "-" }}</span></td>
                 <td :title="row.entityType || '-'"><span class="truncateText">{{ row.entityType || "-" }}</span></td>
                 <td>{{ row.entityId ?? "-" }}</td>
                 <td :title="row.documentRef || '-'"><span class="truncateText">{{ row.documentRef || "-" }}</span></td>
@@ -155,7 +155,7 @@
                   <span class="truncateText">{{ row.performedByUserName || `User ID ${row.performedByUserId}` }}</span>
                 </td>
                 <td>
-                  <div class="truncateText" :title="row.message || '-'">{{ row.message || "-" }}</div>
+                  <div class="truncateText" :title="displayLogMessage(row) || '-'">{{ displayLogMessage(row) || "-" }}</div>
                   <div v-if="row.detailsJson" class="small mono truncateText" :title="row.detailsJson">{{ row.detailsJson }}</div>
                 </td>
                 <td>
@@ -185,7 +185,7 @@
         <div class="modalHead">
           <div>
             <div class="modalTitle">Log Details</div>
-            <div class="modalSub">ID {{ selectedLog.id }} • {{ selectedLog.actionType || "-" }}</div>
+            <div class="modalSub">ID {{ selectedLog.id }} • {{ displayActionTypeLabel(selectedLog.actionType) || "-" }}</div>
           </div>
           <button class="btn btn-sm" @click="closeView">Close</button>
         </div>
@@ -195,12 +195,12 @@
             <div class="sectionTitle">Event Summary</div>
             <div class="modalGrid">
               <div class="kv"><span class="k">Performed At</span><span class="v">{{ formatDateTime(selectedLog.performedAt) }}</span></div>
-              <div class="kv"><span class="k">Action</span><span class="v">{{ selectedLog.actionType || "-" }}</span></div>
+              <div class="kv"><span class="k">Action</span><span class="v">{{ displayActionTypeLabel(selectedLog.actionType) || "-" }}</span></div>
               <div class="kv"><span class="k">Entity Type</span><span class="v">{{ selectedLog.entityType || "-" }}</span></div>
               <div class="kv"><span class="k">Entity ID</span><span class="v">{{ selectedLog.entityId ?? "-" }}</span></div>
               <div class="kv"><span class="k">Document Ref</span><span class="v">{{ selectedLog.documentRef || "-" }}</span></div>
               <div class="kv"><span class="k">Performed By</span><span class="v">{{ selectedLog.performedByUserName || `User ID ${selectedLog.performedByUserId}` }}</span></div>
-              <div class="kv kvFull"><span class="k">Message</span><span class="v">{{ selectedLog.message || "-" }}</span></div>
+              <div class="kv kvFull"><span class="k">Message</span><span class="v">{{ displayLogMessage(selectedLog) || "-" }}</span></div>
             </div>
           </div>
 
@@ -295,7 +295,7 @@ const activeFilterChips = computed(() => {
   const chips = [];
   if (fromDate.value) chips.push({ key: "fromDate", label: `From ${fromDate.value}` });
   if (toDate.value) chips.push({ key: "toDate", label: `To ${toDate.value}` });
-  if (actionType.value) chips.push({ key: "actionType", label: `Action ${actionType.value}` });
+  if (actionType.value) chips.push({ key: "actionType", label: `Action ${displayActionTypeLabel(actionType.value)}` });
   if (documentFilter.value) chips.push({ key: "documentFilter", label: `Document ${documentFilter.value}` });
   if (performedByUserId.value && performedBySearch.value) {
     chips.push({ key: "performedBy", label: `Performed by ${performedBySearch.value}` });
@@ -327,7 +327,7 @@ const readableDetails = computed(() => {
   const map = {
     documentId: "Document ID",
     attachmentId: "Attachment ID",
-    remarkId: "Remark ID",
+  remarkId: "Minute ID",
     fallbackDcUserId: "Fallback DC User ID",
     sourceUserId: "Source User ID",
     targetUserId: "Target User ID",
@@ -488,6 +488,29 @@ function formatDateTime(value) {
 
 function displayStatusLabel(statusValue) {
   return String(statusValue || "").toUpperCase() === "ISSUED" ? "DONE" : statusValue;
+}
+
+function displayActionTypeLabel(actionType) {
+  const normalized = String(actionType || "").toUpperCase();
+  if (normalized === "ISSUE") return "DONE";
+  if (normalized === "REMARK") return "MINUTE";
+  return actionType;
+}
+
+function displayLogMessage(row) {
+  const message = String(row?.message || "");
+  const actionType = String(row?.actionType || "").toUpperCase();
+  if (!message) return "";
+  let next = message;
+  if (actionType === "ISSUE") {
+    next = next.replace(/\bIssued\b/g, "Done").replace(/\bissue\b/g, "done");
+  }
+  next = next
+    .replace(/\bRemarks\b/g, "Minutes")
+    .replace(/\bRemark\b/g, "Minute")
+    .replace(/\bremarks\b/g, "minutes")
+    .replace(/\bremark\b/g, "minute");
+  return next;
 }
 
 function resolveDocumentId(row) {

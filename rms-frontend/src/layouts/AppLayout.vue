@@ -27,7 +27,13 @@
     <div class="body">
       <aside class="sidebar">
         <div class="sidebar-top">
-          <div class="sidebar-mark">SL</div>
+          <div class="sidebar-mark" aria-label="Navigation menu">
+            <svg viewBox="0 0 48 48" class="sidebar-mark-svg" aria-hidden="true">
+              <path d="M14 17h20" />
+              <path d="M14 24h20" />
+              <path d="M14 31h20" />
+            </svg>
+          </div>
           <div class="sidebar-text sidebar-heading">Navigation</div>
         </div>
 
@@ -288,11 +294,18 @@ onUnmounted(() => {
   place-items: center;
   border-radius: 12px;
   background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
-  color: #eff6ff;
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
   box-shadow: 0 10px 20px rgba(37, 99, 235, 0.22);
+  overflow: hidden;
+}
+
+.sidebar-mark-svg {
+  width: 28px;
+  height: 28px;
+  display: block;
+  stroke: #eff6ff;
+  fill: none;
+  stroke-width: 3.2;
+  stroke-linecap: round;
 }
 
 .sidebar-heading {

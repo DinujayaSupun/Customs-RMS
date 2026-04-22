@@ -186,7 +186,7 @@
               <span class="hintLabel">Minute help</span>
               <HoverHint :text="canAddRemark
                 ? `Your minute will be attached when you run a workflow action (${availableWorkflowActionNames}). You can also save it separately using Save Minute.`
-                : 'You can read minutes, but only the user currently shown in Report At with Add Remark permission can add or save minutes.'" />
+                : 'You can read minutes, but only the user currently shown in Report At with Add Minute permission can add or save minutes.'" />
             </div>
 
             <div class="btnRow" style="margin-top:8px;">
@@ -298,11 +298,13 @@
         </div>
 
         <!-- ✅ REMARKS LIST (ALWAYS VISIBLE) -->
-        <div class="card minutesCard">
-          <div class="cardTitle">Minutes</div>
-          <div class="cardSub">Saved notes and action minutes for this document.</div>
+          <div class="card minutesCard">
+            <div class="cardTitle">Minutes</div>
+            <div class="cardSub">Saved notes and action minutes for this document.</div>
 
-          <div v-if="remarks.length === 0" class="empty">No minutes yet.</div>
+          <div v-if="!canViewRemarks" class="warnBox">Minutes are available only when this document is assigned to you in Report At.</div>
+
+          <div v-else-if="remarks.length === 0" class="empty">No minutes yet.</div>
 
           <div v-else class="list">
             <!-- ✅ correct backend fields -->
@@ -452,7 +454,7 @@
               >
                 <div class="itemTop">
                   <span class="who">
-                    <b>{{ m.actionType }}</b>
+                    <b>{{ displayMovementActionLabel(m.actionType) }}</b>
                     <span v-if="m.fromUserId"> | from {{ formatUserLabelById(m.fromUserId, users) }}</span>
                     <span v-if="m.toUserId"> → to {{ formatUserLabelById(m.toUserId, users) }}</span>
                   </span>
@@ -466,8 +468,12 @@
                 <div v-if="selectedMovementId === m.id" class="timelineRemarks">
                   <div class="timelineRemarksTitle">Minutes for this movement</div>
 
-                  <div v-if="getRemarksForMovement(m.id).length === 0" class="smallHint">
-                    No remark linked to this movement.
+                  <div v-if="!canViewRemarks" class="smallHint">
+                    Minutes are hidden for your role on this document.
+                  </div>
+
+                  <div v-else-if="getRemarksForMovement(m.id).length === 0" class="smallHint">
+                    No minute linked to this movement.
                   </div>
 
                   <div v-else class="list timelineRemarksList">
@@ -646,6 +652,7 @@ const viewerSearch = ref("");
 
 const isOwner = computed(() => !!doc.value && Number(doc.value.currentOwnerUserId) === Number(currentUser.value.id));
 const canViewAllHistory = computed(() => hasPermission(currentUser.value, "VIEW_ALL_HISTORY"));
+const canViewRemarks = computed(() => !!doc.value && (isOwner.value || hasPermission(currentUser.value, "VIEW_REMARKS_WHEN_NOT_REPORT_AT")));
 const isIssued = computed(() => !!doc.value && doc.value.status === "ISSUED");
 const isEditLocked = computed(() => !!doc.value && (!!doc.value.completedAt || isIssued.value));
 const canEditDetails = computed(() => !!doc.value && isOwner.value && !isEditLocked.value && hasPermission(currentUser.value, "EDIT_DOCUMENT_DETAILS"));
@@ -983,6 +990,10 @@ function displayStatusLabel(statusValue) {
   return String(statusValue || "").toUpperCase() === "ISSUED" ? "DONE" : statusValue;
 }
 
+function displayMovementActionLabel(actionType) {
+  return String(actionType || "").toUpperCase() === "ISSUE" ? "DONE" : actionType;
+}
+
 function isDateOnlyValue(value) {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
 }
@@ -1039,7 +1050,7 @@ function ensureWorkflowMinuteAllowed(actionLabel) {
   if (!remarkDraft.value.trim()) return true;
   if (canAddRemark.value) return true;
 
-  error.value = `You entered a minute, but your role does not have permission to save minutes during ${actionLabel}. Clear the minute and try again, or ask an admin for Add Remark permission.`;
+  error.value = `You entered a minute, but your role does not have permission to save minutes during ${actionLabel}. Clear the minute and try again, or ask an admin for Add Minute permission.`;
   toast.warning(error.value, 5200);
   return false;
 }
@@ -1049,10 +1060,10 @@ function toWorkflowGuidance(message, actionLabel) {
   if (!text) return `${actionLabel} failed. Please try again.`;
 
   if (/not allowed to add minutes/i.test(text)) {
-    return `This ${actionLabel.toLowerCase()} was blocked because the minute box contains text and your role cannot save minutes. Clear the minute and try again, or ask an admin for Add Remark permission.`;
+    return `This ${actionLabel.toLowerCase()} was blocked because the minute box contains text and your role cannot save minutes. Clear the minute and try again, or ask an admin for Add Minute permission.`;
   }
   if (/not allowed to complete documents/i.test(text)) {
-    return "Done is blocked because your role does not have the Done permission. Ask an admin to enable ISSUE_DOCUMENT for your role.";
+    return "Done is blocked because your role does not have the Done permission. Ask an admin to enable Done Document permission for your role.";
   }
   if (/approve action is disabled by admin workflow settings/i.test(text)) {
     return "Approve is hidden by admin workflow settings for this workflow. Use the visible actions on this page instead.";
@@ -1093,8 +1104,7 @@ async function reloadAll() {
   try {
     doc.value = await getDocument(documentId);
 
-    // ✅ ALWAYS load remarks (so after forward you still see your remark)
-    remarks.value = await listRemarks(documentId);
+    remarks.value = canViewRemarks.value ? await listRemarks(documentId) : [];
 
     // Keep your history lock only for movements/files
     if (canViewHistory.value) {
@@ -1227,14 +1237,14 @@ async function saveDetails() {
   }
 }
 
-// ✅ manual save remark only
-async function saveRemarkOnly() {
-  error.value = "";
-  const text = remarkDraft.value.trim();
-  if (!text) {
-    toast.warning("Type a remark before saving.");
-    return;
-  }
+  // Manual save minute only
+  async function saveRemarkOnly() {
+    error.value = "";
+    const text = remarkDraft.value.trim();
+    if (!text) {
+      toast.warning("Type a minute before saving.");
+      return;
+    }
 
   busy.value = true;
   try {
@@ -1243,10 +1253,10 @@ async function saveRemarkOnly() {
     });
     remarkDraft.value = "";
     await reloadAll();
-    successMessage.value = "Remark saved successfully.";
+    successMessage.value = "Minute saved successfully.";
     toast.success(successMessage.value);
   } catch (e) {
-    error.value = e?.message || "Save remark failed.";
+    error.value = e?.message || "Save minute failed.";
     toast.error(error.value);
   } finally {
     busy.value = false;
@@ -1367,7 +1377,7 @@ async function doIssue() {
     successMessage.value = "Document completed successfully.";
     toast.success(successMessage.value);
   } catch (e) {
-    error.value = toWorkflowGuidance(e?.message || "Issue failed.", "Done");
+    error.value = toWorkflowGuidance(e?.message || "Done failed.", "Done");
     toast.error(error.value);
   } finally {
     busy.value = false;
@@ -1379,7 +1389,7 @@ async function doReopen() {
   if (!ensureWorkflowMinuteAllowed("Reopen")) return;
   const txt = remarkDraft.value.trim();
   if (!txt) {
-    error.value = "Reopen requires a reason. Type it in the Remark box first.";
+    error.value = "Reopen requires a reason. Type it in the Minute box first.";
     toast.warning(error.value);
     return;
   }

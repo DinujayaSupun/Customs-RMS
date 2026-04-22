@@ -290,7 +290,7 @@
                 <div class="opsRow">
                   <span class="label">Last Action</span>
                   <span>
-                    {{ previewLastMovement?.actionType || '-' }}
+                    {{ displayMovementActionLabel(previewLastMovement?.actionType) || '-' }}
                     <span v-if="previewLastMovement"> • {{ formatDateTimeSafe(previewLastMovement.actionAt) }}</span>
                   </span>
                 </div>
@@ -300,7 +300,7 @@
                 </div>
                 <div class="opsRow">
                   <span class="label">Latest Minute</span>
-                  <span>{{ previewLastRemark?.remarkText || 'No minute recorded.' }}</span>
+                  <span>{{ previewCanViewRemarks ? (previewLastRemark?.remarkText || 'No minute recorded.') : 'Minutes are available only when this document is assigned to you in Report At.' }}</span>
                 </div>
               </div>
             </aside>
@@ -681,6 +681,11 @@ const previewIsOwner = computed(() => {
   return Number(previewDoc.value.currentOwnerUserId) === Number(currentUser.value.id);
 });
 
+const previewCanViewRemarks = computed(() => {
+  if (!previewDoc.value || !currentUser.value) return false;
+  return previewIsOwner.value || hasPermission(currentUser.value, "VIEW_REMARKS_WHEN_NOT_REPORT_AT");
+});
+
 const previewCanSeeOperational = computed(() => {
   if (!previewDoc.value || !currentUser.value) return false;
   return hasPermission(currentUser.value, "VIEW_ALL_HISTORY") || previewIsOwner.value;
@@ -771,6 +776,10 @@ function toText(value) {
 
 function displayStatusLabel(statusValue) {
   return String(statusValue || "").toUpperCase() === "ISSUED" ? "DONE" : statusValue;
+}
+
+function displayMovementActionLabel(actionType) {
+  return String(actionType || "").toUpperCase() === "ISSUE" ? "DONE" : actionType;
 }
 
 function docTypeClass(type) {

@@ -443,7 +443,7 @@
             This is an ADMIN account. Historical records will stay, but this account will be removed from login and admin management.
           </div>
           <div class="deleteNotice">
-            Only already deactivated users can be deleted. Historical records such as movements, remarks, and audit logs will remain.
+            Only already deactivated users can be deleted. Historical records such as movements, minutes, and audit logs will remain.
           </div>
           <div v-if="deleteRequiresTypedConfirmation" class="field">
             <label>Type Admin Username To Confirm</label>
@@ -480,7 +480,7 @@
             Selected for deletion: <b>{{ selectedUsers.length }}</b>
           </div>
           <div class="deleteNotice">
-            Only inactive users are selectable. Audit logs, movements, remarks, and workflow history will remain unchanged.
+            Only inactive users are selectable. Audit logs, movements, minutes, and workflow history will remain unchanged.
           </div>
         </div>
 

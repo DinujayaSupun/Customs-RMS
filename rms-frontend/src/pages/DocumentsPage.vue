@@ -184,7 +184,7 @@
             <div class="opsRow">
               <span class="label">Last Action:</span>
               <span>
-                {{ previewLastMovement?.actionType || '-' }}
+                {{ displayMovementActionLabel(previewLastMovement?.actionType) || '-' }}
                 <span v-if="previewLastMovement">• {{ formatDateTimeSafe(previewLastMovement.actionAt) }}</span>
               </span>
             </div>
@@ -193,8 +193,8 @@
               <span>{{ previewLastMovement ? ownerLabel(previewLastMovement.actionByUserId) : '-' }}</span>
             </div>
             <div class="opsRow">
-              <span class="label">Latest Remark:</span>
-              <span class="remarkPreview">{{ previewLastRemark?.remarkText || 'No remarks yet.' }}</span>
+              <span class="label">Latest Minute:</span>
+              <span class="remarkPreview">{{ previewCanViewRemarks ? (previewLastRemark?.remarkText || 'No minutes yet.') : 'Minutes are available only when this document is assigned to you in Report At.' }}</span>
             </div>
           </div>
 
@@ -227,6 +227,7 @@ const router = useRouter();
 
 const currentUser = ref(getCurrentUser());
 const canCreate = computed(() => hasPermission(currentUser.value, "CREATE_DOCUMENT"));
+const canViewRemarksWhenNotReportAt = computed(() => hasPermission(currentUser.value, "VIEW_REMARKS_WHEN_NOT_REPORT_AT"));
 
 const q = ref("");
 const status = ref("");
@@ -270,6 +271,10 @@ const STATUS_ORDER = { PENDING: 1, IN_PROGRESS: 2, APPROVED: 3, ISSUED: 4, REJEC
 
 function displayStatusLabel(statusValue) {
   return String(statusValue || "").toUpperCase() === "ISSUED" ? "DONE" : statusValue;
+}
+
+function displayMovementActionLabel(actionType) {
+  return String(actionType || "").toUpperCase() === "ISSUE" ? "DONE" : actionType;
 }
 
 function canPreview(doc) {
@@ -329,6 +334,11 @@ const previewIsOwner = computed(() => {
 const previewCanSeeOperational = computed(() => {
   if (!previewDoc.value || !currentUser.value) return false;
   return hasPermission(currentUser.value, "VIEW_ALL_HISTORY") || previewIsOwner.value;
+});
+
+const previewCanViewRemarks = computed(() => {
+  if (!previewDoc.value || !currentUser.value) return false;
+  return previewIsOwner.value || canViewRemarksWhenNotReportAt.value;
 });
 
 const previewLastMovement = computed(() => {
@@ -870,9 +880,12 @@ h2 { margin:0; line-height:1.15; }
 }
 
 .previewModal {
-  max-width:760px;
+  max-width:640px;
+  max-height:min(76vh, 720px);
   border-radius:18px;
-  box-shadow:0 28px 80px rgba(15, 23, 42, 0.28);
+  box-shadow:0 24px 64px rgba(15, 23, 42, 0.22);
+  display:flex;
+  flex-direction:column;
 }
 
 .previewModal .modalHead {
@@ -882,6 +895,7 @@ h2 { margin:0; line-height:1.15; }
   background:
     radial-gradient(80% 110% at 100% 0%, rgba(37, 99, 235, 0.1), transparent 55%),
     linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  flex-shrink:0;
 }
 
 .modalEyebrow {
@@ -912,6 +926,8 @@ h2 { margin:0; line-height:1.15; }
 
 .previewModal .modalBody {
   padding:20px;
+  overflow-y:auto;
+  flex:1 1 auto;
 }
 
 .previewModal .previewPills {
@@ -986,6 +1002,7 @@ h2 { margin:0; line-height:1.15; }
   padding:16px 20px;
   border-top:1px solid #eef2f7;
   background:#f9fafb;
+  flex-shrink:0;
 }
 
 .previewModal .modalFoot .btn {
@@ -1047,7 +1064,7 @@ h2 { margin:0; line-height:1.15; }
 
   .previewModal {
     max-height:calc(100vh - 28px);
-    overflow:auto;
+    overflow:hidden;
   }
 
   .previewModal .modalHead,
