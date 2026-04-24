@@ -911,11 +911,15 @@ function formatDateTimeSafe(value) {
 }
 
 function toRecentScore(doc) {
-  const source = doc.updatedAt ?? doc.receivedDate ?? doc.createdAt;
+  const source = doc.inboxReceivedAt ?? doc.sentAt ?? doc.updatedAt ?? doc.receivedDate ?? doc.createdAt;
   const parsed = Date.parse(source);
   if (!Number.isNaN(parsed)) return parsed;
   const idNumber = Number(doc.id);
   return Number.isFinite(idNumber) ? idNumber : 0;
+}
+
+function toPriorityScore(doc) {
+  return PRIORITY_ORDER[String(doc?.priority || "").toUpperCase()] ?? 0;
 }
 
 function sortDocuments(list) {
@@ -928,12 +932,20 @@ function sortDocuments(list) {
     case "title_asc":
       return arr.sort((a, b) => toText(a.title).localeCompare(toText(b.title)));
     case "priority_desc":
-      return arr.sort((a, b) => (PRIORITY_ORDER[b.priority] ?? 0) - (PRIORITY_ORDER[a.priority] ?? 0));
+      return arr.sort((a, b) => {
+        const priorityDiff = toPriorityScore(b) - toPriorityScore(a);
+        if (priorityDiff !== 0) return priorityDiff;
+        return toRecentScore(b) - toRecentScore(a);
+      });
     case "status_asc":
       return arr.sort((a, b) => (STATUS_ORDER[a.status] ?? 999) - (STATUS_ORDER[b.status] ?? 999));
     case "recent":
     default:
-      return arr.sort((a, b) => toRecentScore(b) - toRecentScore(a));
+      return arr.sort((a, b) => {
+        const priorityDiff = toPriorityScore(b) - toPriorityScore(a);
+        if (priorityDiff !== 0) return priorityDiff;
+        return toRecentScore(b) - toRecentScore(a);
+      });
   }
 }
 
