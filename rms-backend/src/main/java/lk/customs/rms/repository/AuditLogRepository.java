@@ -12,6 +12,8 @@ import java.util.List;
 
 public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
 
+    List<AuditLog> findByEntityTypeAndEntityIdInAndActionTypeOrderByPerformedAtAsc(String entityType, List<Long> entityIds, String actionType);
+
     @Query("""
         select distinct al.actionType
         from AuditLog al

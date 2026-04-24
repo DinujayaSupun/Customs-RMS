@@ -6,6 +6,7 @@ import lk.customs.rms.entity.DocumentAttachment;
 import lk.customs.rms.entity.DocumentMovement;
 import lk.customs.rms.entity.DocumentRemark;
 import lk.customs.rms.entity.DocumentUserView;
+import lk.customs.rms.entity.AuditLog;
 import lk.customs.rms.entity.User;
 import lk.customs.rms.enums.AppPermission;
 import lk.customs.rms.enums.MovementActionType;
@@ -17,6 +18,7 @@ import lk.customs.rms.repository.DocumentAttachmentRepository;
 import lk.customs.rms.repository.DocumentRemarkRepository;
 import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.DocumentUserViewRepository;
+import lk.customs.rms.repository.AuditLogRepository;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.service.AuditLogService;
 import lk.customs.rms.service.DcAutoForwardConfigService;
@@ -79,6 +81,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentRemarkRepository remarkRepository;
     private final DocumentUserViewRepository documentUserViewRepository;
     private final UserRepository userRepository;
+    private final AuditLogRepository auditLogRepository;
     private final AuditLogService auditLogService;
     private final PermissionService permissionService;
     private final RealtimeNotificationService realtimeNotificationService;
@@ -91,6 +94,7 @@ public class DocumentServiceImpl implements DocumentService {
             DocumentRemarkRepository remarkRepository,
             DocumentUserViewRepository documentUserViewRepository,
             UserRepository userRepository,
+            AuditLogRepository auditLogRepository,
             AuditLogService auditLogService,
                 PermissionService permissionService,
                 RealtimeNotificationService realtimeNotificationService,
@@ -102,6 +106,7 @@ public class DocumentServiceImpl implements DocumentService {
         this.remarkRepository = remarkRepository;
         this.documentUserViewRepository = documentUserViewRepository;
         this.userRepository = userRepository;
+        this.auditLogRepository = auditLogRepository;
         this.auditLogService = auditLogService;
         this.permissionService = permissionService;
         this.realtimeNotificationService = realtimeNotificationService;
@@ -334,6 +339,12 @@ public class DocumentServiceImpl implements DocumentService {
                 .findByDocumentIdInAndRemarkedByUserIdOrderByDocumentIdAscRemarkedAtAsc(pageDocIds, actorUserId)
                 .stream()
                 .collect(Collectors.groupingBy(DocumentRemark::getDocumentId));
+        Map<Long, List<AuditLog>> autoForwardLogsByDoc = pageDocIds.isEmpty()
+            ? Map.of()
+            : auditLogRepository
+                .findByEntityTypeAndEntityIdInAndActionTypeOrderByPerformedAtAsc("MOVEMENT", pageDocIds, "AUTO_FORWARD_DC_TIMEOUT")
+                .stream()
+                .collect(Collectors.groupingBy(AuditLog::getEntityId));
 
         List<SentMessageResponse> sentRows = pageMovements.stream().map(movement -> {
             Document doc = docsById.get(movement.getDocumentId());
@@ -345,6 +356,12 @@ public class DocumentServiceImpl implements DocumentService {
             if (!canViewRemarks(doc, actorUserId)) {
                 ownMinutePreview = null;
             }
+            boolean autoForwarded = autoForwardLogsByDoc
+                .getOrDefault(movement.getDocumentId(), List.of())
+                .stream()
+                .anyMatch(log -> log.getPerformedAt() != null
+                    && movement.getActionAt() != null
+                    && !log.getPerformedAt().isBefore(movement.getActionAt()));
             return SentMessageResponse.builder()
                 .movementId(movement.getId())
                 .documentId(movement.getDocumentId())
@@ -359,6 +376,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .toUserName(userNamesById.get(movement.getToUserId()))
                 .latestRemarkPreview(ownMinutePreview)
                 .sentAt(movement.getActionAt())
+                .autoForwarded(autoForwarded)
                 .build();
             }).toList();
 

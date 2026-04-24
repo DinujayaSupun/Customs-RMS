@@ -152,14 +152,14 @@
                     Latest minute: {{ d.latestRemarkPreview }}
                     <br />
                     <span class="sentMetaLine">
-                      Sent to {{ d.toUserName || `User #${d.toUserId ?? 'N/A'}` }} • {{ String(d.forwardVisibility || 'PRIVATE').toUpperCase() }} • {{ displaySentDate(d) }}
+                      Sent to {{ d.toUserName || `User #${d.toUserId ?? 'N/A'}` }}<span v-if="d.autoForwarded"> (auto-forwarded)</span> • {{ String(d.forwardVisibility || 'PRIVATE').toUpperCase() }} • {{ displaySentDate(d) }}
                     </span>
                   </template>
                   <template v-else>
                     No minute added by you
                     <br />
                     <span class="sentMetaLine">
-                      Sent to {{ d.toUserName || `User #${d.toUserId ?? 'N/A'}` }} • {{ String(d.forwardVisibility || 'PRIVATE').toUpperCase() }} • {{ displaySentDate(d) }}
+                      Sent to {{ d.toUserName || `User #${d.toUserId ?? 'N/A'}` }}<span v-if="d.autoForwarded"> (auto-forwarded)</span> • {{ String(d.forwardVisibility || 'PRIVATE').toUpperCase() }} • {{ displaySentDate(d) }}
                     </span>
                   </template>
                 </template>

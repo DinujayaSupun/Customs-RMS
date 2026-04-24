@@ -23,4 +23,5 @@ public class SentMessageResponse {
     private String toUserName;
     private String latestRemarkPreview;
     private LocalDateTime sentAt;
+    private boolean autoForwarded;
 }
