@@ -402,8 +402,8 @@
 
             <div v-if="forwardAttachmentsError" class="note noteWarn">{{ forwardAttachmentsError }}</div>
 
-            <div v-if="!canForwardSelectedDoc" class="note noteWarn">
-              Forward is available only to the user currently shown in Report At with forward permission, and allowed statuses are managed from Permissions.
+            <div v-if="!canForwardSelectedDoc && !canReturnSelectedDoc" class="note noteWarn">
+              Forward and Return are available only to the user currently shown in Report At with the relevant permission, and allowed statuses are managed from Permissions.
             </div>
 
             <div class="formRow">
@@ -411,8 +411,8 @@
               <textarea
                 v-model="forwardRemark"
                 class="textarea"
-                :disabled="forwardBusy || !canForwardSelectedDoc"
-                placeholder="Type minute before forwarding..."
+                :disabled="forwardBusy || (!canForwardSelectedDoc && !canReturnSelectedDoc)"
+                placeholder="Type minute before forwarding or returning..."
               ></textarea>
             </div>
 
@@ -422,7 +422,7 @@
                 <input
                   v-model="forwardUserSearch"
                   class="input"
-                  :disabled="forwardBusy || !canForwardSelectedDoc"
+                  :disabled="forwardBusy || !canChooseWorkflowTarget"
                   placeholder="Search user by name, role, department, or ID..."
                   spellcheck="false"
                   @focus="forwardSearchFocused = true"
@@ -450,7 +450,7 @@
                 <span>Selected user</span>
                 <b>{{ formatUserLabel(selectedForwardUser) }}</b>
               </div>
-              <div v-else class="forwardSelected muted">Select a user before forwarding.</div>
+              <div v-else class="forwardSelected muted">Select a user before forwarding or returning.</div>
 
               <div class="forwardSearchMeta">
                 <span>{{ forwardUserSearch.trim() ? `${filteredForwardTargets.length} of ${forwardTargets.length} users shown` : `${forwardTargets.length} users available` }}</span>
@@ -472,6 +472,9 @@
 
           <div class="modalFoot">
             <button class="btn" :disabled="forwardBusy" @click="closeForwardDialog">Cancel</button>
+            <button class="btn" :disabled="forwardBusy || !canReturnSelectedDoc || !forwardToUserId" @click="submitReturn">
+              {{ forwardBusy ? 'Returning...' : 'Return' }}
+            </button>
             <button class="btn btn-primary" :disabled="forwardBusy || !canForwardSelectedDoc || !forwardToUserId" @click="submitForward">
               {{ forwardBusy ? 'Forwarding...' : 'Forward' }}
             </button>
@@ -499,6 +502,7 @@ import {
   listMovements,
   listRemarks,
   listSentMessages,
+  returnDocument,
 } from "../api/documents.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabel, formatUserLabelById } from "../auth/userLabel";
@@ -540,6 +544,8 @@ const forwardAttachments = ref([]);
 const forwardAttachmentsLoading = ref(false);
 const forwardAttachmentsError = ref("");
 const selectedForwardAttachmentId = ref(null);
+const forwardMovements = ref([]);
+const autoSelectedForwardTargetId = ref(null);
 
 const currentUser = computed(() => {
   authTick.value;
@@ -585,6 +591,44 @@ const forwardTargets = computed(() => {
   return all;
 });
 
+const canForwardSelectedDoc = computed(() => canForwardRow(forwardDoc.value));
+const canReturnSelectedDoc = computed(() => {
+  const doc = forwardDoc.value;
+  if (!doc) return false;
+
+  const user = currentUser.value;
+  const ownerId = Number(doc?.currentOwnerUserId ?? doc?.currentOwnerId ?? doc?.ownerUserId);
+  const userId = Number(user?.id);
+  const docStatus = String(doc?.status || "").toUpperCase();
+
+  return (
+    Number.isFinite(userId) &&
+    ownerId === userId &&
+    forwardReturnAllowedStatuses.value.includes(docStatus) &&
+    hasPermission(user, "RETURN_DOCUMENT")
+  );
+});
+
+const canChooseWorkflowTarget = computed(() => canForwardSelectedDoc.value || canReturnSelectedDoc.value);
+
+const preferredReturnTargetId = computed(() => {
+  if (!canReturnSelectedDoc.value || !currentUser.value?.id || forwardTargets.value.length === 0) return null;
+
+  const validIds = new Set(forwardTargets.value.map((u) => Number(u.id)));
+  for (let index = forwardMovements.value.length - 1; index >= 0; index -= 1) {
+    const movement = forwardMovements.value[index];
+    const actionType = String(movement?.actionType || "").toUpperCase();
+    const toUserId = Number(movement?.toUserId);
+    const fromUserId = Number(movement?.fromUserId);
+    if (!["FORWARD", "RETURN"].includes(actionType)) continue;
+    if (toUserId !== Number(currentUser.value.id)) continue;
+    if (!Number.isFinite(fromUserId) || !validIds.has(fromUserId)) continue;
+    return fromUserId;
+  }
+
+  return null;
+});
+
 const selectedForwardUser = computed(() => {
   return forwardTargets.value.find((u) => Number(u.id) === Number(forwardToUserId.value)) || null;
 });
@@ -611,11 +655,9 @@ const filteredForwardTargets = computed(() => {
   });
 });
 
-const canForwardSelectedDoc = computed(() => canForwardRow(forwardDoc.value));
-
 const showForwardSearchDropdown = computed(() => {
   return (
-    canForwardSelectedDoc.value &&
+    canChooseWorkflowTarget.value &&
     forwardSearchFocused.value &&
     (forwardUserSearch.value.trim() || filteredForwardTargets.value.length > 0)
   );
@@ -927,13 +969,34 @@ watch([q, status, priority, sortBy, viewFilter], () => {
 });
 
 watch(
-  forwardTargets,
-  (list) => {
+  [forwardTargets, preferredReturnTargetId, canChooseWorkflowTarget],
+  ([list, preferredReturnId, canChooseTarget]) => {
+    if (!canChooseTarget) {
+      forwardToUserId.value = null;
+      autoSelectedForwardTargetId.value = null;
+      return;
+    }
+
     const valid = new Set(list.map((x) => Number(x.id)));
-    const current = forwardToUserId.value;
-    if (current == null || !valid.has(Number(current))) {
-      forwardToUserId.value = list[0] ? Number(list[0].id) : null;
-      forwardUserSearch.value = list[0] ? formatUserLabel(list[0]) : "";
+    const desiredTargetId = preferredReturnId != null
+      ? Number(preferredReturnId)
+      : (list[0] ? Number(list[0].id) : null);
+    const currentTargetId = forwardToUserId.value == null ? null : Number(forwardToUserId.value);
+    const currentIsValid = currentTargetId != null && valid.has(currentTargetId);
+    const shouldAutoSelect = !currentIsValid || (
+      autoSelectedForwardTargetId.value != null &&
+      Number(autoSelectedForwardTargetId.value) === currentTargetId
+    );
+
+    if (shouldAutoSelect) {
+      forwardToUserId.value = desiredTargetId;
+      autoSelectedForwardTargetId.value = desiredTargetId;
+      forwardUserSearch.value = "";
+      return;
+    }
+
+    if (currentIsValid) {
+      forwardToUserId.value = currentTargetId;
     }
   },
   { immediate: true }
@@ -1165,10 +1228,11 @@ function selectNextPreviewAttachment() {
 function resetForwardForm() {
   forwardRemark.value = "";
   forwardVisibility.value = availableForwardVisibilities.value[0] || "PUBLIC";
-  const firstTarget = forwardTargets.value[0] || null;
-  forwardToUserId.value = firstTarget ? Number(firstTarget.id) : null;
-  forwardUserSearch.value = firstTarget ? formatUserLabel(firstTarget) : "";
+  forwardToUserId.value = null;
+  forwardUserSearch.value = "";
   forwardSearchFocused.value = false;
+  forwardMovements.value = [];
+  autoSelectedForwardTargetId.value = null;
   forwardAttachments.value = [];
   forwardAttachmentsLoading.value = false;
   forwardAttachmentsError.value = "";
@@ -1197,11 +1261,16 @@ async function loadForwardAttachments(documentId) {
   forwardAttachmentsLoading.value = true;
   forwardAttachmentsError.value = "";
   try {
-    const data = await listAttachments(documentId);
-    forwardAttachments.value = Array.isArray(data) ? data : [];
+    const [attachments, movements] = await Promise.all([
+      listAttachments(documentId),
+      listMovements(documentId),
+    ]);
+    forwardAttachments.value = Array.isArray(attachments) ? attachments : [];
+    forwardMovements.value = Array.isArray(movements) ? movements : [];
     selectedForwardAttachmentId.value = forwardMainAttachment.value?.id ?? forwardAttachmentsSorted.value[0]?.id ?? null;
   } catch (e) {
     forwardAttachments.value = [];
+    forwardMovements.value = [];
     selectedForwardAttachmentId.value = null;
     forwardAttachmentsError.value = e?.message || "Could not load file preview.";
   } finally {
@@ -1229,14 +1298,16 @@ function closeForwardDialog() {
 function selectForwardUser(user) {
   if (!user) return;
   forwardToUserId.value = Number(user.id);
-  forwardUserSearch.value = formatUserLabel(user);
+  forwardUserSearch.value = "";
   forwardSearchFocused.value = false;
+  autoSelectedForwardTargetId.value = null;
 }
 
 function clearForwardSearch() {
   forwardUserSearch.value = "";
   forwardToUserId.value = null;
   forwardSearchFocused.value = true;
+  autoSelectedForwardTargetId.value = null;
 }
 
 async function submitForward() {
@@ -1277,6 +1348,42 @@ async function submitForward() {
     await load();
   } catch (e) {
     error.value = e?.message || "Forward failed.";
+  } finally {
+    forwardBusy.value = false;
+  }
+}
+
+async function submitReturn() {
+  error.value = "";
+
+  const documentId = resolveDocumentId(forwardDoc.value);
+  if (!documentId) {
+    error.value = "Document is missing. Please refresh and try again.";
+    return;
+  }
+
+  if (!canReturnSelectedDoc.value) {
+    error.value = "You are not allowed to return this document.";
+    return;
+  }
+
+  if (!forwardToUserId.value) {
+    error.value = "Please select a user to return.";
+    return;
+  }
+
+  forwardBusy.value = true;
+  try {
+    await returnDocument(documentId, {
+      toUserId: Number(forwardToUserId.value),
+      remarkText: forwardRemark.value.trim() || null,
+    });
+    forwardOpen.value = false;
+    forwardDoc.value = null;
+    resetForwardForm();
+    await load();
+  } catch (e) {
+    error.value = e?.message || "Return failed.";
   } finally {
     forwardBusy.value = false;
   }
