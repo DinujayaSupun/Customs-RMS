@@ -84,6 +84,8 @@ public class DocumentRemarkController {
                 .build();
 
         DocumentRemark saved = remarkRepository.save(remark);
+        doc.setUpdatedAt(LocalDateTime.now());
+        documentRepository.save(doc);
 
         auditLogService.logRemark(documentId, user.getId(), "REMARK", "Remark added by current owner", saved.getId());
 

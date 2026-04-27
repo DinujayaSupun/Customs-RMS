@@ -40,6 +40,16 @@
         </div>
 
         <div class="control">
+          <label class="controlLabel">Received From</label>
+          <input v-model="receivedFrom" class="input" type="date" />
+        </div>
+
+        <div class="control">
+          <label class="controlLabel">Received To</label>
+          <input v-model="receivedTo" class="input" type="date" />
+        </div>
+
+        <div class="control">
           <label class="controlLabel">Sort By</label>
           <select v-model="sortBy" class="input">
             <option value="recent">Recently Updated</option>
@@ -282,6 +292,8 @@ const canViewRemarksWhenNotReportAt = computed(() => hasPermission(currentUser.v
 const q = ref("");
 const status = ref("");
 const priority = ref("");
+const receivedFrom = ref("");
+const receivedTo = ref("");
 const sortBy = ref("recent");
 
 const sortHint = computed(() => {
@@ -450,6 +462,8 @@ const previewDaysOpen = computed(() => {
 });
 
 function daysOpenFor(document) {
+  if (String(document?.status || "").toUpperCase() === "ISSUED") return "Closed";
+
   const raw = document?.receivedDate;
   if (!raw) return "-";
   const dt = new Date(raw);
@@ -512,8 +526,11 @@ function applyFilters(list) {
 
     const matchStatus = !status.value || d.status === status.value;
     const matchPriority = !priority.value || d.priority === priority.value;
+    const receivedValue = String(d.receivedDate || "");
+    const matchReceivedFrom = !receivedFrom.value || (receivedValue && receivedValue >= receivedFrom.value);
+    const matchReceivedTo = !receivedTo.value || (receivedValue && receivedValue <= receivedTo.value);
 
-    return matchQ && matchStatus && matchPriority;
+    return matchQ && matchStatus && matchPriority && matchReceivedFrom && matchReceivedTo;
   });
 }
 
@@ -550,7 +567,7 @@ function attachmentTypeLabel(type) {
 }
 
 function toRecentScore(doc) {
-  const source = doc.updatedAt ?? doc.receivedDate ?? doc.createdAt;
+  const source = doc.updatedAt ?? doc.createdAt ?? doc.receivedDate;
   const parsed = Date.parse(source);
   if (!Number.isNaN(parsed)) return parsed;
   const idNumber = Number(doc.id);
@@ -586,10 +603,10 @@ function applyNow() {
 
 function toDaysOpenScore(doc) {
   const daysOpen = daysOpenFor(doc);
-  return daysOpen === "-" ? -1 : Number(daysOpen);
+  return daysOpen === "-" || daysOpen === "Closed" ? -1 : Number(daysOpen);
 }
 
-watch([q, status, priority, sortBy], () => {
+watch([q, status, priority, receivedFrom, receivedTo, sortBy], () => {
   applyNow();
 });
 
@@ -665,7 +682,7 @@ h2 { margin:0; line-height:1.15; }
 
 .filters {
   display:grid;
-  grid-template-columns: 1.6fr 1fr 1fr 1fr;
+  grid-template-columns: 1.6fr 1fr 1fr 1fr 1fr 1fr;
   gap:12px;
   align-items:end;
 }
@@ -1172,7 +1189,7 @@ h2 { margin:0; line-height:1.15; }
 
 @media (max-width: 960px) {
   .filters {
-    grid-template-columns:1fr 1fr;
+    grid-template-columns:1fr 1fr 1fr;
     align-items:stretch;
   }
 

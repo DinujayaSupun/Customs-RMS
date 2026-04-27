@@ -149,7 +149,7 @@
               <div class="mailPreview">
                 <template v-if="inboxMode === 'sent'">
                   <template v-if="d.latestRemarkPreview">
-                    Latest minute: {{ d.latestRemarkPreview }}
+                    Your latest minute: {{ d.latestRemarkPreview }}
                     <br />
                     <span class="sentMetaLine">
                       Sent to {{ d.toUserName || `User #${d.toUserId ?? 'N/A'}` }}<span v-if="d.autoForwarded"> (auto-forwarded)</span> • {{ String(d.forwardVisibility || 'PRIVATE').toUpperCase() }} • {{ displaySentDate(d) }}
@@ -517,6 +517,7 @@ const q = ref("");
 const status = ref("");
 const priority = ref("");
 const sortBy = ref("recent");
+const sortTouched = ref(false);
 const viewFilter = ref("all");
 const inboxMode = ref("received");
 const authTick = ref(0);
@@ -922,6 +923,14 @@ function toPriorityScore(doc) {
   return PRIORITY_ORDER[String(doc?.priority || "").toUpperCase()] ?? 0;
 }
 
+function sortInboxDefaultDisplay(list) {
+  return [...list].sort((a, b) => {
+    const priorityDiff = toPriorityScore(b) - toPriorityScore(a);
+    if (priorityDiff !== 0) return priorityDiff;
+    return toRecentScore(b) - toRecentScore(a);
+  });
+}
+
 function sortDocuments(list) {
   const arr = [...list];
   switch (sortBy.value) {
@@ -932,20 +941,12 @@ function sortDocuments(list) {
     case "title_asc":
       return arr.sort((a, b) => toText(a.title).localeCompare(toText(b.title)));
     case "priority_desc":
-      return arr.sort((a, b) => {
-        const priorityDiff = toPriorityScore(b) - toPriorityScore(a);
-        if (priorityDiff !== 0) return priorityDiff;
-        return toRecentScore(b) - toRecentScore(a);
-      });
+      return arr.sort((a, b) => (PRIORITY_ORDER[b.priority] ?? 0) - (PRIORITY_ORDER[a.priority] ?? 0));
     case "status_asc":
       return arr.sort((a, b) => (STATUS_ORDER[a.status] ?? 999) - (STATUS_ORDER[b.status] ?? 999));
     case "recent":
     default:
-      return arr.sort((a, b) => {
-        const priorityDiff = toPriorityScore(b) - toPriorityScore(a);
-        if (priorityDiff !== 0) return priorityDiff;
-        return toRecentScore(b) - toRecentScore(a);
-      });
+      return arr.sort((a, b) => toRecentScore(b) - toRecentScore(a));
   }
 }
 
@@ -973,11 +974,22 @@ function applyFilters(list) {
 }
 
 function applyNow() {
-  rows.value = sortDocuments(applyFilters(allRows.value));
+  const filtered = applyFilters(allRows.value);
+  if (inboxMode.value === "received" && sortBy.value === "recent" && !sortTouched.value) {
+    rows.value = sortInboxDefaultDisplay(filtered);
+    return;
+  }
+  rows.value = sortDocuments(filtered);
 }
 
 watch([q, status, priority, sortBy, viewFilter], () => {
   applyNow();
+});
+
+watch(sortBy, (value, previous) => {
+  if (previous !== undefined && value !== previous) {
+    sortTouched.value = true;
+  }
 });
 
 watch(
@@ -1141,6 +1153,7 @@ function setMode(mode) {
 
   inboxMode.value = mode;
   viewFilter.value = "all";
+  sortTouched.value = false;
   error.value = "";
   load();
 }

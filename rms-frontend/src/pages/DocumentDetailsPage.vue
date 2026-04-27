@@ -707,6 +707,8 @@ const workflowRulesHint = computed(() => approveRejectButtonsEnabled.value
     : "All workflow actions require the document to be assigned to you in Report At, plus the corresponding permission. Approve and Reject are hidden by admin workflow settings. Done can complete documents without a prior approval step, and Reopen can reopen Done documents.");
 
 const daysOpenDisplay = computed(() => {
+  if (String(doc.value?.status || "").toUpperCase() === "ISSUED") return "Closed";
+
   const received = doc.value?.receivedDate;
   if (!received) return "-";
 

@@ -29,6 +29,7 @@ public class DocumentResponse {
     private String currentOwnerName;
 
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
     private LocalDateTime inboxReceivedAt;
     private LocalDateTime completedAt;
     private LocalDateTime issuedAt;
@@ -83,6 +84,7 @@ public class DocumentResponse {
                 .currentOwnerUserId(d.getCurrentOwnerUserId())
                 .currentOwnerName(ownerName)
                 .createdAt(d.getCreatedAt())
+                .updatedAt(d.getUpdatedAt())
                 .inboxReceivedAt(inboxReceivedAt)
                 .completedAt(d.getCompletedAt())
                 .issuedAt(d.getIssuedAt())

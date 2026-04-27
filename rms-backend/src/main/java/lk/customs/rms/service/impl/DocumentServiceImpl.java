@@ -142,7 +142,9 @@ public class DocumentServiceImpl implements DocumentService {
 
         doc.setCreatedByUserId(createdBy.getId());
         doc.setCurrentOwnerUserId(createdBy.getId());
-        doc.setCreatedAt(LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
+        doc.setCreatedAt(now);
+        doc.setUpdatedAt(now);
         doc.setDeleted(false);
 
         Document saved = documentRepository.save(doc);
@@ -446,6 +448,7 @@ public class DocumentServiceImpl implements DocumentService {
         d.setCompanyName(request.getCompanyName().trim());
         d.setReceivedDate(request.getReceivedDate());
         d.setPriority(request.getPriority());
+        touchDocument(d);
 
         Document saved = documentRepository.save(d);
 
@@ -542,6 +545,7 @@ public class DocumentServiceImpl implements DocumentService {
         d.setVisibility(forwardVisibility);
         applyDcAutoForwardTrackingAfterOwnershipChange(d, toUser);
         d.setStatus(Status.IN_PROGRESS);
+        touchDocument(d);
         documentRepository.save(d);
 
         DocumentMovement mv = DocumentMovement.create(documentId, from, to, actionBy.getId(), MovementActionType.FORWARD, forwardVisibility);
@@ -584,6 +588,7 @@ public class DocumentServiceImpl implements DocumentService {
         documentUserViewRepository.deleteByDocumentIdAndUserId(d.getId(), to);
         applyDcAutoForwardTrackingAfterOwnershipChange(d, toUser);
         d.setStatus(Status.RETURNED);
+        touchDocument(d);
         documentRepository.save(d);
 
         DocumentMovement mv = DocumentMovement.create(documentId, from, to, actionBy.getId(), MovementActionType.RETURN);
@@ -613,6 +618,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         d.setStatus(Status.APPROVED);
         d.setCompletedAt(LocalDateTime.now());
+        touchDocument(d);
         documentRepository.save(d);
 
         DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, actorUserId, MovementActionType.APPROVE);
@@ -641,6 +647,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         d.setStatus(Status.REJECTED);
         d.setCompletedAt(LocalDateTime.now());
+        touchDocument(d);
         documentRepository.save(d);
 
         DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, actorUserId, MovementActionType.REJECT);
@@ -666,6 +673,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         d.setStatus(Status.ISSUED);
         d.setIssuedAt(LocalDateTime.now());
+        touchDocument(d);
         documentRepository.save(d);
 
         DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, actorUserId, MovementActionType.ISSUE);
@@ -719,6 +727,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         // Decision is no longer final, so clear completed date
         d.setCompletedAt(null);
+        touchDocument(d);
 
         documentRepository.save(d);
 
@@ -800,8 +809,15 @@ public class DocumentServiceImpl implements DocumentService {
                 .build();
 
         DocumentRemark saved = remarkRepository.save(remark);
+        touchDocument(doc);
+        documentRepository.save(doc);
 
         auditLogService.logRemark(doc.getId(), actionByUserId, "REMARK", auditMessage, saved.getId());
+    }
+
+    private void touchDocument(Document doc) {
+        if (doc == null) return;
+        doc.setUpdatedAt(LocalDateTime.now());
     }
 
     // ==========================================================

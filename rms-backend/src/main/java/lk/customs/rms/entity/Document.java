@@ -51,6 +51,9 @@ public class Document {
     @Column(name="created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    @Column(name="updated_at")
+    private LocalDateTime updatedAt;
+
     @Column(name="completed_at")
     private LocalDateTime completedAt;
 

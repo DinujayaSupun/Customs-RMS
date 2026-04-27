@@ -86,6 +86,8 @@ public class AttachmentServiceImpl implements AttachmentService {
         a.setDeleted(false);
 
         DocumentAttachment saved = attachmentRepository.save(a);
+        touchDocument(doc);
+        documentRepository.save(doc);
 
         auditLogService.logAttachment(documentId, saved.getId(), actorUserId, "UPLOAD",
                 "Attachment uploaded: v" + nextVersion + " " + saved.getFileName());
@@ -160,6 +162,9 @@ public class AttachmentServiceImpl implements AttachmentService {
             attachmentRepository.save(latest);
         }
 
+        touchDocument(doc);
+        documentRepository.save(doc);
+
         auditLogService.logAttachment(a.getDocumentId(), a.getId(), actorUserId, "DELETE",
                 "Attachment soft-deleted: v" + a.getVersionNo() + " " + a.getFileName());
     }
@@ -184,6 +189,11 @@ public class AttachmentServiceImpl implements AttachmentService {
                 .deletedBy(a.getDeletedBy())
                 .deletedByName(deletedByName)
                 .build();
+    }
+
+    private void touchDocument(Document doc) {
+        if (doc == null) return;
+        doc.setUpdatedAt(LocalDateTime.now());
     }
 
         private User requireUser(Long userId) {
