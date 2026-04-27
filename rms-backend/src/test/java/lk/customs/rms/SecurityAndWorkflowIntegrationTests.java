@@ -2,8 +2,10 @@ package lk.customs.rms;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lk.customs.rms.entity.DcAutoForwardConfig;
 import lk.customs.rms.entity.Role;
 import lk.customs.rms.entity.User;
+import lk.customs.rms.repository.DcAutoForwardConfigRepository;
 import lk.customs.rms.repository.RoleRepository;
 import lk.customs.rms.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,6 +15,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -31,6 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
+@ActiveProfiles("test")
 class SecurityAndWorkflowIntegrationTests {
 
     @Autowired
@@ -45,6 +49,9 @@ class SecurityAndWorkflowIntegrationTests {
     @Autowired
     private WebApplicationContext webApplicationContext;
 
+    @Autowired
+    private DcAutoForwardConfigRepository dcAutoForwardConfigRepository;
+
     private MockMvc mockMvc;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -53,6 +60,7 @@ class SecurityAndWorkflowIntegrationTests {
         mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
                 .apply(springSecurity())
                 .build();
+        ensureApproveRejectButtonsEnabled();
     }
 
     @Test
@@ -328,6 +336,14 @@ class SecurityAndWorkflowIntegrationTests {
 
     private String bearer(String token) {
         return "Bearer " + token;
+    }
+
+    private void ensureApproveRejectButtonsEnabled() {
+        DcAutoForwardConfig config = dcAutoForwardConfigRepository.findById(1L).orElseGet(DcAutoForwardConfig::new);
+        config.setId(1L);
+        config.setApproveRejectButtonsEnabled(true);
+        config.setForwardReturnAllowedStatuses("PENDING,IN_PROGRESS,RETURNED");
+        dcAutoForwardConfigRepository.saveAndFlush(config);
     }
 
     private byte[] pngBytes() {

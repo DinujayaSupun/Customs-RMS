@@ -1,32 +1,24 @@
 import { expect } from "@playwright/test";
 
-function requiredEnv(name) {
-  const value = process.env[name];
-  if (!value || !String(value).trim()) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-  return value;
-}
-
 export const adminCreds = {
-  username: requiredEnv("RMS_E2E_ADMIN_USER"),
-  password: requiredEnv("RMS_E2E_ADMIN_PASS"),
+  username: process.env.RMS_E2E_ADMIN_USER || "admin",
+  password: process.env.RMS_E2E_ADMIN_PASS || "E2eAdmin123",
 };
 
 export const dcCreds = {
-  username: requiredEnv("RMS_E2E_DC_USER"),
-  password: requiredEnv("RMS_E2E_DC_PASS"),
+  username: process.env.RMS_E2E_DC_USER || "dc",
+  password: process.env.RMS_E2E_DC_PASS || "E2eDefault123",
 };
 
-export const apiBaseUrl = process.env.RMS_E2E_API_BASE_URL || "http://localhost:8080/api";
+export const apiBaseUrl = process.env.RMS_E2E_API_BASE_URL || "http://localhost:8081/api";
 export const E2E_USER_PREFIX = "e2e-auto-";
 export const E2E_DOC_PREFIX = "E2E-AUTO-";
 
 export async function loginFromUI(page, { username, password }) {
   await page.goto("/login");
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
-  await page.getByLabel("Username").fill(username);
-  await page.getByLabel("Password").fill(password);
+  await page.getByPlaceholder("Enter username").fill(username);
+  await page.getByPlaceholder("Enter password").fill(password);
   await page.getByRole("button", { name: "Sign In" }).click();
 }
 
@@ -79,6 +71,7 @@ export async function createTempUserByAdmin(request, role = "SC") {
   const created = await createResponse.json();
   return {
     id: created?.id,
+    fullName: created?.fullName || `E2E AUTO ${role} ${unique}`,
     username,
     password,
     role,
@@ -111,6 +104,120 @@ export async function createDocumentByApi(request, creds, overrides = {}) {
 
   if (response.status() !== 201) {
     throw new Error(`Failed to create document. Status: ${response.status()} Body: ${await response.text()}`);
+  }
+
+  return await response.json();
+}
+
+export async function getDocumentByApi(request, creds, documentId) {
+  const loginResult = await apiLogin(request, creds);
+  if (loginResult.status !== 200) {
+    throw new Error(`API login failed for document read. Status: ${loginResult.status}`);
+  }
+  const accessToken = loginResult.body?.accessToken;
+
+  const response = await request.get(`${apiBaseUrl}/documents/${documentId}`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (response.status() !== 200) {
+    throw new Error(`Failed to read document. Status: ${response.status()} Body: ${await response.text()}`);
+  }
+
+  return await response.json();
+}
+
+export async function getWorkflowConfigByAdmin(request) {
+  const loginResult = await apiLogin(request, adminCreds);
+  if (loginResult.status !== 200) {
+    throw new Error(`Admin login failed for workflow config read. Status: ${loginResult.status}`);
+  }
+  const accessToken = loginResult.body?.accessToken;
+
+  const response = await request.get(`${apiBaseUrl}/admin/permissions/dc-auto-forward`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (response.status() !== 200) {
+    throw new Error(`Failed to read workflow config. Status: ${response.status()} Body: ${await response.text()}`);
+  }
+
+  return await response.json();
+}
+
+export async function updateWorkflowConfigByAdmin(request, config) {
+  const loginResult = await apiLogin(request, adminCreds);
+  if (loginResult.status !== 200) {
+    throw new Error(`Admin login failed for workflow config update. Status: ${loginResult.status}`);
+  }
+  const accessToken = loginResult.body?.accessToken;
+
+  const payload = {
+    enabled: !!config?.enabled,
+    timeoutMinutes: Number(config?.timeoutMinutes ?? 0),
+    receiverUserId: config?.receiverUserId ?? null,
+    forwardReturnAllowedStatuses: Array.isArray(config?.forwardReturnAllowedStatuses)
+      ? config.forwardReturnAllowedStatuses
+      : ["PENDING", "IN_PROGRESS", "RETURNED"],
+    approveRejectButtonsEnabled: config?.approveRejectButtonsEnabled !== false,
+  };
+
+  const response = await request.put(`${apiBaseUrl}/admin/permissions/dc-auto-forward`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    data: payload,
+  });
+
+  if (response.status() !== 200) {
+    throw new Error(`Failed to update workflow config. Status: ${response.status()} Body: ${await response.text()}`);
+  }
+
+  return await response.json();
+}
+
+export async function getPermissionMatrixByAdmin(request) {
+  const loginResult = await apiLogin(request, adminCreds);
+  if (loginResult.status !== 200) {
+    throw new Error(`Admin login failed for permission matrix read. Status: ${loginResult.status}`);
+  }
+  const accessToken = loginResult.body?.accessToken;
+
+  const response = await request.get(`${apiBaseUrl}/admin/permissions`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (response.status() !== 200) {
+    throw new Error(`Failed to read permission matrix. Status: ${response.status()} Body: ${await response.text()}`);
+  }
+
+  return await response.json();
+}
+
+export async function updatePermissionMatrixByAdmin(request, entries) {
+  const loginResult = await apiLogin(request, adminCreds);
+  if (loginResult.status !== 200) {
+    throw new Error(`Admin login failed for permission matrix update. Status: ${loginResult.status}`);
+  }
+  const accessToken = loginResult.body?.accessToken;
+
+  const response = await request.put(`${apiBaseUrl}/admin/permissions`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    data: { entries },
+  });
+
+  if (response.status() !== 200) {
+    throw new Error(`Failed to update permission matrix. Status: ${response.status()} Body: ${await response.text()}`);
   }
 
   return await response.json();

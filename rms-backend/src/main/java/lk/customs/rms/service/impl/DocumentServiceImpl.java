@@ -562,6 +562,7 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
+    @Transactional
     public void returns(Long documentId, ForwardReturnRequest request, Long actorUserId) {
         permissionService.ensurePermission(actorUserId, AppPermission.RETURN_DOCUMENT, "You are not allowed to return documents.");
 

@@ -583,6 +583,7 @@ import HoverHint from "../components/HoverHint.vue";
 import { useToast } from "../composables/useToast";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabel, formatUserLabelById } from "../auth/userLabel";
+import { getDocumentDetailsCapabilities } from "../utils/documentDetailsLogic";
 import { listUsers } from "../api/auth.api";
 import {
   getDocument,
@@ -652,48 +653,30 @@ const viewerOpen = ref(false);
 const selectedFile = ref(null);
 const viewerSearch = ref("");
 
-const isOwner = computed(() => !!doc.value && Number(doc.value.currentOwnerUserId) === Number(currentUser.value.id));
-const canViewAllHistory = computed(() => hasPermission(currentUser.value, "VIEW_ALL_HISTORY"));
-const canViewRemarks = computed(() => !!doc.value && (isOwner.value || hasPermission(currentUser.value, "VIEW_REMARKS_WHEN_NOT_REPORT_AT")));
-const isIssued = computed(() => !!doc.value && doc.value.status === "ISSUED");
-const isEditLocked = computed(() => !!doc.value && (!!doc.value.completedAt || isIssued.value));
-const canEditDetails = computed(() => !!doc.value && isOwner.value && !isEditLocked.value && hasPermission(currentUser.value, "EDIT_DOCUMENT_DETAILS"));
-
-// Keep your existing “history” rule for files/movements
-const canViewHistory = computed(() => !!doc.value && (isOwner.value || canViewAllHistory.value));
-
-// Upload: only current owner
-const canUploadAttachments = computed(() => !!doc.value && isOwner.value && !isIssued.value && hasPermission(currentUser.value, "UPLOAD_ATTACHMENT"));
-
-// Actions
-const canForwardPublic = computed(() => hasPermission(currentUser.value, "FORWARD_PUBLIC"));
-const canForwardPrivate = computed(() => hasPermission(currentUser.value, "FORWARD_PRIVATE"));
-const availableForwardVisibilities = computed(() => {
-  const options = [];
-  if (canForwardPublic.value) options.push("PUBLIC");
-  if (canForwardPrivate.value) options.push("PRIVATE");
-  return options;
-});
-const canForwardReturnByStatus = computed(() => !!doc.value && forwardReturnAllowedStatuses.value.includes(String(doc.value.status || "").toUpperCase()));
+const detailCapabilities = computed(() => getDocumentDetailsCapabilities({
+  doc: doc.value,
+  user: currentUser.value,
+  approveRejectButtonsEnabled: approveRejectButtonsEnabled.value,
+  forwardReturnAllowedStatuses: forwardReturnAllowedStatuses.value,
+}));
+const isOwner = computed(() => detailCapabilities.value.isOwner);
+const canViewAllHistory = computed(() => detailCapabilities.value.canViewAllHistory);
+const canViewRemarks = computed(() => detailCapabilities.value.canViewRemarks);
+const isIssued = computed(() => detailCapabilities.value.isIssued);
+const isEditLocked = computed(() => detailCapabilities.value.isEditLocked);
+const canEditDetails = computed(() => detailCapabilities.value.canEditDetails);
+const canViewHistory = computed(() => detailCapabilities.value.canViewHistory);
+const canUploadAttachments = computed(() => detailCapabilities.value.canUploadAttachments);
+const availableForwardVisibilities = computed(() => detailCapabilities.value.availableForwardVisibilities);
+const canForwardReturnByStatus = computed(() => detailCapabilities.value.canForwardReturnByStatus);
 const forwardReturnAllowedStatusesLabel = computed(() => forwardReturnAllowedStatuses.value.map(displayStatusLabel).join(", ") || "none");
-const canForward = computed(() => !!doc.value && canForwardReturnByStatus.value && isOwner.value && hasPermission(currentUser.value, "FORWARD_DOCUMENT") && availableForwardVisibilities.value.length > 0);
-const canReturn  = computed(() => !!doc.value && canForwardReturnByStatus.value && isOwner.value && hasPermission(currentUser.value, "RETURN_DOCUMENT"));
-const canChooseWorkflowTarget = computed(() => canForward.value || canReturn.value);
-
-const canApprove = computed(() => approveRejectButtonsEnabled.value && doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "APPROVE_DOCUMENT") && doc.value.status !== "APPROVED");
-const canReject  = computed(() => approveRejectButtonsEnabled.value && doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "REJECT_DOCUMENT") && doc.value.status !== "REJECTED");
-const canIssue   = computed(() => {
-  if (!doc.value || !isOwner.value || !hasPermission(currentUser.value, "ISSUE_DOCUMENT") || !!doc.value.issuedAt) return false;
-  return approveRejectButtonsEnabled.value
-    ? doc.value.status === "APPROVED"
-    : doc.value.status !== "ISSUED";
-});
-const canReopen  = computed(() => {
-  if (!doc.value || !isOwner.value || !hasPermission(currentUser.value, "REOPEN_DOCUMENT")) return false;
-  return approveRejectButtonsEnabled.value
-    ? !isIssued.value && ["APPROVED","REJECTED"].includes(doc.value.status)
-    : ["ISSUED", "APPROVED", "REJECTED"].includes(doc.value.status);
-});
+const canForward = computed(() => detailCapabilities.value.canForward);
+const canReturn  = computed(() => detailCapabilities.value.canReturn);
+const canChooseWorkflowTarget = computed(() => detailCapabilities.value.canChooseWorkflowTarget);
+const canApprove = computed(() => detailCapabilities.value.canApprove);
+const canReject  = computed(() => detailCapabilities.value.canReject);
+const canIssue   = computed(() => detailCapabilities.value.canIssue);
+const canReopen  = computed(() => detailCapabilities.value.canReopen);
 const availableWorkflowActionNames = computed(() => {
   const names = ["Forward", "Return"];
   if (approveRejectButtonsEnabled.value) {
@@ -706,19 +689,7 @@ const workflowRulesHint = computed(() => approveRejectButtonsEnabled.value
     ? "All workflow actions require the document to be assigned to you in Report At, plus the corresponding permission. Done is available only when status is APPROVED (it marks the document as ISSUED). Reopen is allowed only for APPROVED or REJECTED and cannot be done after ISSUED."
     : "All workflow actions require the document to be assigned to you in Report At, plus the corresponding permission. Approve and Reject are hidden by admin workflow settings. Done can complete documents without a prior approval step, and Reopen can reopen Done documents.");
 
-const daysOpenDisplay = computed(() => {
-  if (String(doc.value?.status || "").toUpperCase() === "ISSUED") return "Closed";
-
-  const received = doc.value?.receivedDate;
-  if (!received) return "-";
-
-  const start = new Date(received);
-  if (Number.isNaN(start.getTime())) return "-";
-
-  const dayMs = 24 * 60 * 60 * 1000;
-  const diff = Math.floor((Date.now() - start.getTime()) / dayMs);
-  return String(Math.max(0, diff));
-});
+const daysOpenDisplay = computed(() => detailCapabilities.value.daysOpenDisplay);
 
 const completedAtDisplay = computed(() => {
   if (!doc.value?.completedAt) return "-";
@@ -745,10 +716,8 @@ const issuedAtDisplay = computed(() => {
 });
 
 // Manual add remark: only current owner
-const canAddRemark = computed(() => !!doc.value && isOwner.value && !isIssued.value && hasPermission(currentUser.value, "ADD_REMARK"));
-
-// textarea allowed if owner can act/save
-const canTypeRemark = computed(() => canAddRemark.value || canForward.value || canReturn.value || canApprove.value || canReject.value || canIssue.value || canReopen.value);
+const canAddRemark = computed(() => detailCapabilities.value.canAddRemark);
+const canTypeRemark = computed(() => detailCapabilities.value.canTypeRemark);
 
 const forwardTargets = computed(() => {
   const all = users.value.filter((u) => Number(u.id) !== Number(currentUser.value.id));

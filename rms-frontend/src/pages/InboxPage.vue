@@ -506,6 +506,8 @@ import {
 } from "../api/documents.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabel, formatUserLabelById } from "../auth/userLabel";
+import { findPreferredReturnTargetId, resolveWorkflowAutoTarget, sortInboxDefaultDisplay, sortInboxDocumentsBy } from "../utils/inboxLogic";
+import { canForwardInboxDocument, canReturnInboxDocument } from "../utils/inboxPermissionLogic";
 
 const router = useRouter();
 
@@ -594,41 +596,21 @@ const forwardTargets = computed(() => {
 
 const canForwardSelectedDoc = computed(() => canForwardRow(forwardDoc.value));
 const canReturnSelectedDoc = computed(() => {
-  const doc = forwardDoc.value;
-  if (!doc) return false;
-
-  const user = currentUser.value;
-  const ownerId = Number(doc?.currentOwnerUserId ?? doc?.currentOwnerId ?? doc?.ownerUserId);
-  const userId = Number(user?.id);
-  const docStatus = String(doc?.status || "").toUpperCase();
-
-  return (
-    Number.isFinite(userId) &&
-    ownerId === userId &&
-    forwardReturnAllowedStatuses.value.includes(docStatus) &&
-    hasPermission(user, "RETURN_DOCUMENT")
-  );
+  return canReturnInboxDocument({
+    doc: forwardDoc.value,
+    user: currentUser.value,
+    forwardReturnAllowedStatuses: forwardReturnAllowedStatuses.value,
+  });
 });
 
 const canChooseWorkflowTarget = computed(() => canForwardSelectedDoc.value || canReturnSelectedDoc.value);
 
-const preferredReturnTargetId = computed(() => {
-  if (!canReturnSelectedDoc.value || !currentUser.value?.id || forwardTargets.value.length === 0) return null;
-
-  const validIds = new Set(forwardTargets.value.map((u) => Number(u.id)));
-  for (let index = forwardMovements.value.length - 1; index >= 0; index -= 1) {
-    const movement = forwardMovements.value[index];
-    const actionType = String(movement?.actionType || "").toUpperCase();
-    const toUserId = Number(movement?.toUserId);
-    const fromUserId = Number(movement?.fromUserId);
-    if (!["FORWARD", "RETURN"].includes(actionType)) continue;
-    if (toUserId !== Number(currentUser.value.id)) continue;
-    if (!Number.isFinite(fromUserId) || !validIds.has(fromUserId)) continue;
-    return fromUserId;
-  }
-
-  return null;
-});
+const preferredReturnTargetId = computed(() => findPreferredReturnTargetId({
+  canReturn: canReturnSelectedDoc.value,
+  currentUserId: currentUser.value?.id,
+  forwardTargets: forwardTargets.value,
+  forwardMovements: forwardMovements.value,
+}));
 
 const selectedForwardUser = computed(() => {
   return forwardTargets.value.find((u) => Number(u.id) === Number(forwardToUserId.value)) || null;
@@ -911,43 +893,8 @@ function formatDateTimeSafe(value) {
   return parsed.toLocaleString();
 }
 
-function toRecentScore(doc) {
-  const source = doc.inboxReceivedAt ?? doc.sentAt ?? doc.updatedAt ?? doc.receivedDate ?? doc.createdAt;
-  const parsed = Date.parse(source);
-  if (!Number.isNaN(parsed)) return parsed;
-  const idNumber = Number(doc.id);
-  return Number.isFinite(idNumber) ? idNumber : 0;
-}
-
-function toPriorityScore(doc) {
-  return PRIORITY_ORDER[String(doc?.priority || "").toUpperCase()] ?? 0;
-}
-
-function sortInboxDefaultDisplay(list) {
-  return [...list].sort((a, b) => {
-    const priorityDiff = toPriorityScore(b) - toPriorityScore(a);
-    if (priorityDiff !== 0) return priorityDiff;
-    return toRecentScore(b) - toRecentScore(a);
-  });
-}
-
 function sortDocuments(list) {
-  const arr = [...list];
-  switch (sortBy.value) {
-    case "ref_asc":
-      return arr.sort((a, b) => toText(a.refNo).localeCompare(toText(b.refNo)));
-    case "ref_desc":
-      return arr.sort((a, b) => toText(b.refNo).localeCompare(toText(a.refNo)));
-    case "title_asc":
-      return arr.sort((a, b) => toText(a.title).localeCompare(toText(b.title)));
-    case "priority_desc":
-      return arr.sort((a, b) => (PRIORITY_ORDER[b.priority] ?? 0) - (PRIORITY_ORDER[a.priority] ?? 0));
-    case "status_asc":
-      return arr.sort((a, b) => (STATUS_ORDER[a.status] ?? 999) - (STATUS_ORDER[b.status] ?? 999));
-    case "recent":
-    default:
-      return arr.sort((a, b) => toRecentScore(b) - toRecentScore(a));
-  }
+  return sortInboxDocumentsBy(list, sortBy.value);
 }
 
 function applyFilters(list) {
@@ -1001,26 +948,18 @@ watch(
       return;
     }
 
-    const valid = new Set(list.map((x) => Number(x.id)));
-    const desiredTargetId = preferredReturnId != null
-      ? Number(preferredReturnId)
-      : (list[0] ? Number(list[0].id) : null);
-    const currentTargetId = forwardToUserId.value == null ? null : Number(forwardToUserId.value);
-    const currentIsValid = currentTargetId != null && valid.has(currentTargetId);
-    const shouldAutoSelect = !currentIsValid || (
-      autoSelectedForwardTargetId.value != null &&
-      Number(autoSelectedForwardTargetId.value) === currentTargetId
-    );
+    const resolved = resolveWorkflowAutoTarget({
+      candidateTargets: list,
+      preferredReturnTargetId: preferredReturnId,
+      currentTargetId: forwardToUserId.value,
+      autoSelectedTargetId: autoSelectedForwardTargetId.value,
+    });
 
-    if (shouldAutoSelect) {
-      forwardToUserId.value = desiredTargetId;
-      autoSelectedForwardTargetId.value = desiredTargetId;
+    forwardToUserId.value = resolved.targetId;
+    autoSelectedForwardTargetId.value = resolved.autoSelectedTargetId;
+
+    if (resolved.targetId === resolved.autoSelectedTargetId) {
       forwardUserSearch.value = "";
-      return;
-    }
-
-    if (currentIsValid) {
-      forwardToUserId.value = currentTargetId;
     }
   },
   { immediate: true }
@@ -1163,20 +1102,13 @@ function isViewedByMe(doc) {
 }
 
 function canForwardRow(doc) {
-  if (!doc || inboxMode.value !== "received") return false;
-
-  const user = currentUser.value;
-  const ownerId = Number(doc?.currentOwnerUserId ?? doc?.currentOwnerId ?? doc?.ownerUserId);
-  const userId = Number(user?.id);
-  const docStatus = String(doc?.status || "").toUpperCase();
-
-  return (
-    Number.isFinite(userId) &&
-    ownerId === userId &&
-    forwardReturnAllowedStatuses.value.includes(docStatus) &&
-    hasPermission(user, "FORWARD_DOCUMENT") &&
-    availableForwardVisibilities.value.length > 0
-  );
+  return canForwardInboxDocument({
+    doc,
+    user: currentUser.value,
+    inboxMode: inboxMode.value,
+    forwardReturnAllowedStatuses: forwardReturnAllowedStatuses.value,
+    availableForwardVisibilities: availableForwardVisibilities.value,
+  });
 }
 
 function resetPreviewExtras() {

@@ -282,6 +282,8 @@ import { listDocuments, listMovements, listRemarks, listAttachments, buildAttach
 import { listUsers } from "../api/auth.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabelById } from "../auth/userLabel";
+import { matchesReceivedDateRange, sortDocumentsBy } from "../utils/documentsLogic";
+import { canPreviewDocument, canSeePreviewOperational, canSeePreviewRemarks, getDocumentsPageDaysOpenDisplay } from "../utils/documentsPageLogic";
 
 const router = useRouter();
 
@@ -344,8 +346,7 @@ function displayMovementActionLabel(actionType) {
 }
 
 function canPreview(doc) {
-  if (hasPermission(currentUser.value, "VIEW_ALL_HISTORY")) return true;
-  return doc.currentOwnerUserId === currentUser.value.id;
+  return canPreviewDocument(doc, currentUser.value);
 }
 
 function openPreview(doc) {
@@ -398,13 +399,11 @@ const previewIsOwner = computed(() => {
 });
 
 const previewCanSeeOperational = computed(() => {
-  if (!previewDoc.value || !currentUser.value) return false;
-  return hasPermission(currentUser.value, "VIEW_ALL_HISTORY") || previewIsOwner.value;
+  return canSeePreviewOperational(previewDoc.value, currentUser.value);
 });
 
 const previewCanViewRemarks = computed(() => {
-  if (!previewDoc.value || !currentUser.value) return false;
-  return previewIsOwner.value || canViewRemarksWhenNotReportAt.value;
+  return canSeePreviewRemarks(previewDoc.value, currentUser.value);
 });
 
 const previewLastMovement = computed(() => {
@@ -462,14 +461,7 @@ const previewDaysOpen = computed(() => {
 });
 
 function daysOpenFor(document) {
-  if (String(document?.status || "").toUpperCase() === "ISSUED") return "Closed";
-
-  const raw = document?.receivedDate;
-  if (!raw) return "-";
-  const dt = new Date(raw);
-  if (Number.isNaN(dt.getTime())) return "-";
-  const dayMs = 24 * 60 * 60 * 1000;
-  return Math.max(0, Math.floor((Date.now() - dt.getTime()) / dayMs));
+  return getDocumentsPageDaysOpenDisplay(document);
 }
 
 function previewAttachmentUrl(attachment) {
@@ -526,11 +518,10 @@ function applyFilters(list) {
 
     const matchStatus = !status.value || d.status === status.value;
     const matchPriority = !priority.value || d.priority === priority.value;
-    const receivedValue = String(d.receivedDate || "");
-    const matchReceivedFrom = !receivedFrom.value || (receivedValue && receivedValue >= receivedFrom.value);
-    const matchReceivedTo = !receivedTo.value || (receivedValue && receivedValue <= receivedTo.value);
+    const matchReceived = (!receivedFrom.value && !receivedTo.value)
+      || matchesReceivedDateRange(d, receivedFrom.value, receivedTo.value);
 
-    return matchQ && matchStatus && matchPriority && matchReceivedFrom && matchReceivedTo;
+    return matchQ && matchStatus && matchPriority && matchReceived;
   });
 }
 
@@ -575,26 +566,7 @@ function toRecentScore(doc) {
 }
 
 function sortDocuments(list) {
-  const arr = [...list];
-  switch (sortBy.value) {
-    case "ref_asc":
-      return arr.sort((a, b) => toText(a.refNo).localeCompare(toText(b.refNo)));
-    case "ref_desc":
-      return arr.sort((a, b) => toText(b.refNo).localeCompare(toText(a.refNo)));
-    case "title_asc":
-      return arr.sort((a, b) => toText(a.title).localeCompare(toText(b.title)));
-    case "days_open_desc":
-      return arr.sort((a, b) => toDaysOpenScore(b) - toDaysOpenScore(a));
-    case "days_open_asc":
-      return arr.sort((a, b) => toDaysOpenScore(a) - toDaysOpenScore(b));
-    case "priority_desc":
-      return arr.sort((a, b) => (PRIORITY_ORDER[b.priority] ?? 0) - (PRIORITY_ORDER[a.priority] ?? 0));
-    case "status_asc":
-      return arr.sort((a, b) => (STATUS_ORDER[a.status] ?? 999) - (STATUS_ORDER[b.status] ?? 999));
-    case "recent":
-    default:
-      return arr.sort((a, b) => toRecentScore(b) - toRecentScore(a));
-  }
+  return sortDocumentsBy(list, sortBy.value, toDaysOpenScore);
 }
 
 function applyNow() {

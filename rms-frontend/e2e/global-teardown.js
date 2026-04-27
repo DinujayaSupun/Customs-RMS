@@ -1,4 +1,4 @@
-const apiBaseUrl = process.env.RMS_E2E_API_BASE_URL || "http://localhost:8080/api";
+const apiBaseUrl = process.env.RMS_E2E_API_BASE_URL || "http://localhost:8081/api";
 const E2E_USER_PREFIX = "e2e-auto-";
 const E2E_DOC_PREFIX = "E2E-AUTO-";
 
@@ -7,13 +7,13 @@ function envValue(name) {
 }
 
 const adminCreds = {
-  username: envValue("RMS_E2E_ADMIN_USER"),
-  password: envValue("RMS_E2E_ADMIN_PASS"),
+  username: envValue("RMS_E2E_ADMIN_USER") || "admin",
+  password: envValue("RMS_E2E_ADMIN_PASS") || "E2eAdmin123",
 };
 
 const dcCreds = {
-  username: envValue("RMS_E2E_DC_USER"),
-  password: envValue("RMS_E2E_DC_PASS"),
+  username: envValue("RMS_E2E_DC_USER") || "dc",
+  password: envValue("RMS_E2E_DC_PASS") || "E2eDefault123",
 };
 
 async function apiLogin(username, password) {

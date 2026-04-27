@@ -2,8 +2,10 @@ package lk.customs.rms;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lk.customs.rms.entity.DcAutoForwardConfig;
 import lk.customs.rms.entity.Role;
 import lk.customs.rms.entity.User;
+import lk.customs.rms.repository.DcAutoForwardConfigRepository;
 import lk.customs.rms.repository.RoleRepository;
 import lk.customs.rms.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,12 +14,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,6 +32,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
+@ActiveProfiles("test")
 class AdminAndWorkflowRoutingIntegrationTests {
 
     @Autowired
@@ -42,6 +47,9 @@ class AdminAndWorkflowRoutingIntegrationTests {
     @Autowired
     private WebApplicationContext webApplicationContext;
 
+    @Autowired
+    private DcAutoForwardConfigRepository dcAutoForwardConfigRepository;
+
     private MockMvc mockMvc;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -50,6 +58,7 @@ class AdminAndWorkflowRoutingIntegrationTests {
         mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
                 .apply(springSecurity())
                 .build();
+        ensureApproveRejectButtonsEnabled();
     }
 
     @Test
@@ -199,6 +208,91 @@ class AdminAndWorkflowRoutingIntegrationTests {
                 .andExpect(jsonPath("$.message").value("You are not allowed to view this private document."));
     }
 
+    @Test
+    void returnAndIssueActionsRefreshUpdatedAt() throws Exception {
+        String password = "Flow1234";
+        User dc = createUser("DC", "updated-dc-", password);
+        User ddc = createUser("DDC", "updated-ddc-", password);
+
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+        String ddcToken = loginAndGetToken(ddc.getUsername(), password);
+
+        long documentId = createDocument(dc, dcToken, "updated-at");
+        LocalDateTime createdUpdatedAt = fetchUpdatedAt(documentId, dcToken);
+
+        mockMvc.perform(post("/api/documents/{id}/forward", documentId)
+                        .header("Authorization", bearer(dcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "toUserId": %d,
+                                  "forwardVisibility": "PUBLIC"
+                                }
+                                """.formatted(ddc.getId())))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/documents/{id}/return", documentId)
+                        .header("Authorization", bearer(ddcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "toUserId": %d
+                                }
+                                """.formatted(dc.getId())))
+                .andExpect(status().isOk());
+
+        LocalDateTime returnedUpdatedAt = fetchUpdatedAt(documentId, dcToken);
+        assertThat(returnedUpdatedAt).isAfterOrEqualTo(createdUpdatedAt);
+
+        mockMvc.perform(post("/api/documents/{id}/approve", documentId)
+                        .header("Authorization", bearer(dcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"remarkText\":\"Approved before done\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/documents/{id}/issue", documentId)
+                        .header("Authorization", bearer(dcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"remarkText\":\"Done in test\"}"))
+                .andExpect(status().isOk());
+
+        LocalDateTime issuedUpdatedAt = fetchUpdatedAt(documentId, dcToken);
+        assertThat(issuedUpdatedAt).isAfterOrEqualTo(returnedUpdatedAt);
+    }
+
+    @Test
+    void issuedDocumentCannotBeReturnedEvenByCurrentOwner() throws Exception {
+        String password = "Flow1234";
+        User admin = createUser("ADMIN", "issued-admin-", password);
+        User ddc = createUser("DDC", "issued-ddc-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+
+        long documentId = createDocument(admin, adminToken, "issued-return");
+
+        mockMvc.perform(post("/api/documents/{id}/approve", documentId)
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"remarkText\":\"Approved before done\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/documents/{id}/issue", documentId)
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"remarkText\":\"Done before return attempt\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/documents/{id}/return", documentId)
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "toUserId": %d
+                                }
+                                """.formatted(ddc.getId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Cannot forward/return a ISSUED document. Allowed statuses: PENDING, IN_PROGRESS, RETURNED."));
+    }
+
     private User createUser(String roleName, String prefix, String rawPassword) {
         Role role = roleRepository.findByRoleName(roleName)
                 .orElseThrow(() -> new IllegalStateException("Role not found: " + roleName));
@@ -240,6 +334,25 @@ class AdminAndWorkflowRoutingIntegrationTests {
 
     private JsonNode readJson(MvcResult result) throws Exception {
         return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private LocalDateTime fetchUpdatedAt(long documentId, String token) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/documents/{id}", documentId)
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode json = readJson(result);
+        assertThat(json.get("updatedAt").isNull()).isFalse();
+        return LocalDateTime.parse(json.get("updatedAt").asText());
+    }
+
+    private void ensureApproveRejectButtonsEnabled() {
+        DcAutoForwardConfig config = dcAutoForwardConfigRepository.findById(1L).orElseGet(DcAutoForwardConfig::new);
+        config.setId(1L);
+        config.setApproveRejectButtonsEnabled(true);
+        config.setForwardReturnAllowedStatuses("PENDING,IN_PROGRESS,RETURNED");
+        dcAutoForwardConfigRepository.saveAndFlush(config);
     }
 
     private String loginAndGetToken(String username, String password) throws Exception {

@@ -2,47 +2,24 @@ package lk.customs.rms.config;
 
 import lk.customs.rms.entity.Role;
 import lk.customs.rms.entity.RolePermission;
-import lk.customs.rms.entity.User;
 import lk.customs.rms.enums.AppPermission;
 import lk.customs.rms.repository.RolePermissionRepository;
 import lk.customs.rms.repository.RoleRepository;
-import lk.customs.rms.repository.UserRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.util.StringUtils;
 
 import java.util.EnumSet;
 import java.util.Set;
 
 @Configuration
-@Profile({"local", "dev", "e2e"})
-@ConditionalOnProperty(name = "app.seed.enabled", havingValue = "true")
-public class DataSeeder {
-
-    private static final Logger log = LoggerFactory.getLogger(DataSeeder.class);
-    private final String defaultPassword;
-    private final String adminPassword;
-
-    public DataSeeder(
-            @Value("${app.seed.default-password:}") String defaultPassword,
-            @Value("${app.seed.admin-password:}") String adminPassword) {
-        this.defaultPassword = defaultPassword;
-        this.adminPassword = adminPassword;
-    }
+@Profile("test")
+public class TestSecuritySeedConfig {
 
     @Bean
-    CommandLineRunner seedUsers(RoleRepository roleRepository,
-                                RolePermissionRepository rolePermissionRepository,
-                                UserRepository userRepository,
-                                PasswordEncoder passwordEncoder) {
+    CommandLineRunner seedTestRolesAndPermissions(RoleRepository roleRepository,
+                                                  RolePermissionRepository rolePermissionRepository) {
         return args -> {
             Role dc = ensureRole(roleRepository, "DC");
             Role ddc = ensureRole(roleRepository, "DDC");
@@ -53,20 +30,6 @@ public class DataSeeder {
             Role admin = ensureRole(roleRepository, "ADMIN");
 
             seedPermissions(rolePermissionRepository, dc, ddc, sddc, sc, asc, pma, admin);
-
-            if (!StringUtils.hasText(defaultPassword) || !StringUtils.hasText(adminPassword)) {
-                log.warn("Default user seeding is enabled, but seed passwords are missing.");
-                return;
-            }
-
-            String defaultPasswordHash = passwordEncoder.encode(defaultPassword);
-
-            ensureUser(userRepository, "dc", "Director Customs", defaultPasswordHash, dc);
-            ensureUser(userRepository, "ddc", "Deputy Director Customs", defaultPasswordHash, ddc);
-            ensureUser(userRepository, "sc", "Senior Superintendent", defaultPasswordHash, sc);
-            ensureUser(userRepository, "asc", "Assistant Superintendent", defaultPasswordHash, asc);
-            ensureUser(userRepository, "pma", "Personal Management Assistant", defaultPasswordHash, pma);
-            ensureUser(userRepository, "admin", "System Administrator", passwordEncoder.encode(adminPassword), admin);
         };
     }
 
@@ -79,16 +42,16 @@ public class DataSeeder {
                                  Role pma,
                                  Role admin) {
         Set<AppPermission> allWorkflow = EnumSet.of(
-            AppPermission.VIEW_PUBLIC_DOCUMENT,
-            AppPermission.VIEW_PRIVATE_DOCUMENT,
-            AppPermission.VIEW_OWN_CREATED_DOCUMENTS,
+                AppPermission.VIEW_PUBLIC_DOCUMENT,
+                AppPermission.VIEW_PRIVATE_DOCUMENT,
+                AppPermission.VIEW_OWN_CREATED_DOCUMENTS,
                 AppPermission.EDIT_DOCUMENT_DETAILS,
                 AppPermission.ADD_REMARK,
                 AppPermission.VIEW_REMARKS_WHEN_NOT_REPORT_AT,
                 AppPermission.FORWARD_DOCUMENT,
-            AppPermission.FORWARD_PUBLIC,
-            AppPermission.FORWARD_PRIVATE,
-            AppPermission.CHANGE_DOCUMENT_VISIBILITY,
+                AppPermission.FORWARD_PUBLIC,
+                AppPermission.FORWARD_PRIVATE,
+                AppPermission.CHANGE_DOCUMENT_VISIBILITY,
                 AppPermission.RETURN_DOCUMENT,
                 AppPermission.UPLOAD_ATTACHMENT,
                 AppPermission.DELETE_ATTACHMENT,
@@ -97,17 +60,17 @@ public class DataSeeder {
 
         seedRolePermissions(rolePermissionRepository, dc, EnumSet.of(
                 AppPermission.CREATE_DOCUMENT,
-            AppPermission.VIEW_PUBLIC_DOCUMENT,
-            AppPermission.VIEW_PRIVATE_DOCUMENT,
-            AppPermission.VIEW_OWN_CREATED_DOCUMENTS,
-            AppPermission.VIEW_ALL_DOCUMENTS,
+                AppPermission.VIEW_PUBLIC_DOCUMENT,
+                AppPermission.VIEW_PRIVATE_DOCUMENT,
+                AppPermission.VIEW_OWN_CREATED_DOCUMENTS,
+                AppPermission.VIEW_ALL_DOCUMENTS,
                 AppPermission.EDIT_DOCUMENT_DETAILS,
                 AppPermission.ADD_REMARK,
                 AppPermission.VIEW_REMARKS_WHEN_NOT_REPORT_AT,
                 AppPermission.FORWARD_DOCUMENT,
                 AppPermission.FORWARD_PUBLIC,
                 AppPermission.FORWARD_PRIVATE,
-            AppPermission.CHANGE_DOCUMENT_VISIBILITY,
+                AppPermission.CHANGE_DOCUMENT_VISIBILITY,
                 AppPermission.RETURN_DOCUMENT,
                 AppPermission.APPROVE_DOCUMENT,
                 AppPermission.REJECT_DOCUMENT,
@@ -125,16 +88,16 @@ public class DataSeeder {
         seedRolePermissions(rolePermissionRepository, asc, allWorkflow);
         seedRolePermissions(rolePermissionRepository, pma, EnumSet.of(
                 AppPermission.CREATE_DOCUMENT,
-            AppPermission.VIEW_PUBLIC_DOCUMENT,
-            AppPermission.VIEW_PRIVATE_DOCUMENT,
-            AppPermission.VIEW_OWN_CREATED_DOCUMENTS,
+                AppPermission.VIEW_PUBLIC_DOCUMENT,
+                AppPermission.VIEW_PRIVATE_DOCUMENT,
+                AppPermission.VIEW_OWN_CREATED_DOCUMENTS,
                 AppPermission.EDIT_DOCUMENT_DETAILS,
                 AppPermission.ADD_REMARK,
                 AppPermission.VIEW_REMARKS_WHEN_NOT_REPORT_AT,
                 AppPermission.FORWARD_DOCUMENT,
                 AppPermission.FORWARD_PUBLIC,
                 AppPermission.FORWARD_PRIVATE,
-            AppPermission.CHANGE_DOCUMENT_VISIBILITY,
+                AppPermission.CHANGE_DOCUMENT_VISIBILITY,
                 AppPermission.RETURN_DOCUMENT,
                 AppPermission.UPLOAD_ATTACHMENT,
                 AppPermission.DELETE_ATTACHMENT,
@@ -169,29 +132,5 @@ public class DataSeeder {
     private Role ensureRole(RoleRepository roleRepository, String roleName) {
         return roleRepository.findByRoleName(roleName)
                 .orElseGet(() -> roleRepository.save(new Role(roleName)));
-    }
-
-    private void ensureUser(UserRepository userRepository,
-                            String username,
-                            String fullName,
-                            String passwordHash,
-                            Role role) {
-        if (userRepository.existsByUsernameIgnoreCase(username)) {
-            return;
-        }
-
-        User user = new User();
-        user.setUsername(username);
-        user.setFullName(fullName);
-        user.setPasswordHash(passwordHash);
-        user.setRole(role);
-        user.setIsActive(true);
-
-        try {
-            userRepository.save(user);
-        } catch (DataIntegrityViolationException ex) {
-            // Another run may have inserted the same username in parallel; do not fail startup.
-            log.warn("Skipping seed user '{}': {}", username, ex.getMostSpecificCause().getMessage());
-        }
     }
 }

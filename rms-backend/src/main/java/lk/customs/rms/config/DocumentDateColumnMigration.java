@@ -21,11 +21,32 @@ public class DocumentDateColumnMigration {
         // Migration is best-effort only and must not fail app startup.
         if (!tableExists(jdbcTemplate, "documents")) {
             log.info("Skipping date-column migration: 'documents' table does not exist yet.");
+        } else {
+            addColumnIfMissing(jdbcTemplate, "documents", "updated_at", "DATETIME(6) NULL");
+            migrateColumnToDateTime(jdbcTemplate, "documents", "completed_at");
+            migrateColumnToDateTime(jdbcTemplate, "documents", "issued_at");
+        }
+
+        if (!tableExists(jdbcTemplate, "users")) {
+            log.info("Skipping date-column migration: 'users' table does not exist yet.");
             return;
         }
 
-        migrateColumnToDateTime(jdbcTemplate, "documents", "completed_at");
-        migrateColumnToDateTime(jdbcTemplate, "documents", "issued_at");
+        addColumnIfMissing(jdbcTemplate, "users", "profile_picture_path", "VARCHAR(255) NULL");
+        addColumnIfMissing(jdbcTemplate, "users", "profile_picture_content_type", "VARCHAR(80) NULL");
+        addColumnIfMissing(jdbcTemplate, "users", "profile_picture_updated_at", "DATETIME(6) NULL");
+    }
+
+    private void addColumnIfMissing(JdbcTemplate jdbcTemplate, String tableName, String columnName, String columnDefinition) {
+        if (columnExists(jdbcTemplate, tableName, columnName)) {
+            return;
+        }
+
+        try {
+            jdbcTemplate.execute("ALTER TABLE " + tableName + " ADD COLUMN " + columnName + " " + columnDefinition);
+        } catch (Exception ex) {
+            log.warn("Skipping add-column migration for {}.{} due to: {}", tableName, columnName, ex.getMessage());
+        }
     }
 
     private void migrateColumnToDateTime(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
