@@ -56,10 +56,12 @@ jobs:
       DB_USERNAME: root
       DB_PASSWORD: ci_only_db_password
       JWT_SECRET: Y2lfdGVzdF9qd3Rfc2VjcmV0XzEyMzQ1Njc4OTBfMTIzNDU2Nzg5MF8xMjM0NTY3ODkwXzEyMzQ1Njc4OTA=
-      SPRING_PROFILES_ACTIVE: dev
+      SPRING_PROFILES_ACTIVE: e2e
+      SERVER_PORT: 8081
       APP_SEED_ENABLED: "true"
       APP_SEED_DEFAULT_PASSWORD: CiWorkflowPass123!
       APP_SEED_ADMIN_PASSWORD: CiWorkflowAdmin123!
+      RMS_E2E_API_BASE_URL: http://localhost:8081/api
       RMS_E2E_ADMIN_USER: admin
       RMS_E2E_ADMIN_PASS: CiWorkflowAdmin123!
       RMS_E2E_DC_USER: dc
@@ -110,7 +112,7 @@ jobs:
         working-directory: rms-backend
         run: |
           for i in {1..60}; do
-            if curl -fsS http://localhost:8080/api/health > /dev/null; then
+            if curl -fsS http://localhost:8081/api/health > /dev/null; then
               exit 0
             fi
             sleep 2
