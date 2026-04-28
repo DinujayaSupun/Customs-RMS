@@ -108,4 +108,34 @@ describe("documentDetailsLogic", () => {
       }).canReopen,
     ).toBe(true);
   });
+
+  it("allows Done before approval when approve/reject buttons are disabled", () => {
+    const pendingDoc = {
+      currentOwnerUserId: 7,
+      status: "PENDING",
+      receivedDate: "2026-04-20",
+      completedAt: null,
+      issuedAt: null,
+    };
+
+    const ownerWithDone = user(7, ["ISSUE_DOCUMENT"]);
+
+    expect(
+      getDocumentDetailsCapabilities({
+        doc: pendingDoc,
+        user: ownerWithDone,
+        approveRejectButtonsEnabled: true,
+        forwardReturnAllowedStatuses: ["PENDING", "IN_PROGRESS", "RETURNED"],
+      }).canIssue,
+    ).toBe(false);
+
+    expect(
+      getDocumentDetailsCapabilities({
+        doc: pendingDoc,
+        user: ownerWithDone,
+        approveRejectButtonsEnabled: false,
+        forwardReturnAllowedStatuses: ["PENDING", "IN_PROGRESS", "RETURNED"],
+      }).canIssue,
+    ).toBe(true);
+  });
 });

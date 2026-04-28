@@ -32,6 +32,48 @@ export async function apiLogin(request, { username, password }) {
   };
 }
 
+export function assertLoginHasPermissions(loginResult, permissions, context = "test setup") {
+  if (loginResult.status !== 200) {
+    throw new Error(`${context}: login failed with status ${loginResult.status}.`);
+  }
+
+  const granted = new Set(
+    (Array.isArray(loginResult.body?.permissions) ? loginResult.body.permissions : [])
+      .map((permission) => String(permission || "").trim().toUpperCase())
+      .filter(Boolean),
+  );
+  const missing = permissions
+    .map((permission) => String(permission || "").trim().toUpperCase())
+    .filter((permission) => !granted.has(permission));
+
+  expect(missing, `${context}: missing permissions ${missing.join(", ")}`).toEqual([]);
+}
+
+export async function assertUserHasPermissions(request, creds, permissions, context) {
+  const loginResult = await apiLogin(request, creds);
+  assertLoginHasPermissions(loginResult, permissions, context);
+  return loginResult;
+}
+
+export async function assertUserLacksPermissions(request, creds, permissions, context) {
+  const loginResult = await apiLogin(request, creds);
+  if (loginResult.status !== 200) {
+    throw new Error(`${context}: login failed with status ${loginResult.status}.`);
+  }
+
+  const granted = new Set(
+    (Array.isArray(loginResult.body?.permissions) ? loginResult.body.permissions : [])
+      .map((permission) => String(permission || "").trim().toUpperCase())
+      .filter(Boolean),
+  );
+  const unexpected = permissions
+    .map((permission) => String(permission || "").trim().toUpperCase())
+    .filter((permission) => granted.has(permission));
+
+  expect(unexpected, `${context}: permissions should be disabled ${unexpected.join(", ")}`).toEqual([]);
+  return loginResult;
+}
+
 export async function createTempUserByAdmin(request, role = "SC") {
   const loginResult = await apiLogin(request, adminCreds);
   if (loginResult.status !== 200) {
@@ -83,6 +125,7 @@ export async function createDocumentByApi(request, creds, overrides = {}) {
   if (loginResult.status !== 200) {
     throw new Error(`API login failed for document creation. Status: ${loginResult.status}`);
   }
+  assertLoginHasPermissions(loginResult, ["CREATE_DOCUMENT"], "document creation setup");
   const accessToken = loginResult.body?.accessToken;
 
   const unique = `${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
@@ -228,6 +271,7 @@ export async function forwardDocumentByApi(request, creds, documentId, toUserId,
   if (loginResult.status !== 200) {
     throw new Error(`API login failed for document forward. Status: ${loginResult.status}`);
   }
+  assertLoginHasPermissions(loginResult, ["FORWARD_DOCUMENT", "FORWARD_PRIVATE"], "document forward setup");
   const accessToken = loginResult.body?.accessToken;
 
   const response = await request.post(`${apiBaseUrl}/documents/${documentId}/forward`, {

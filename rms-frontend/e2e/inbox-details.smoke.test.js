@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import {
+  assertUserHasPermissions,
   createDocumentByApi,
   createTempUserByAdmin,
   forwardDocumentByApi,
@@ -27,6 +28,8 @@ test("forwarded document appears in recipient inbox and can be opened", async ({
 
 test("report-at user can save minute in document details and see it in minutes list", async ({ page, request }) => {
   const reportAtUser = await createTempUserByAdmin(request, "DC");
+  await assertUserHasPermissions(request, reportAtUser, ["CREATE_DOCUMENT", "ADD_REMARK"], "minute save test");
+
   const document = await createDocumentByApi(request, reportAtUser);
 
   await loginFromUI(page, reportAtUser);
@@ -45,6 +48,13 @@ test("report-at user can save minute in document details and see it in minutes l
 test("sender can switch to sent inbox and see forwarded document", async ({ page, request }) => {
   const dcUser = await createTempUserByAdmin(request, "DC");
   const ddcUser = await createTempUserByAdmin(request, "DDC");
+  await assertUserHasPermissions(
+    request,
+    dcUser,
+    ["CREATE_DOCUMENT", "FORWARD_DOCUMENT", "FORWARD_PRIVATE", "VIEW_SENT_MESSAGES"],
+    "sent inbox test",
+  );
+
   const document = await createDocumentByApi(request, dcUser);
   await forwardDocumentByApi(request, dcUser, document.id, ddcUser.id);
 
@@ -116,6 +126,8 @@ test("browser notification click opens the exact forwarded document", async ({ p
 test("recipient can return a forwarded document from inbox popup to the latest sender", async ({ page, request }) => {
   const sender = await createTempUserByAdmin(request, "DC");
   const recipient = await createTempUserByAdmin(request, "DDC");
+  await assertUserHasPermissions(request, recipient, ["RETURN_DOCUMENT"], "inbox return test");
+
   const document = await createDocumentByApi(request, sender);
   await forwardDocumentByApi(request, sender, document.id, recipient.id, "Forward for inbox return test");
 
@@ -154,6 +166,13 @@ test("owner can approve then mark done and sees Closed in details and documents 
 
   const creator = await createTempUserByAdmin(request, "DC");
   const approver = await createTempUserByAdmin(request, "DDC");
+  await assertUserHasPermissions(
+    request,
+    creator,
+    ["CREATE_DOCUMENT", "FORWARD_DOCUMENT", "FORWARD_PRIVATE"],
+    "approve and done setup",
+  );
+
   const originalEntries = Array.isArray(originalPermissionMatrix?.entries) ? originalPermissionMatrix.entries : [];
   const updatedEntries = originalEntries.map((entry) => {
     if (String(entry?.roleName || "").toUpperCase() !== "DDC") return entry;
@@ -198,6 +217,49 @@ test("owner can approve then mark done and sees Closed in details and documents 
     await expect(documentsRow).toContainText("Closed");
   } finally {
     await updatePermissionMatrixByAdmin(request, originalEntries);
+    await updateWorkflowConfigByAdmin(request, originalWorkflowConfig);
+  }
+});
+
+test("owner can mark done directly when approve and reject buttons are disabled", async ({ page, request }) => {
+  const originalWorkflowConfig = await getWorkflowConfigByAdmin(request);
+  const owner = await createTempUserByAdmin(request, "DC");
+  await assertUserHasPermissions(
+    request,
+    owner,
+    ["CREATE_DOCUMENT", "ISSUE_DOCUMENT"],
+    "direct done workflow test",
+  );
+
+  const document = await createDocumentByApi(request, owner);
+
+  try {
+    await updateWorkflowConfigByAdmin(request, {
+      ...originalWorkflowConfig,
+      approveRejectButtonsEnabled: false,
+      forwardReturnAllowedStatuses: Array.isArray(originalWorkflowConfig?.forwardReturnAllowedStatuses)
+        ? originalWorkflowConfig.forwardReturnAllowedStatuses
+        : ["PENDING", "IN_PROGRESS", "RETURNED"],
+    });
+
+    await loginFromUI(page, owner);
+    await expect(page).toHaveURL(/\/inbox$/);
+
+    await page.goto(`/documents/${document.id}`);
+    await expect(page).toHaveURL(new RegExp(`/documents/${document.id}$`));
+
+    await expect(page.getByRole("button", { name: "Approve" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Reject" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Done" })).toBeEnabled();
+
+    await page.getByRole("button", { name: "Done" }).click();
+    await expect.poll(async () => {
+      const refreshed = await getDocumentByApi(request, owner, document.id);
+      return refreshed.status;
+    }).toBe("ISSUED");
+
+    await expect(page.getByText("Closed")).toBeVisible();
+  } finally {
     await updateWorkflowConfigByAdmin(request, originalWorkflowConfig);
   }
 });

@@ -26,6 +26,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItems;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -173,6 +174,46 @@ class SecurityAndWorkflowIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(documentPayload("blocked-by-query-token", "Blocked", LocalDate.now().toString(), "LOW")))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void createDocumentRejectsMissingRequiredFieldsWithValidationDetails() throws Exception {
+        String password = "Validate1234";
+        User admin = createUser("ADMIN", "validation-admin-", password);
+        String token = loginAndGetToken(admin.getUsername(), password);
+
+        mockMvc.perform(post("/api/documents")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "refNo": "   ",
+                                  "title": "",
+                                  "companyName": "Integration Co"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Invalid request"))
+                .andExpect(jsonPath("$.details", hasItems(
+                        "refNo: must not be blank",
+                        "title: must not be blank",
+                        "receivedDate: must not be null",
+                        "priority: must not be null"
+                )));
+    }
+
+    @Test
+    void createDocumentRejectsInvalidPriorityAsBadRequest() throws Exception {
+        String password = "Validate1234";
+        User admin = createUser("ADMIN", "invalid-priority-admin-", password);
+        String token = loginAndGetToken(admin.getUsername(), password);
+
+        mockMvc.perform(post("/api/documents")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(documentPayload("invalid-priority", "Invalid Priority", LocalDate.now().toString(), "CRITICAL")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Invalid enum value provided."));
     }
 
     @Test

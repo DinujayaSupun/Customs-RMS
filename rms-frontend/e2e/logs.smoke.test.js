@@ -1,7 +1,15 @@
 import { expect, test } from "@playwright/test";
-import { adminCreds, createTempUserByAdmin, loginFromUI } from "./helpers/auth";
+import {
+  adminCreds,
+  assertUserHasPermissions,
+  assertUserLacksPermissions,
+  createTempUserByAdmin,
+  loginFromUI,
+} from "./helpers/auth";
 
-test("admin can open logs page and view table content", async ({ page }) => {
+test("admin can open logs page and view table content", async ({ page, request }) => {
+  await assertUserHasPermissions(request, adminCreds, ["VIEW_LOGS"], "admin logs access test");
+
   await loginFromUI(page, adminCreds);
   await expect(page).toHaveURL(/\/inbox$/);
 
@@ -13,6 +21,8 @@ test("admin can open logs page and view table content", async ({ page }) => {
 
 test("user without VIEW_LOGS permission is redirected from /logs to /documents", async ({ page, request }) => {
   const nonAdmin = await createTempUserByAdmin(request, "SC");
+  await assertUserLacksPermissions(request, nonAdmin, ["VIEW_LOGS"], "logs route guard test");
+
   await loginFromUI(page, nonAdmin);
   await expect(page).toHaveURL(/\/inbox$/);
 

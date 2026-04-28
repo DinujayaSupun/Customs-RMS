@@ -293,6 +293,88 @@ class AdminAndWorkflowRoutingIntegrationTests {
                 .andExpect(jsonPath("$.message").value("Cannot forward/return a ISSUED document. Allowed statuses: PENDING, IN_PROGRESS, RETURNED."));
     }
 
+    @Test
+    void pendingDocumentCannotBeIssuedBeforeApproval() throws Exception {
+        String password = "Flow1234";
+        User admin = createUser("ADMIN", "issue-pending-admin-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+
+        long documentId = createDocument(admin, adminToken, "issue-pending");
+
+        mockMvc.perform(post("/api/documents/{id}/issue", documentId)
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"remarkText\":\"Trying to issue too early\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Cannot issue. Document must be APPROVED first."));
+    }
+
+    @Test
+    void pendingDocumentCanBeIssuedWhenApproveRejectButtonsAreDisabled() throws Exception {
+        disableApproveRejectButtons();
+
+        String password = "Flow1234";
+        User admin = createUser("ADMIN", "issue-direct-admin-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+
+        long documentId = createDocument(admin, adminToken, "issue-direct");
+
+        mockMvc.perform(post("/api/documents/{id}/issue", documentId)
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"remarkText\":\"Direct done when approval step is disabled\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/documents/{id}", documentId)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ISSUED"));
+    }
+
+    @Test
+    void approvedDocumentCannotBeApprovedAgain() throws Exception {
+        String password = "Flow1234";
+        User admin = createUser("ADMIN", "approve-again-admin-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+
+        long documentId = createDocument(admin, adminToken, "approve-again");
+
+        mockMvc.perform(post("/api/documents/{id}/approve", documentId)
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"remarkText\":\"First approval\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/documents/{id}/approve", documentId)
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"remarkText\":\"Second approval should fail\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Document is already APPROVED. Only ISSUE is allowed."));
+    }
+
+    @Test
+    void reopenRequiresReason() throws Exception {
+        String password = "Flow1234";
+        User admin = createUser("ADMIN", "reopen-reason-admin-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+
+        long documentId = createDocument(admin, adminToken, "reopen-reason");
+
+        mockMvc.perform(post("/api/documents/{id}/approve", documentId)
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"remarkText\":\"Approved before reopen\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/documents/{id}/reopen", documentId)
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"remarkText\":\"   \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Reopen requires a reason (remarkText must not be empty)."));
+    }
+
     private User createUser(String roleName, String prefix, String rawPassword) {
         Role role = roleRepository.findByRoleName(roleName)
                 .orElseThrow(() -> new IllegalStateException("Role not found: " + roleName));
@@ -351,6 +433,14 @@ class AdminAndWorkflowRoutingIntegrationTests {
         DcAutoForwardConfig config = dcAutoForwardConfigRepository.findById(1L).orElseGet(DcAutoForwardConfig::new);
         config.setId(1L);
         config.setApproveRejectButtonsEnabled(true);
+        config.setForwardReturnAllowedStatuses("PENDING,IN_PROGRESS,RETURNED");
+        dcAutoForwardConfigRepository.saveAndFlush(config);
+    }
+
+    private void disableApproveRejectButtons() {
+        DcAutoForwardConfig config = dcAutoForwardConfigRepository.findById(1L).orElseGet(DcAutoForwardConfig::new);
+        config.setId(1L);
+        config.setApproveRejectButtonsEnabled(false);
         config.setForwardReturnAllowedStatuses("PENDING,IN_PROGRESS,RETURNED");
         dcAutoForwardConfigRepository.saveAndFlush(config);
     }
