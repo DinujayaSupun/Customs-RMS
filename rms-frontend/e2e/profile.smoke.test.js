@@ -7,7 +7,7 @@ test("user can update profile fields and changes persist after reload", async ({
   await expect(page).toHaveURL(/\/inbox$/);
 
   await page.goto("/profile");
-  await expect(page.getByRole("heading", { name: "My Profile" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Basic Details" })).toBeVisible();
 
   const fullNameRow = page.locator(".formRow").filter({ hasText: "Full Name" });
   const emailRow = page.locator(".formRow").filter({ hasText: "Email" });

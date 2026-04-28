@@ -17,7 +17,7 @@ test("admin can access users and permissions pages", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Permissions" })).toBeVisible();
 
   await page.goto("/users");
-  await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "User Management" })).toBeVisible();
 
   await page.goto("/permissions");
   await expect(page.getByRole("heading", { name: "Permissions" })).toBeVisible();

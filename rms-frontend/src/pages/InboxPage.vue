@@ -492,6 +492,7 @@ import { File, FileText, FileSpreadsheet, Image, Archive, Eye, Send } from "luci
 import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
 import { listUsers } from "../api/auth.api";
+import { getAttachmentViewerState } from "../utils/attachmentViewerLogic";
 import {
   forwardDocument,
   getDocument,
@@ -646,23 +647,10 @@ const showForwardSearchDropdown = computed(() => {
   );
 });
 
-const forwardAttachmentsSorted = computed(() => {
-  if (!forwardAttachments.value.length) return [];
-  return [...forwardAttachments.value].sort((a, b) => Number(a.versionNo) - Number(b.versionNo));
-});
-
-const forwardMainAttachment = computed(() => {
-  if (!forwardAttachmentsSorted.value?.length) return null;
-  return forwardAttachmentsSorted.value.find((a) => Number(a.versionNo) === 1) || forwardAttachmentsSorted.value[0];
-});
-
-const selectedForwardAttachment = computed(() => {
-  if (!forwardAttachmentsSorted.value?.length) return null;
-  return (
-    forwardAttachmentsSorted.value.find((a) => Number(a.id) === Number(selectedForwardAttachmentId.value)) ||
-    forwardMainAttachment.value
-  );
-});
+const forwardAttachmentViewerState = computed(() => getAttachmentViewerState(forwardAttachments.value, selectedForwardAttachmentId.value));
+const forwardAttachmentsSorted = computed(() => forwardAttachmentViewerState.value.sortedAttachments);
+const forwardMainAttachment = computed(() => forwardAttachmentViewerState.value.primaryAttachment);
+const selectedForwardAttachment = computed(() => forwardAttachmentViewerState.value.selectedAttachment);
 
 const forwardAttachmentCount = computed(() => forwardAttachments.value.length);
 
@@ -680,15 +668,9 @@ const selectedForwardAttachmentType = computed(() => {
   return forwardMainAttachmentType.value;
 });
 
-const selectedForwardAttachmentIndex = computed(() => {
-  if (!forwardAttachmentsSorted.value?.length || !selectedForwardAttachment.value) return -1;
-  return forwardAttachmentsSorted.value.findIndex((a) => Number(a.id) === Number(selectedForwardAttachment.value.id));
-});
-
-const canGoPreviousForwardAttachment = computed(() => selectedForwardAttachmentIndex.value > 0);
-const canGoNextForwardAttachment = computed(() => {
-  return selectedForwardAttachmentIndex.value >= 0 && selectedForwardAttachmentIndex.value < forwardAttachmentsSorted.value.length - 1;
-});
+const selectedForwardAttachmentIndex = computed(() => forwardAttachmentViewerState.value.selectedIndex);
+const canGoPreviousForwardAttachment = computed(() => forwardAttachmentViewerState.value.canGoPrevious);
+const canGoNextForwardAttachment = computed(() => forwardAttachmentViewerState.value.canGoNext);
 
 const forwardDaysOpen = computed(() => {
   const received = forwardDoc.value?.receivedDate;
@@ -734,23 +716,10 @@ const previewLastRemark = computed(() => {
   })[0];
 });
 
-const previewAttachmentsSorted = computed(() => {
-  if (!previewAttachments.value.length) return [];
-  return [...previewAttachments.value].sort((a, b) => Number(a.versionNo) - Number(b.versionNo));
-});
-
-const previewMainAttachment = computed(() => {
-  if (!previewAttachmentsSorted.value.length) return null;
-  return previewAttachmentsSorted.value.find((a) => Number(a.versionNo) === 1) || previewAttachmentsSorted.value[0];
-});
-
-const selectedPreviewAttachment = computed(() => {
-  if (!previewAttachmentsSorted.value.length) return null;
-  return (
-    previewAttachmentsSorted.value.find((a) => Number(a.id) === Number(selectedPreviewAttachmentId.value)) ||
-    previewMainAttachment.value
-  );
-});
+const previewAttachmentViewerState = computed(() => getAttachmentViewerState(previewAttachments.value, selectedPreviewAttachmentId.value));
+const previewAttachmentsSorted = computed(() => previewAttachmentViewerState.value.sortedAttachments);
+const previewMainAttachment = computed(() => previewAttachmentViewerState.value.primaryAttachment);
+const selectedPreviewAttachment = computed(() => previewAttachmentViewerState.value.selectedAttachment);
 
 const previewAttachmentCount = computed(() => previewAttachments.value.length);
 
@@ -768,15 +737,9 @@ const selectedPreviewAttachmentType = computed(() => {
   return previewMainAttachmentType.value;
 });
 
-const selectedPreviewAttachmentIndex = computed(() => {
-  if (!previewAttachmentsSorted.value.length || !selectedPreviewAttachment.value) return -1;
-  return previewAttachmentsSorted.value.findIndex((a) => Number(a.id) === Number(selectedPreviewAttachment.value.id));
-});
-
-const canGoPreviousPreviewAttachment = computed(() => selectedPreviewAttachmentIndex.value > 0);
-const canGoNextPreviewAttachment = computed(() => {
-  return selectedPreviewAttachmentIndex.value >= 0 && selectedPreviewAttachmentIndex.value < previewAttachmentsSorted.value.length - 1;
-});
+const selectedPreviewAttachmentIndex = computed(() => previewAttachmentViewerState.value.selectedIndex);
+const canGoPreviousPreviewAttachment = computed(() => previewAttachmentViewerState.value.canGoPrevious);
+const canGoNextPreviewAttachment = computed(() => previewAttachmentViewerState.value.canGoNext);
 
 const previewIsMainFilePreviewable = computed(() => {
   const name = previewMainAttachment.value?.fileName;

@@ -583,6 +583,11 @@ import HoverHint from "../components/HoverHint.vue";
 import { useToast } from "../composables/useToast";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabel, formatUserLabelById } from "../auth/userLabel";
+import {
+  getAttachmentViewerState,
+  isImageAttachmentName,
+  isPdfAttachmentName,
+} from "../utils/attachmentViewerLogic";
 import { getDocumentDetailsCapabilities } from "../utils/documentDetailsLogic";
 import { listUsers } from "../api/auth.api";
 import {
@@ -822,12 +827,9 @@ watch(
   { immediate: true }
 );
 
-const attachmentsSorted = computed(() => [...attachments.value].sort((a, b) => Number(a.versionNo) - Number(b.versionNo)));
-
-const mainFile = computed(() => {
-  if (!attachmentsSorted.value.length) return null;
-  return attachmentsSorted.value.find(a => Number(a.versionNo) === 1) || attachmentsSorted.value[0];
-});
+const attachmentViewerState = computed(() => getAttachmentViewerState(attachments.value));
+const attachmentsSorted = computed(() => attachmentViewerState.value.sortedAttachments);
+const mainFile = computed(() => attachmentViewerState.value.primaryAttachment);
 
 const mainAttachmentType = computed(() => {
   if (mainFile.value?.fileName) {
@@ -894,11 +896,10 @@ const movementRemarksById = computed(() => {
 });
 
 function isPdf(name) {
-  return (name || "").toLowerCase().endsWith(".pdf");
+  return isPdfAttachmentName(name);
 }
 function isImage(name) {
-  const n = (name || "").toLowerCase();
-  return n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".gif") || n.endsWith(".webp");
+  return isImageAttachmentName(name);
 }
 
 function resolveAttachmentTypeFromName(fileName) {

@@ -282,6 +282,7 @@ import { listDocuments, listMovements, listRemarks, listAttachments, buildAttach
 import { listUsers } from "../api/auth.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabelById } from "../auth/userLabel";
+import { getPrimaryAttachment, isImageAttachmentName, isPdfAttachmentName, isPreviewableAttachmentName } from "../utils/attachmentViewerLogic";
 import { matchesReceivedDateRange, sortDocumentsBy } from "../utils/documentsLogic";
 import { canPreviewDocument, canSeePreviewOperational, canSeePreviewRemarks, getDocumentsPageDaysOpenDisplay } from "../utils/documentsPageLogic";
 
@@ -425,9 +426,7 @@ const previewLastRemark = computed(() => {
 });
 
 const previewMainAttachment = computed(() => {
-  if (!previewAttachments.value.length) return null;
-  const sorted = [...previewAttachments.value].sort((a, b) => Number(a.versionNo) - Number(b.versionNo));
-  return sorted.find((a) => Number(a.versionNo) === 1) || sorted[0];
+  return getPrimaryAttachment(previewAttachments.value);
 });
 
 const previewAttachmentCount = computed(() => previewAttachments.value.length);
@@ -441,19 +440,15 @@ const previewMainAttachmentType = computed(() => {
 
 const previewIsMainFilePreviewable = computed(() => {
   const name = previewMainAttachment.value?.fileName;
-  if (!name) return false;
-  const n = String(name).toLowerCase();
-  return n.endsWith(".pdf") || n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".gif") || n.endsWith(".webp");
+  return isPreviewableAttachmentName(name);
 });
 
 const previewIsPdf = computed(() => {
-  const name = previewMainAttachment.value?.fileName;
-  return String(name || "").toLowerCase().endsWith(".pdf");
+  return isPdfAttachmentName(previewMainAttachment.value?.fileName);
 });
 
 const previewIsImage = computed(() => {
-  const name = String(previewMainAttachment.value?.fileName || "").toLowerCase();
-  return name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".gif") || name.endsWith(".webp");
+  return isImageAttachmentName(previewMainAttachment.value?.fileName);
 });
 
 const previewDaysOpen = computed(() => {
