@@ -142,6 +142,126 @@ class AttachmentAndVisibilityIntegrationTests {
     }
 
     @Test
+    void uploadRequiresCurrentOwnerAndUploadPermission() throws Exception {
+        String password = "AttachUpload123";
+        User creator = createUser("ADMIN", "attach-upload-creator-", password);
+        User owner = createUser("SC", "attach-upload-owner-", password);
+        User outsider = createUser("ADMIN", "attach-upload-outsider-", password);
+
+        String creatorToken = loginAndGetToken(creator.getUsername(), password);
+        String ownerToken = loginAndGetToken(owner.getUsername(), password);
+        String outsiderToken = loginAndGetToken(outsider.getUsername(), password);
+        long documentId = createDocumentForOwner(creatorToken, owner.getId(), "attach-upload-permission-doc");
+
+        Map<Long, Boolean> originalScPermissions = snapshotRolePermissions("SC", AppPermission.UPLOAD_ATTACHMENT);
+
+        try {
+            mockMvc.perform(multipart("/api/documents/{documentId}/attachments", documentId)
+                            .file(textFile("outsider.txt", "outsider upload"))
+                            .header("Authorization", bearer(outsiderToken)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("Only the current owner can upload attachments."));
+
+            setRolePermission("SC", AppPermission.UPLOAD_ATTACHMENT, false);
+
+            mockMvc.perform(multipart("/api/documents/{documentId}/attachments", documentId)
+                            .file(textFile("blocked.txt", "blocked upload"))
+                            .header("Authorization", bearer(ownerToken)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("You are not allowed to upload attachments."));
+
+            setRolePermission("SC", AppPermission.UPLOAD_ATTACHMENT, true);
+
+            mockMvc.perform(multipart("/api/documents/{documentId}/attachments", documentId)
+                            .file(textFile("allowed.txt", "allowed upload"))
+                            .header("Authorization", bearer(ownerToken)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.fileName").value("allowed.txt"));
+        } finally {
+            restoreRolePermissions(originalScPermissions);
+        }
+    }
+
+    @Test
+    void deleteRequiresCurrentOwnerAndDeletePermission() throws Exception {
+        String password = "AttachDelete123";
+        User creator = createUser("ADMIN", "attach-delete-creator-", password);
+        User owner = createUser("SC", "attach-delete-owner-", password);
+        User outsider = createUser("ADMIN", "attach-delete-outsider-", password);
+
+        String creatorToken = loginAndGetToken(creator.getUsername(), password);
+        String ownerToken = loginAndGetToken(owner.getUsername(), password);
+        String outsiderToken = loginAndGetToken(outsider.getUsername(), password);
+        long documentId = createDocumentForOwner(creatorToken, owner.getId(), "attach-delete-permission-doc");
+        long outsiderBlockedAttachmentId = uploadAttachment(documentId, ownerToken, "outsider-blocked.txt", "keep").get("id").asLong();
+
+        mockMvc.perform(delete("/api/attachments/{attachmentId}", outsiderBlockedAttachmentId)
+                        .header("Authorization", bearer(outsiderToken)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Only the current owner can delete attachments."));
+
+        long permissionBlockedAttachmentId = uploadAttachment(documentId, ownerToken, "permission-blocked.txt", "delete check").get("id").asLong();
+        Map<Long, Boolean> originalScPermissions = snapshotRolePermissions("SC", AppPermission.DELETE_ATTACHMENT);
+
+        try {
+            setRolePermission("SC", AppPermission.DELETE_ATTACHMENT, false);
+
+            mockMvc.perform(delete("/api/attachments/{attachmentId}", permissionBlockedAttachmentId)
+                            .header("Authorization", bearer(ownerToken)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("You are not allowed to delete attachments."));
+
+            setRolePermission("SC", AppPermission.DELETE_ATTACHMENT, true);
+
+            mockMvc.perform(delete("/api/attachments/{attachmentId}", permissionBlockedAttachmentId)
+                            .header("Authorization", bearer(ownerToken)))
+                    .andExpect(status().isNoContent());
+        } finally {
+            restoreRolePermissions(originalScPermissions);
+        }
+    }
+
+    @Test
+    void fileHistoryAndDownloadRequireOwnerOrViewAllHistoryPermission() throws Exception {
+        String password = "AttachHistory123";
+        User creator = createUser("ADMIN", "attach-history-creator-", password);
+        User owner = createUser("SC", "attach-history-owner-", password);
+        User outsider = createUser("PMA", "attach-history-outsider-", password);
+        User historyViewer = createUser("DC", "attach-history-viewer-", password);
+
+        String creatorToken = loginAndGetToken(creator.getUsername(), password);
+        String ownerToken = loginAndGetToken(owner.getUsername(), password);
+        String outsiderToken = loginAndGetToken(outsider.getUsername(), password);
+        String historyViewerToken = loginAndGetToken(historyViewer.getUsername(), password);
+        long documentId = createDocumentForOwner(creatorToken, owner.getId(), "attach-history-doc");
+        long attachmentId = uploadAttachment(documentId, ownerToken, "history.txt", "history body").get("id").asLong();
+
+        mockMvc.perform(get("/api/documents/{documentId}/attachments", documentId)
+                        .header("Authorization", bearer(ownerToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(attachmentId));
+
+        mockMvc.perform(get("/api/documents/{documentId}/attachments", documentId)
+                        .header("Authorization", bearer(outsiderToken)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("You are not allowed to view file history for this document."));
+
+        mockMvc.perform(get("/api/attachments/{attachmentId}/download", attachmentId)
+                        .header("Authorization", bearer(outsiderToken)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("You are not allowed to view file history for this document."));
+
+        mockMvc.perform(get("/api/documents/{documentId}/attachments", documentId)
+                        .header("Authorization", bearer(historyViewerToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(attachmentId));
+
+        mockMvc.perform(get("/api/attachments/{attachmentId}/download", attachmentId)
+                        .header("Authorization", bearer(historyViewerToken)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void userWithOnlyPublicDocumentPermissionListsPublicDocButNotPrivateDoc() throws Exception {
         String password = "Visibility123";
         User admin = createUser("ADMIN", "visibility-admin-", password);
@@ -252,6 +372,15 @@ class AttachmentAndVisibilityIntegrationTests {
                 .andReturn();
 
         return readJson(createResult).get("id").asLong();
+    }
+
+    private long createDocumentForOwner(String creatorToken, Long ownerUserId, String refPrefix) throws Exception {
+        long documentId = createDocument(creatorToken, refPrefix);
+        Document document = documentRepository.findByIdAndDeletedFalse(documentId)
+                .orElseThrow(() -> new IllegalStateException("Document not found: " + documentId));
+        document.setCurrentOwnerUserId(ownerUserId);
+        documentRepository.saveAndFlush(document);
+        return documentId;
     }
 
     private String documentPayload(String refPrefix) {

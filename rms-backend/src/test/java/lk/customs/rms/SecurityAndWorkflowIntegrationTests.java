@@ -30,7 +30,9 @@ import static org.hamcrest.Matchers.hasItems;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -214,6 +216,128 @@ class SecurityAndWorkflowIntegrationTests {
                         .content(documentPayload("invalid-priority", "Invalid Priority", LocalDate.now().toString(), "CRITICAL")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Invalid enum value provided."));
+    }
+
+    @Test
+    void updateMyProfileTrimsFieldsAndRejectsBlankFullName() throws Exception {
+        String password = "Profile1234";
+        User user = createUser("SC", "profile-update-", password);
+        String token = loginAndGetToken(user.getUsername(), password);
+
+        mockMvc.perform(put("/api/auth/me")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "   ",
+                                  "email": "ignored@example.com",
+                                  "phone": "0771111111"
+                                }
+                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Invalid request"))
+                .andExpect(jsonPath("$.details", hasItems("fullName: Full name is required.")));
+
+        mockMvc.perform(put("/api/auth/me")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "fullName": "  Samantha Tester  ",
+                                  "email": "samantha@example.com",
+                                  "phone": null
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fullName").value("Samantha Tester"))
+                .andExpect(jsonPath("$.email").value("samantha@example.com"))
+                .andExpect(jsonPath("$.phone").doesNotExist());
+    }
+
+    @Test
+    void changeMyPasswordValidatesCurrentMatchConfirmationAndDifferentPassword() throws Exception {
+        String password = "Password1234";
+        User user = createUser("SC", "password-change-", password);
+        String token = loginAndGetToken(user.getUsername(), password);
+
+        mockMvc.perform(patch("/api/auth/me/password")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "currentPassword": "Wrong1234",
+                                  "newPassword": "NewPassword1234",
+                                  "confirmPassword": "NewPassword1234"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Current password is incorrect."));
+
+        mockMvc.perform(patch("/api/auth/me/password")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "currentPassword": "Password1234",
+                                  "newPassword": "NewPassword1234",
+                                  "confirmPassword": "Mismatch1234"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("New password and confirm password must match."));
+
+        mockMvc.perform(patch("/api/auth/me/password")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "currentPassword": "Password1234",
+                                  "newPassword": "Password1234",
+                                  "confirmPassword": "Password1234"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("New password must be different from current password."));
+
+        mockMvc.perform(patch("/api/auth/me/password")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "currentPassword": "Password1234",
+                                  "newPassword": "Changed1234",
+                                  "confirmPassword": "Changed1234"
+                                }
+                                """))
+                .andExpect(status().isNoContent());
+
+        loginAndGetToken(user.getUsername(), "Changed1234");
+    }
+
+    @Test
+    void profilePictureUploadRejectsEmptyLargeAndUnsupportedFiles() throws Exception {
+        String password = "Picture1234";
+        User user = createUser("SC", "picture-validation-", password);
+        String token = loginAndGetToken(user.getUsername(), password);
+
+        mockMvc.perform(multipart("/api/auth/me/profile-picture")
+                        .file(new MockMultipartFile("file", "empty.png", MediaType.IMAGE_PNG_VALUE, new byte[0]))
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Profile picture file is required."));
+
+        mockMvc.perform(multipart("/api/auth/me/profile-picture")
+                        .file(new MockMultipartFile("file", "avatar.txt", MediaType.TEXT_PLAIN_VALUE, "not image".getBytes(StandardCharsets.UTF_8)))
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Only JPG, PNG, or WEBP profile pictures are allowed."));
+
+        byte[] tooLarge = new byte[(5 * 1024 * 1024) + 1];
+        mockMvc.perform(multipart("/api/auth/me/profile-picture")
+                        .file(new MockMultipartFile("file", "large.png", MediaType.IMAGE_PNG_VALUE, tooLarge))
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Profile picture must be 5MB or smaller."));
     }
 
     @Test

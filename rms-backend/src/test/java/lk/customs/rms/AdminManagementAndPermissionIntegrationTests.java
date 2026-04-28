@@ -30,6 +30,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
 
+import static org.hamcrest.Matchers.hasItem;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -636,6 +637,168 @@ class AdminManagementAndPermissionIntegrationTests {
             restorePermission(role, AppPermission.REJECT_DOCUMENT, originalReject);
             restorePermission(role, AppPermission.REOPEN_DOCUMENT, originalReopen);
         }
+    }
+
+    @Test
+    void editDetailsRequiresCurrentOwnerAndEditPermission() throws Exception {
+        String password = "EditDetails123";
+        User admin = createUser("ADMIN", "edit-admin-", password);
+        User actor = createUser("SC", "edit-actor-", password);
+
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+        String actorToken = loginAndGetToken(actor.getUsername(), password);
+
+        Role actorRole = requireRole("SC");
+        boolean originalEdit = readPermissionEnabled(actorRole, AppPermission.EDIT_DOCUMENT_DETAILS);
+
+        try {
+            long documentId = createOwnedDocumentForActor(admin, adminToken, actor.getId(), "edit-details");
+
+            mockMvc.perform(put("/api/documents/{id}", documentId)
+                            .header("Authorization", bearer(adminToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(documentPayload("non-owner-edit", "Blocked Non Owner Edit", LocalDate.now().toString(), "HIGH")))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("Only the current owner can edit document details."));
+
+            updatePermission(adminToken, "SC", AppPermission.EDIT_DOCUMENT_DETAILS, false);
+
+            mockMvc.perform(put("/api/documents/{id}", documentId)
+                            .header("Authorization", bearer(actorToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(documentPayload("permission-blocked-edit", "Blocked Permission Edit", LocalDate.now().toString(), "HIGH")))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("You are not allowed to edit document details."));
+
+            updatePermission(adminToken, "SC", AppPermission.EDIT_DOCUMENT_DETAILS, true);
+
+            mockMvc.perform(put("/api/documents/{id}", documentId)
+                            .header("Authorization", bearer(actorToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(documentPayload("allowed-edit", "Allowed Owner Edit", LocalDate.now().toString(), "LOW")))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.title").value("Allowed Owner Edit"))
+                    .andExpect(jsonPath("$.priority").value("LOW"));
+        } finally {
+            restorePermission(actorRole, AppPermission.EDIT_DOCUMENT_DETAILS, originalEdit);
+        }
+    }
+
+    @Test
+    void addMinuteRequiresCurrentOwnerAndAddRemarkPermission() throws Exception {
+        String password = "Minute1234";
+        User admin = createUser("ADMIN", "minute-admin-", password);
+        User actor = createUser("SC", "minute-actor-", password);
+
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+        String actorToken = loginAndGetToken(actor.getUsername(), password);
+
+        Role actorRole = requireRole("SC");
+        boolean originalAddRemark = readPermissionEnabled(actorRole, AppPermission.ADD_REMARK);
+
+        try {
+            long documentId = createOwnedDocumentForActor(admin, adminToken, actor.getId(), "minute-permission");
+
+            mockMvc.perform(post("/api/documents/{documentId}/remarks", documentId)
+                            .header("Authorization", bearer(adminToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"remarkText\":\"Non-owner minute should fail\"}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("Only the current owner can add remarks."));
+
+            updatePermission(adminToken, "SC", AppPermission.ADD_REMARK, false);
+
+            mockMvc.perform(post("/api/documents/{documentId}/remarks", documentId)
+                            .header("Authorization", bearer(actorToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"remarkText\":\"Permission blocked minute\"}"))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("You are not allowed to add minutes."));
+
+            updatePermission(adminToken, "SC", AppPermission.ADD_REMARK, true);
+
+            mockMvc.perform(post("/api/documents/{documentId}/remarks", documentId)
+                            .header("Authorization", bearer(actorToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"remarkText\":\"Allowed owner minute\"}"))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.remarkText").value("Allowed owner minute"))
+                    .andExpect(jsonPath("$.remarkedByUserId").value(actor.getId()));
+        } finally {
+            restorePermission(actorRole, AppPermission.ADD_REMARK, originalAddRemark);
+        }
+    }
+
+    @Test
+    void nonOwnerMinuteViewRequiresDedicatedPermission() throws Exception {
+        String password = "ViewMinute123";
+        User admin = createUser("ADMIN", "view-minute-admin-", password);
+        User owner = createUser("DC", "view-minute-owner-", password);
+        User outsider = createUser("SC", "view-minute-outsider-", password);
+
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+        String ownerToken = loginAndGetToken(owner.getUsername(), password);
+        String outsiderToken = loginAndGetToken(outsider.getUsername(), password);
+
+        Role outsiderRole = requireRole("SC");
+        boolean originalViewRemarks = readPermissionEnabled(outsiderRole, AppPermission.VIEW_REMARKS_WHEN_NOT_REPORT_AT);
+
+        try {
+            long documentId = createOwnedDocumentForActor(admin, adminToken, owner.getId(), "minute-view");
+
+            mockMvc.perform(post("/api/documents/{documentId}/remarks", documentId)
+                            .header("Authorization", bearer(ownerToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"remarkText\":\"Minute visible by permission\"}"))
+                    .andExpect(status().isCreated());
+
+            updatePermission(adminToken, "SC", AppPermission.VIEW_REMARKS_WHEN_NOT_REPORT_AT, false);
+
+            mockMvc.perform(get("/api/documents/{documentId}/remarks", documentId)
+                            .header("Authorization", bearer(outsiderToken)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("You are not allowed to view minutes unless the document is assigned to you in Report At."));
+
+            updatePermission(adminToken, "SC", AppPermission.VIEW_REMARKS_WHEN_NOT_REPORT_AT, true);
+
+            mockMvc.perform(get("/api/documents/{documentId}/remarks", documentId)
+                            .header("Authorization", bearer(outsiderToken)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[*].remarkText").value(hasItem("Minute visible by permission")));
+        } finally {
+            restorePermission(outsiderRole, AppPermission.VIEW_REMARKS_WHEN_NOT_REPORT_AT, originalViewRemarks);
+        }
+    }
+
+    @Test
+    void movementHistoryRequiresCurrentOwnerOrViewAllHistoryPermission() throws Exception {
+        String password = "History1234";
+        User admin = createUser("ADMIN", "history-admin-", password);
+        User owner = createUser("SC", "history-owner-", password);
+        User outsider = createUser("PMA", "history-outsider-", password);
+        User historyViewer = createUser("DC", "history-viewer-", password);
+
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+        String ownerToken = loginAndGetToken(owner.getUsername(), password);
+        String outsiderToken = loginAndGetToken(outsider.getUsername(), password);
+        String historyViewerToken = loginAndGetToken(historyViewer.getUsername(), password);
+
+        long documentId = createOwnedDocumentForActor(admin, adminToken, owner.getId(), "history-access");
+
+        mockMvc.perform(get("/api/documents/{documentId}/movements", documentId)
+                        .header("Authorization", bearer(ownerToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].actionType").value("CREATE"));
+
+        mockMvc.perform(get("/api/documents/{documentId}/movements", documentId)
+                        .header("Authorization", bearer(outsiderToken)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("You are not allowed to view movement history for this document."));
+
+        mockMvc.perform(get("/api/documents/{documentId}/movements", documentId)
+                        .header("Authorization", bearer(historyViewerToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].actionType").value("CREATE"));
     }
 
     private User createUser(String roleName, String prefix, String rawPassword) {

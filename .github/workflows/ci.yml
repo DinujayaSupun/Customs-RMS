@@ -125,6 +125,10 @@ jobs:
         working-directory: rms-frontend
         run: npm ci
 
+      - name: Run frontend unit tests
+        working-directory: rms-frontend
+        run: npm run test:unit
+
       - name: Install Playwright browser
         working-directory: rms-frontend
         run: npx playwright install --with-deps chromium
