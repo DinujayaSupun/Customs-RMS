@@ -556,6 +556,7 @@ public class DocumentServiceImpl implements DocumentService {
             to,
             d.getId(),
             d.getRefNo(),
+            d.getTitle(),
             actionBy.getId(),
             actionBy.getFullName()
         );
@@ -596,6 +597,14 @@ public class DocumentServiceImpl implements DocumentService {
         movementRepository.save(mv);
 
         auditLogService.logMovement(documentId, actionBy.getId(), "RETURN", "Returned to userId=" + to);
+        realtimeNotificationService.notifyDocumentReturned(
+            to,
+            d.getId(),
+            d.getRefNo(),
+            d.getTitle(),
+            actionBy.getId(),
+            actionBy.getFullName()
+        );
     }
 
     @Override

@@ -48,3 +48,14 @@ export function isImageAttachmentName(fileName) {
 export function isPreviewableAttachmentName(fileName) {
   return isPdfAttachmentName(fileName) || isImageAttachmentName(fileName);
 }
+
+export function resolveAttachmentTypeFromName(fileName) {
+  const lower = String(fileName || "").toLowerCase();
+  if (lower.endsWith(".pdf")) return "PDF";
+  if (lower.endsWith(".doc") || lower.endsWith(".docx")) return "DOC";
+  if (lower.endsWith(".xls") || lower.endsWith(".xlsx") || lower.endsWith(".csv")) return "XLS";
+  if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".gif") || lower.endsWith(".bmp") || lower.endsWith(".webp")) return "IMG";
+  if (lower.endsWith(".txt")) return "TXT";
+  if (lower.endsWith(".zip") || lower.endsWith(".rar") || lower.endsWith(".7z")) return "ZIP";
+  return "FILE";
+}

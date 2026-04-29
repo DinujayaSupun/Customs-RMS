@@ -587,8 +587,10 @@ import {
   getAttachmentViewerState,
   isImageAttachmentName,
   isPdfAttachmentName,
+  resolveAttachmentTypeFromName,
 } from "../utils/attachmentViewerLogic";
 import { getDocumentDetailsCapabilities } from "../utils/documentDetailsLogic";
+import { getWorkflowSenderSuccessMessage } from "../utils/workflowNotificationLogic";
 import { listUsers } from "../api/auth.api";
 import {
   getDocument,
@@ -900,17 +902,6 @@ function isPdf(name) {
 }
 function isImage(name) {
   return isImageAttachmentName(name);
-}
-
-function resolveAttachmentTypeFromName(fileName) {
-  const lower = String(fileName || "").toLowerCase();
-  if (lower.endsWith(".pdf")) return "PDF";
-  if (lower.endsWith(".doc") || lower.endsWith(".docx")) return "DOC";
-  if (lower.endsWith(".xls") || lower.endsWith(".xlsx") || lower.endsWith(".csv")) return "XLS";
-  if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".gif") || lower.endsWith(".bmp") || lower.endsWith(".webp")) return "IMG";
-  if (lower.endsWith(".txt")) return "TXT";
-  if (lower.endsWith(".zip") || lower.endsWith(".rar") || lower.endsWith(".7z")) return "ZIP";
-  return "FILE";
 }
 
 function docTypeClass(type) {
@@ -1274,7 +1265,7 @@ async function doForward() {
 
     // Forward succeeded. The document may no longer be viewable by this user after ownership change.
     remarkDraft.value = "";
-    successMessage.value = "Document forwarded successfully.";
+    successMessage.value = getWorkflowSenderSuccessMessage("FORWARD");
     toast.success(successMessage.value);
     router.push("/inbox");
   } catch (e) {
@@ -1301,7 +1292,7 @@ async function doReturn() {
     });
     remarkDraft.value = "";
     await reloadAll();
-    successMessage.value = "Document returned successfully.";
+    successMessage.value = getWorkflowSenderSuccessMessage("RETURN");
     toast.success(successMessage.value);
   } catch (e) {
     error.value = toWorkflowGuidance(e?.message || "Return failed.", "Return");

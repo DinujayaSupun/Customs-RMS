@@ -1,29 +1,9 @@
-import axios from "axios";
-import { getAccessToken } from "../auth/currentUser";
+import { createAuthedHttp, getApiErrorMessage } from "./apiClient";
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:8080").replace(/\/$/, "");
-
-const http = axios.create({
-  baseURL: `${API_BASE_URL}/api`,
-  timeout: 20000,
-});
-
-http.interceptors.request.use((config) => {
-  const token = getAccessToken();
-  if (token) {
-    config.headers = config.headers || {};
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+const http = createAuthedHttp();
 
 function getMsg(e) {
-  return (
-    e?.response?.data?.message ||
-    e?.response?.data?.error ||
-    e?.message ||
-    "Request failed"
-  );
+  return getApiErrorMessage(e);
 }
 
 export async function listAuditLogs(params = {}) {

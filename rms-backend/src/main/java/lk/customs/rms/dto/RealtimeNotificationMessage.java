@@ -7,6 +7,7 @@ public record RealtimeNotificationMessage(
         String message,
         Long documentId,
         String documentRefNo,
+        String documentTitle,
         Long fromUserId,
         String fromUserName,
         LocalDateTime createdAt
@@ -14,18 +15,53 @@ public record RealtimeNotificationMessage(
     public static RealtimeNotificationMessage documentForwarded(
             Long documentId,
             String documentRefNo,
+            String documentTitle,
             Long fromUserId,
             String fromUserName
     ) {
-        String refText = (documentRefNo == null || documentRefNo.isBlank())
+        String documentText = (documentTitle == null || documentTitle.isBlank())
+                ? null
+                : documentTitle;
+        if (documentText == null) {
+            documentText = (documentRefNo == null || documentRefNo.isBlank())
                 ? "Document #" + documentId
                 : documentRefNo;
+        }
 
         return new RealtimeNotificationMessage(
                 "DOCUMENT_FORWARDED",
-                "New document assigned: " + refText,
+                "New document assigned: " + documentText,
                 documentId,
                 documentRefNo,
+                documentTitle,
+                fromUserId,
+                fromUserName,
+                LocalDateTime.now()
+        );
+    }
+
+    public static RealtimeNotificationMessage documentReturned(
+            Long documentId,
+            String documentRefNo,
+            String documentTitle,
+            Long fromUserId,
+            String fromUserName
+    ) {
+        String documentText = (documentTitle == null || documentTitle.isBlank())
+                ? null
+                : documentTitle;
+        if (documentText == null) {
+            documentText = (documentRefNo == null || documentRefNo.isBlank())
+                ? "Document #" + documentId
+                : documentRefNo;
+        }
+
+        return new RealtimeNotificationMessage(
+                "DOCUMENT_RETURNED",
+                "Document returned: " + documentText,
+                documentId,
+                documentRefNo,
+                documentTitle,
                 fromUserId,
                 fromUserName,
                 LocalDateTime.now()
@@ -36,6 +72,7 @@ public record RealtimeNotificationMessage(
                 return new RealtimeNotificationMessage(
                                 "PERMISSIONS_UPDATED",
                                 "Permissions were updated by admin. Refreshing your access.",
+                                null,
                                 null,
                                 null,
                                 null,

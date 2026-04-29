@@ -42,31 +42,43 @@
 
         <!-- Main file upload -->
         <div class="span2">
-          <div class="labelTop">Main Document File (optional)</div>
+          <div class="labelTop">Document Files (optional)</div>
           <input
             id="createDocumentFileInput"
             ref="fileInputRef"
             class="hiddenFileInput"
             type="file"
+            multiple
             @change="onFileChange"
           />
           <div class="filePickRow">
-            <button class="btn btn-sm" type="button" @click="openFilePicker">Choose File</button>
-            <span class="filePickLabel">{{ selectedFile ? selectedFile.name : "No file chosen" }}</span>
+            <button class="btn btn-sm" type="button" @click="openFilePicker">Choose Files</button>
+            <span class="filePickLabel">{{ selectedFiles.length ? `${selectedFiles.length} file(s) selected` : "No files chosen" }}</span>
             <HoverHint text="PDF and image files can be previewed here. DOC/DOCX and other file types cannot be previewed in-browser." />
           </div>
+          <div class="small">
+            First selected file becomes the Main file. Later files become attachments.
+          </div>
 
-          <div v-if="selectedFile" class="previewBox">
-            <div class="previewHead">
+          <div v-if="selectedFiles.length" class="previewBox">
+            <div
+              v-for="(file, index) in selectedFiles"
+              :key="getFileKey(file)"
+              class="selectedFileRow"
+            >
               <div class="fileName">
-                <b>{{ selectedFile.name }}</b>
-                <div class="small">{{ prettyType }}</div>
+                <b>{{ file.name }}</b>
+                <span class="tag">{{ getSelectedFileRole(index) }}</span>
+                <div class="small">{{ file.type || "unknown type" }}</div>
               </div>
-              <button class="btn btn-sm" type="button" @click="openLocalPreview">View</button>
+              <div class="selectedFileActions">
+                <button class="btn btn-sm" type="button" @click="openLocalPreview(file)">View</button>
+                <button class="btn btn-sm danger" type="button" @click="removeFile(file)">Remove</button>
+              </div>
             </div>
 
             <!-- Small preview -->
-            <div class="previewBody">
+            <div v-if="previewFile" class="previewBody">
               <iframe
                 v-if="isPdf"
                 :src="localUrl"
@@ -101,9 +113,9 @@
         <div class="modalHead">
           <div>
             <div class="modalTitle">Preview</div>
-            <div class="modalSub">{{ selectedFile?.name }}</div>
+            <div class="modalSub">{{ previewFile?.name }}</div>
           </div>
-          <button class="iconBtn" @click="previewOpen=false">✕</button>
+          <button class="iconBtn" @click="previewOpen=false">x</button>
         </div>
 
         <div class="modalBody">
@@ -130,6 +142,13 @@ import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
 import { createDocument, uploadAttachment } from "../api/documents.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
+import {
+  addSelectedFiles,
+  getFileKey,
+  getSelectedFileRole,
+  removeSelectedFile,
+  uploadFilesInSelectedOrder,
+} from "../utils/createDocumentFilesLogic";
 
 const router = useRouter();
 
@@ -151,30 +170,47 @@ const error = ref("");
 const success = ref("");
 
 // File handling
-const selectedFile = ref(null);
+const selectedFiles = ref([]);
+const previewFile = ref(null);
 const localUrl = ref("");
 const previewOpen = ref(false);
 const fileInputRef = ref(null);
 
-const isPdf = computed(() => selectedFile.value && selectedFile.value.type === "application/pdf");
-const isImage = computed(() => selectedFile.value && selectedFile.value.type.startsWith("image/"));
-const prettyType = computed(() => selectedFile.value?.type || "unknown type");
+const isPdf = computed(() => previewFile.value && previewFile.value.type === "application/pdf");
+const isImage = computed(() => previewFile.value && previewFile.value.type.startsWith("image/"));
 
 function onFileChange(e) {
-  const f = e.target.files?.[0] ?? null;
-  selectedFile.value = f;
-
-  if (localUrl.value) URL.revokeObjectURL(localUrl.value);
-  localUrl.value = f ? URL.createObjectURL(f) : "";
+  selectedFiles.value = addSelectedFiles(selectedFiles.value, e.target.files);
+  if (!previewFile.value && selectedFiles.value[0]) {
+    setPreviewFile(selectedFiles.value[0]);
+  }
+  if (fileInputRef.value) fileInputRef.value.value = "";
 }
 
 function openFilePicker() {
   fileInputRef.value?.click();
 }
 
-function openLocalPreview() {
-  if (!selectedFile.value) return;
+function openLocalPreview(file) {
+  if (!file) return;
+  setPreviewFile(file);
   previewOpen.value = true;
+}
+
+function setPreviewFile(file) {
+  if (localUrl.value) URL.revokeObjectURL(localUrl.value);
+  previewFile.value = file;
+  localUrl.value = file ? URL.createObjectURL(file) : "";
+}
+
+function removeFile(file) {
+  selectedFiles.value = removeSelectedFile(selectedFiles.value, file);
+  if (previewFile.value && getFileKey(previewFile.value) === getFileKey(file)) {
+    previewOpen.value = false;
+    setPreviewFile(selectedFiles.value[0] || null);
+  } else if (!selectedFiles.value.length) {
+    setPreviewFile(null);
+  }
 }
 
 onUnmounted(() => {
@@ -214,10 +250,8 @@ async function submit() {
 
     const created = await createDocument(payload);
 
-    // If a file selected, upload it as v1 attachment
-    if (selectedFile.value) {
-      await uploadAttachment(created.id, selectedFile.value);
-    }
+    // Upload in selected order: first file becomes v1/main, later files become additional attachments.
+    await uploadFilesInSelectedOrder(created.id, selectedFiles.value, uploadAttachment);
 
     success.value = "Document created successfully.";
     router.push(`/documents/${created.id}`);
@@ -298,8 +332,33 @@ h2 { margin:0; }
   justify-content:space-between;
   gap:10px;
 }
+.selectedFileRow {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:10px;
+  border:1px solid #e5e7eb;
+  border-radius:8px;
+  background:#fff;
+}
+.selectedFileRow + .selectedFileRow { margin-top:8px; }
+.selectedFileActions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
 .fileName { min-width:0; }
 .small { font-size:12px; color:#6b7280; }
+.tag {
+  display:inline-flex;
+  align-items:center;
+  margin-left:8px;
+  padding:2px 6px;
+  border-radius:999px;
+  background:#dbeafe;
+  color:#1d4ed8;
+  font-size:11px;
+  font-weight:800;
+}
+.danger { color:#991b1b; border-color:#fecaca; }
+.danger:hover { background:#fef2f2; }
 
 .previewBody { margin-top:10px; }
 .frame { width:100%; height:220px; border:1px solid #e5e7eb; border-radius:8px; background:#fff; }

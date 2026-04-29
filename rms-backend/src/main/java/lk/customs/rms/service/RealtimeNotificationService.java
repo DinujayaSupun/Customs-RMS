@@ -15,11 +15,29 @@ public class RealtimeNotificationService {
     public void notifyDocumentForwarded(Long recipientUserId,
                                         Long documentId,
                                         String documentRefNo,
+                                        String documentTitle,
                                         Long fromUserId,
                                         String fromUserName) {
         RealtimeNotificationMessage message = RealtimeNotificationMessage.documentForwarded(
                 documentId,
                 documentRefNo,
+                documentTitle,
+                fromUserId,
+                fromUserName
+        );
+        notificationWebSocketHandler.sendToUser(recipientUserId, message);
+    }
+
+    public void notifyDocumentReturned(Long recipientUserId,
+                                       Long documentId,
+                                       String documentRefNo,
+                                       String documentTitle,
+                                       Long fromUserId,
+                                       String fromUserName) {
+        RealtimeNotificationMessage message = RealtimeNotificationMessage.documentReturned(
+                documentId,
+                documentRefNo,
+                documentTitle,
                 fromUserId,
                 fromUserName
         );

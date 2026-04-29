@@ -282,7 +282,8 @@ import { listDocuments, listMovements, listRemarks, listAttachments, buildAttach
 import { listUsers } from "../api/auth.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabelById } from "../auth/userLabel";
-import { getPrimaryAttachment, isImageAttachmentName, isPdfAttachmentName, isPreviewableAttachmentName } from "../utils/attachmentViewerLogic";
+import { getPrimaryAttachment, isImageAttachmentName, isPdfAttachmentName, isPreviewableAttachmentName, resolveAttachmentTypeFromName } from "../utils/attachmentViewerLogic";
+import { formatDateSafe, formatDateTimeSafe } from "../utils/dateFormat";
 import { matchesReceivedDateRange, sortDocumentsBy } from "../utils/documentsLogic";
 import { canPreviewDocument, canSeePreviewOperational, canSeePreviewRemarks, getDocumentsPageDaysOpenDisplay } from "../utils/documentsPageLogic";
 
@@ -462,31 +463,6 @@ function daysOpenFor(document) {
 function previewAttachmentUrl(attachment) {
   if (!attachment?.id) return "";
   return buildAttachmentUrl(attachment.id, { inline: true });
-}
-
-function resolveAttachmentTypeFromName(fileName) {
-  const lower = String(fileName ?? "").toLowerCase();
-  if (lower.endsWith(".pdf")) return "PDF";
-  if (lower.endsWith(".doc") || lower.endsWith(".docx")) return "DOC";
-  if (lower.endsWith(".xls") || lower.endsWith(".xlsx") || lower.endsWith(".csv")) return "XLS";
-  if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".gif") || lower.endsWith(".bmp") || lower.endsWith(".webp")) return "IMG";
-  if (lower.endsWith(".txt")) return "TXT";
-  if (lower.endsWith(".zip") || lower.endsWith(".rar") || lower.endsWith(".7z")) return "ZIP";
-  return "FILE";
-}
-
-function formatDateSafe(value) {
-  if (!value) return "-";
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return String(value);
-  return dt.toLocaleDateString();
-}
-
-function formatDateTimeSafe(value) {
-  if (!value) return "-";
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return String(value);
-  return dt.toLocaleString();
 }
 
 function ownerLabel(userId) {

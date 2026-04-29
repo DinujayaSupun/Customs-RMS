@@ -1,31 +1,10 @@
-import axios from "axios";
 import { getAccessToken } from "../auth/currentUser";
+import { createAuthedHttp, getApiErrorMessage } from "./apiClient";
 
-const http = axios.create({
-  baseURL: `${import.meta.env.VITE_API_BASE_URL || "http://localhost:8080"}/api`,
-  timeout: 20000,
-});
-
-http.interceptors.request.use((config) => {
-  const token = getAccessToken();
-  if (token) {
-    config.headers = config.headers || {};
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+const http = createAuthedHttp();
 
 function getMsg(e) {
-  const details = e?.response?.data?.details;
-  if (Array.isArray(details) && details.length > 0) {
-    return details.join(" ");
-  }
-  return (
-    e?.response?.data?.message ||
-    e?.response?.data?.error ||
-    e?.message ||
-    "Request failed"
-  );
+  return getApiErrorMessage(e, { includeDetails: true });
 }
 
 export async function login(username, password) {

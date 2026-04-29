@@ -252,6 +252,7 @@ import AppLayout from "../layouts/AppLayout.vue";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { getDocument } from "../api/documents.api";
 import { exportAuditLogsCsv, getAuditLogFilterOptions, listAuditLogs } from "../api/logs.api";
+import { formatDateTimeSafe } from "../utils/dateFormat";
 
 const currentUser = ref(getCurrentUser());
 const canViewLogs = computed(() => hasPermission(currentUser.value, "VIEW_LOGS"));
@@ -479,12 +480,7 @@ function changeSize() {
   load();
 }
 
-function formatDateTime(value) {
-  if (!value) return "-";
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return String(value);
-  return dt.toLocaleString();
-}
+const formatDateTime = formatDateTimeSafe;
 
 function displayStatusLabel(statusValue) {
   return String(statusValue || "").toUpperCase() === "ISSUED" ? "DONE" : statusValue;

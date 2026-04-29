@@ -3,6 +3,7 @@ import {
   getAttachmentViewerState,
   getPrimaryAttachment,
   isPreviewableAttachmentName,
+  resolveAttachmentTypeFromName,
   sortAttachmentsByVersion,
 } from "./attachmentViewerLogic";
 
@@ -66,5 +67,15 @@ describe("attachmentViewerLogic", () => {
     expect(isPreviewableAttachmentName("sheet.xlsx")).toBe(false);
     expect(isPreviewableAttachmentName("archive.zip")).toBe(false);
     expect(isPreviewableAttachmentName("")).toBe(false);
+  });
+
+  it("resolves common attachment file types from file names", () => {
+    expect(resolveAttachmentTypeFromName("letter.pdf")).toBe("PDF");
+    expect(resolveAttachmentTypeFromName("letter.docx")).toBe("DOC");
+    expect(resolveAttachmentTypeFromName("sheet.csv")).toBe("XLS");
+    expect(resolveAttachmentTypeFromName("scan.bmp")).toBe("IMG");
+    expect(resolveAttachmentTypeFromName("notes.txt")).toBe("TXT");
+    expect(resolveAttachmentTypeFromName("bundle.7z")).toBe("ZIP");
+    expect(resolveAttachmentTypeFromName("unknown.bin")).toBe("FILE");
   });
 });

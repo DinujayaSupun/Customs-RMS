@@ -491,8 +491,10 @@ import { useRouter } from "vue-router";
 import { File, FileText, FileSpreadsheet, Image, Archive, Eye, Send } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
+import { useToast } from "../composables/useToast";
 import { listUsers } from "../api/auth.api";
-import { getAttachmentViewerState } from "../utils/attachmentViewerLogic";
+import { getAttachmentViewerState, resolveAttachmentTypeFromName } from "../utils/attachmentViewerLogic";
+import { formatDateSafe, formatDateTimeSafe } from "../utils/dateFormat";
 import {
   forwardDocument,
   getDocument,
@@ -509,8 +511,10 @@ import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabel, formatUserLabelById } from "../auth/userLabel";
 import { findPreferredReturnTargetId, resolveWorkflowAutoTarget, sortInboxDefaultDisplay, sortInboxDocumentsBy } from "../utils/inboxLogic";
 import { canForwardInboxDocument, canReturnInboxDocument } from "../utils/inboxPermissionLogic";
+import { getWorkflowSenderSuccessMessage } from "../utils/workflowNotificationLogic";
 
 const router = useRouter();
+const toast = useToast();
 
 const loading = ref(false);
 const error = ref("");
@@ -798,17 +802,6 @@ function attachmentTypeLabel(type) {
   return `Main attachment type: ${docTypeClass(type)}`;
 }
 
-function resolveAttachmentTypeFromName(fileName) {
-  const name = String(fileName || "").toLowerCase();
-  if (name.endsWith(".pdf")) return "PDF";
-  if (/\.(doc|docx)$/.test(name)) return "DOC";
-  if (/\.(xls|xlsx|csv)$/.test(name)) return "XLS";
-  if (/\.(png|jpe?g|gif|webp|bmp)$/.test(name)) return "IMG";
-  if (name.endsWith(".txt")) return "TXT";
-  if (/\.(zip|rar|7z)$/.test(name)) return "ZIP";
-  return "FILE";
-}
-
 function isPreviewableFileName(fileName) {
   const type = resolveAttachmentTypeFromName(fileName);
   return type === "PDF" || type === "IMG" || type === "TXT";
@@ -840,20 +833,6 @@ function openAttachmentInNewTab(attachment) {
 function ownerLabel(userId) {
   if (userId === null || userId === undefined || userId === "") return "-";
   return formatUserLabelById(userId, users.value);
-}
-
-function formatDateSafe(value) {
-  if (!value) return "-";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return String(value);
-  return parsed.toLocaleDateString();
-}
-
-function formatDateTimeSafe(value) {
-  if (!value) return "-";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return String(value);
-  return parsed.toLocaleString();
 }
 
 function sortDocuments(list) {
@@ -1265,6 +1244,7 @@ async function submitForward() {
     forwardOpen.value = false;
     forwardDoc.value = null;
     resetForwardForm();
+    toast.success(getWorkflowSenderSuccessMessage("FORWARD"));
     await load();
   } catch (e) {
     error.value = e?.message || "Forward failed.";
@@ -1301,6 +1281,7 @@ async function submitReturn() {
     forwardOpen.value = false;
     forwardDoc.value = null;
     resetForwardForm();
+    toast.success(getWorkflowSenderSuccessMessage("RETURN"));
     await load();
   } catch (e) {
     error.value = e?.message || "Return failed.";
