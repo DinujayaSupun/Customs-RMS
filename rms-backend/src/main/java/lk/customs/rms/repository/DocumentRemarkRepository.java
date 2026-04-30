@@ -12,6 +12,12 @@ import java.util.Optional;
 public interface DocumentRemarkRepository extends JpaRepository<DocumentRemark, Long> {
     List<DocumentRemark> findByDocumentIdOrderByRemarkedAtAsc(Long documentId);
 
+    Optional<DocumentRemark> findFirstByDocumentIdAndRemarkedByUserIdAndRemarkedAtGreaterThanEqualOrderByRemarkedAtDescIdDesc(
+            Long documentId,
+            Long remarkedByUserId,
+            java.time.LocalDateTime remarkedAt
+    );
+
   @EntityGraph(attributePaths = {"remarkedBy", "remarkedBy.role"})
   List<DocumentRemark> findByDocumentIdInAndRemarkedByUserIdOrderByDocumentIdAscRemarkedAtAsc(List<Long> documentIds,
                                                   Long remarkedByUserId);

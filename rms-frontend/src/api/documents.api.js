@@ -156,6 +156,22 @@ export async function addRemark(documentId, payload) {
   }
 }
 
+export async function updateRemark(documentId, remarkId, payload) {
+  try {
+    return (await http.put(`${BASE}/${documentId}/remarks/${remarkId}`, payload)).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function deleteRemark(documentId, remarkId) {
+  try {
+    return (await http.delete(`${BASE}/${documentId}/remarks/${remarkId}`)).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
 // ===================== ATTACHMENTS =====================
 export async function listAttachments(documentId) {
   try {

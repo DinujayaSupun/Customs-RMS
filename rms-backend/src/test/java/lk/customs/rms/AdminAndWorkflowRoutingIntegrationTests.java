@@ -26,8 +26,10 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -143,6 +145,153 @@ class AdminAndWorkflowRoutingIntegrationTests {
         JsonNode returnedJson = readJson(returned);
         assertThat(returnedJson.get("currentOwnerUserId").asLong()).isEqualTo(dc.getId());
         assertThat(returnedJson.get("status").asText()).isEqualTo("RETURNED");
+    }
+
+    @Test
+    void receivedInboxSeparatesActualSenderFromLatestMinuteAuthor() throws Exception {
+        String password = "Flow1234";
+        User dc = createUser("DC", "inbox-sender-dc-", password);
+        User ddc = createUser("DDC", "inbox-minute-ddc-", password);
+
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+        String ddcToken = loginAndGetToken(ddc.getUsername(), password);
+
+        long documentId = createDocument(dc, dcToken, "inbox-sender-minute");
+
+        mockMvc.perform(post("/api/documents/{id}/forward", documentId)
+                        .header("Authorization", bearer(dcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "toUserId": %d,
+                                  "forwardVisibility": "PRIVATE",
+                                  "remarkText": "Sent by DC"
+                                }
+                                """.formatted(ddc.getId())))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/documents/{id}/remarks", documentId)
+                        .header("Authorization", bearer(ddcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"remarkText\":\"Latest minute by DDC\"}"))
+                .andExpect(status().isCreated());
+
+        MvcResult inboxResult = mockMvc.perform(get("/api/documents")
+                        .header("Authorization", bearer(ddcToken))
+                        .param("page", "0")
+                        .param("size", "50"))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode inboxDoc = findDocumentInPage(readJson(inboxResult), documentId);
+        assertThat(inboxDoc.get("inboxSenderUserId").asLong()).isEqualTo(dc.getId());
+        assertThat(inboxDoc.get("inboxSenderName").asText()).isEqualTo(dc.getFullName());
+        assertThat(inboxDoc.get("inboxSenderRole").asText()).isEqualTo("DC");
+        assertThat(inboxDoc.get("latestRemarkByUserId").asLong()).isEqualTo(ddc.getId());
+        assertThat(inboxDoc.get("latestRemarkByName").asText()).isEqualTo(ddc.getFullName());
+        assertThat(inboxDoc.get("latestRemarkByRole").asText()).isEqualTo("DDC");
+        assertThat(inboxDoc.get("latestRemarkTextPreview").asText()).isEqualTo("Latest minute by DDC");
+        assertThat(inboxDoc.get("latestRemarkText").asText()).isEqualTo("Latest minute by DDC");
+    }
+
+    @Test
+    void currentOwnerCanEditAndDeleteOwnLatestMinuteInCurrentOwnershipPeriod() throws Exception {
+        String password = "Flow1234";
+        User dc = createUser("DC", "minute-edit-dc-", password);
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+        long documentId = createDocument(dc, dcToken, "minute-edit");
+
+        long remarkId = addMinute(documentId, dcToken, "Original latest minute");
+
+        mockMvc.perform(get("/api/documents/{documentId}/remarks", documentId)
+                        .header("Authorization", bearer(dcToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].canEdit").value(true))
+                .andExpect(jsonPath("$[0].canDelete").value(true));
+
+        mockMvc.perform(put("/api/documents/{documentId}/remarks/{remarkId}", documentId, remarkId)
+                        .header("Authorization", bearer(dcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"remarkText\":\"Updated latest minute\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.remarkText").value("Updated latest minute"))
+                .andExpect(jsonPath("$.canEdit").value(true))
+                .andExpect(jsonPath("$.canDelete").value(true));
+
+        mockMvc.perform(delete("/api/documents/{documentId}/remarks/{remarkId}", documentId, remarkId)
+                        .header("Authorization", bearer(dcToken)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/documents/{documentId}/remarks", documentId)
+                        .header("Authorization", bearer(dcToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void olderMinuteFromPastOwnershipPeriodCannotBeEditedOrDeleted() throws Exception {
+        String password = "Flow1234";
+        User dc = createUser("DC", "minute-old-dc-", password);
+        User ddc = createUser("DDC", "minute-old-ddc-", password);
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+        String ddcToken = loginAndGetToken(ddc.getUsername(), password);
+        long documentId = createDocument(dc, dcToken, "minute-old");
+
+        mockMvc.perform(post("/api/documents/{id}/forward", documentId)
+                        .header("Authorization", bearer(dcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "toUserId": %d,
+                                  "forwardVisibility": "PRIVATE"
+                                }
+                                """.formatted(ddc.getId())))
+                .andExpect(status().isOk());
+
+        long oldRemarkId = addMinute(documentId, ddcToken, "Old DDC minute");
+
+        mockMvc.perform(post("/api/documents/{id}/return", documentId)
+                        .header("Authorization", bearer(ddcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "toUserId": %d
+                                }
+                                """.formatted(dc.getId())))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/documents/{id}/forward", documentId)
+                        .header("Authorization", bearer(dcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "toUserId": %d,
+                                  "forwardVisibility": "PRIVATE"
+                                }
+                                """.formatted(ddc.getId())))
+                .andExpect(status().isOk());
+
+        addMinute(documentId, ddcToken, "New DDC minute");
+
+        mockMvc.perform(get("/api/documents/{documentId}/remarks", documentId)
+                        .header("Authorization", bearer(ddcToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].canEdit").value(false))
+                .andExpect(jsonPath("$[0].canDelete").value(false))
+                .andExpect(jsonPath("$[1].canEdit").value(true))
+                .andExpect(jsonPath("$[1].canDelete").value(true));
+
+        mockMvc.perform(put("/api/documents/{documentId}/remarks/{remarkId}", documentId, oldRemarkId)
+                        .header("Authorization", bearer(ddcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"remarkText\":\"Trying to edit old minute\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Only your latest minute in the current ownership period can be changed."));
+
+        mockMvc.perform(delete("/api/documents/{documentId}/remarks/{remarkId}", documentId, oldRemarkId)
+                        .header("Authorization", bearer(ddcToken)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Only your latest minute in the current ownership period can be changed."));
     }
 
     @Test
@@ -402,6 +551,17 @@ class AdminAndWorkflowRoutingIntegrationTests {
         return json.get("id").asLong();
     }
 
+    private long addMinute(long documentId, String token, String text) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/documents/{documentId}/remarks", documentId)
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"remarkText\":\"%s\"}".formatted(text)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        return readJson(result).get("id").asLong();
+    }
+
     private String documentPayload(String refPrefix, String title, String receivedDate, String priority) {
         return """
                 {
@@ -427,6 +587,15 @@ class AdminAndWorkflowRoutingIntegrationTests {
         JsonNode json = readJson(result);
         assertThat(json.get("updatedAt").isNull()).isFalse();
         return LocalDateTime.parse(json.get("updatedAt").asText());
+    }
+
+    private JsonNode findDocumentInPage(JsonNode page, long documentId) {
+        for (JsonNode item : page.get("content")) {
+            if (item.get("id").asLong() == documentId) {
+                return item;
+            }
+        }
+        throw new AssertionError("Document not found in page: " + documentId);
     }
 
     private void ensureApproveRejectButtonsEnabled() {

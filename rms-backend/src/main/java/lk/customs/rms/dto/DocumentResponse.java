@@ -31,11 +31,20 @@ public class DocumentResponse {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime inboxReceivedAt;
+    private Long inboxSenderUserId;
+    private String inboxSenderName;
+    private String inboxSenderRole;
     private LocalDateTime completedAt;
     private LocalDateTime issuedAt;
 
     private String mainAttachmentType;
     private String latestRemarkPreview;
+    private Long latestRemarkByUserId;
+    private String latestRemarkByName;
+    private String latestRemarkByRole;
+    private String latestRemarkTextPreview;
+    private String latestRemarkText;
+    private LocalDateTime latestRemarkAt;
     private Boolean viewedByMe;
 
     public static DocumentResponse from(Document d, String createdByName, String ownerName) {
@@ -70,6 +79,26 @@ public class DocumentResponse {
                                         String latestRemarkPreview,
                                         boolean viewedByMe,
                                         LocalDateTime inboxReceivedAt) {
+        return from(d, createdByName, ownerName, mainAttachmentType, latestRemarkPreview, viewedByMe, inboxReceivedAt,
+                null, null, null, null, null, null, null, null, null);
+    }
+
+    public static DocumentResponse from(Document d,
+                                        String createdByName,
+                                        String ownerName,
+                                        String mainAttachmentType,
+                                        String latestRemarkPreview,
+                                        boolean viewedByMe,
+                                        LocalDateTime inboxReceivedAt,
+                                        Long inboxSenderUserId,
+                                        String inboxSenderName,
+                                        String inboxSenderRole,
+                                        Long latestRemarkByUserId,
+                                        String latestRemarkByName,
+                                        String latestRemarkByRole,
+                                        String latestRemarkTextPreview,
+                                        String latestRemarkText,
+                                        LocalDateTime latestRemarkAt) {
         return DocumentResponse.builder()
                 .id(d.getId())
                 .refNo(d.getRefNo())
@@ -86,10 +115,19 @@ public class DocumentResponse {
                 .createdAt(d.getCreatedAt())
                 .updatedAt(d.getUpdatedAt())
                 .inboxReceivedAt(inboxReceivedAt)
+                .inboxSenderUserId(inboxSenderUserId)
+                .inboxSenderName(inboxSenderName)
+                .inboxSenderRole(inboxSenderRole)
                 .completedAt(d.getCompletedAt())
                 .issuedAt(d.getIssuedAt())
                 .mainAttachmentType(mainAttachmentType)
                 .latestRemarkPreview(latestRemarkPreview)
+                .latestRemarkByUserId(latestRemarkByUserId)
+                .latestRemarkByName(latestRemarkByName)
+                .latestRemarkByRole(latestRemarkByRole)
+                .latestRemarkTextPreview(latestRemarkTextPreview)
+                .latestRemarkText(latestRemarkText)
+                .latestRemarkAt(latestRemarkAt)
                 .viewedByMe(viewedByMe)
                 .build();
     }

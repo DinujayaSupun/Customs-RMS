@@ -44,6 +44,63 @@ export function sortInboxDocumentsBy(list, sortBy) {
   }
 }
 
+function userLabel({ id, name, role }) {
+  const cleanName = String(name || "").trim();
+  const cleanRole = String(role || "").trim();
+  if (cleanName && cleanRole) return `${cleanName} (${cleanRole})`;
+  if (cleanName) return cleanName;
+  return id == null ? "Unknown user" : `User #${id}`;
+}
+
+export function buildInboxReceivedPreview(doc, formatTime = (value) => value || "time unknown") {
+  const senderId = doc?.inboxSenderUserId ?? null;
+  const minuteAuthorId = doc?.latestRemarkByUserId ?? null;
+  const sender = userLabel({
+    id: senderId,
+    name: doc?.inboxSenderName,
+    role: doc?.inboxSenderRole,
+  });
+  const minuteText = String(doc?.latestRemarkTextPreview || "").trim();
+  const minuteTooltip = String(doc?.latestRemarkText || doc?.latestRemarkTextPreview || "").trim() || null;
+
+  if (!minuteText) {
+    return {
+      senderLine: `Sent by ${sender}`,
+      minuteLine: null,
+      minuteTooltip: null,
+      fallbackLine: "No minute added",
+    };
+  }
+
+  const minuteTime = formatTime(doc?.latestRemarkAt);
+  const minuteSuffix = `${minuteTime} – ${minuteText}`;
+  const sameUser = senderId != null
+    && minuteAuthorId != null
+    && Number(senderId) === Number(minuteAuthorId);
+
+  if (sameUser) {
+    return {
+      senderLine: `Sent by ${sender} • ${minuteSuffix}`,
+      minuteLine: null,
+      minuteTooltip,
+      fallbackLine: null,
+    };
+  }
+
+  const minuteAuthor = userLabel({
+    id: minuteAuthorId,
+    name: doc?.latestRemarkByName,
+    role: doc?.latestRemarkByRole,
+  });
+
+  return {
+    senderLine: `Sent by ${sender}`,
+    minuteLine: `Last minute by ${minuteAuthor} • ${minuteSuffix}`,
+    minuteTooltip,
+    fallbackLine: null,
+  };
+}
+
 export function findPreferredReturnTargetId({ canReturn, currentUserId, forwardTargets, forwardMovements }) {
   if (!canReturn || !currentUserId || !Array.isArray(forwardTargets) || forwardTargets.length === 0) return null;
 

@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 public interface DocumentMovementRepository extends JpaRepository<DocumentMovement, Long> {
     List<DocumentMovement> findByDocumentIdOrderByActionAtAsc(Long documentId);
@@ -19,6 +20,14 @@ public interface DocumentMovementRepository extends JpaRepository<DocumentMoveme
             Long toUserId,
             Collection<MovementActionType> actionTypes
     );
+
+    Optional<DocumentMovement> findFirstByDocumentIdAndToUserIdAndActionTypeInOrderByActionAtDescIdDesc(
+            Long documentId,
+            Long toUserId,
+            Collection<MovementActionType> actionTypes
+    );
+
+    boolean existsByDocumentIdAndActionAtAfter(Long documentId, java.time.LocalDateTime actionAt);
 
         @Query("""
                      select m

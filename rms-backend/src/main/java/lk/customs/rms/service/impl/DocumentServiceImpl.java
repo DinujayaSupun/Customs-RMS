@@ -221,16 +221,16 @@ public class DocumentServiceImpl implements DocumentService {
                     a -> resolveAttachmentTypeFromFileName(a.getFileName()),
                     (first, second) -> first
                 ));
-        Map<Long, String> latestRemarkPreviews = docIds.isEmpty()
+        Map<Long, DocumentRemark> latestRemarks = docIds.isEmpty()
             ? Map.of()
             : remarkRepository.findLatestByDocumentIdsWithUser(docIds)
                 .stream()
                 .collect(Collectors.toMap(
                     DocumentRemark::getDocumentId,
-                    this::toRemarkPreview,
+                    remark -> remark,
                     (first, second) -> first
                 ));
-        Map<Long, LocalDateTime> inboxReceivedAtByDoc = docIds.isEmpty()
+        Map<Long, DocumentMovement> latestInboundByDoc = docIds.isEmpty()
             ? Map.of()
             : movementRepository.findLatestInboundByActorAndDocumentIds(
                     actorUserId,
@@ -240,7 +240,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .stream()
                 .collect(Collectors.toMap(
                     DocumentMovement::getDocumentId,
-                    DocumentMovement::getActionAt,
+                    movement -> movement,
                     (first, second) -> first
                 ));
 
@@ -248,7 +248,11 @@ public class DocumentServiceImpl implements DocumentService {
             String createdByName = userRepository.findById(d.getCreatedByUserId()).map(User::getFullName).orElse(null);
             String ownerName = userRepository.findById(d.getCurrentOwnerUserId()).map(User::getFullName).orElse(null);
             boolean viewedByMe = viewedDocIds.contains(d.getId());
-            String latestRemarkPreview = canViewRemarks(d, actorUserId) ? latestRemarkPreviews.get(d.getId()) : null;
+            DocumentRemark latestRemark = canViewRemarks(d, actorUserId) ? latestRemarks.get(d.getId()) : null;
+            String latestRemarkPreview = latestRemark == null ? null : toRemarkPreview(latestRemark);
+            DocumentMovement latestInbound = latestInboundByDoc.get(d.getId());
+            Long inboxSenderUserId = resolveInboxSenderUserId(latestInbound);
+            User inboxSender = inboxSenderUserId == null ? null : userRepository.findById(inboxSenderUserId).orElse(null);
             return DocumentResponse.from(
                 d,
                 createdByName,
@@ -256,7 +260,16 @@ public class DocumentServiceImpl implements DocumentService {
                 mainAttachmentTypes.get(d.getId()),
                 latestRemarkPreview,
                 viewedByMe,
-                inboxReceivedAtByDoc.get(d.getId())
+                latestInbound == null ? null : latestInbound.getActionAt(),
+                inboxSenderUserId,
+                inboxSender == null ? null : inboxSender.getFullName(),
+                roleName(inboxSender),
+                latestRemark == null ? null : latestRemark.getRemarkedByUserId(),
+                latestRemark == null || latestRemark.getRemarkedBy() == null ? null : latestRemark.getRemarkedBy().getFullName(),
+                latestRemark == null ? null : roleName(latestRemark.getRemarkedBy()),
+                latestRemark == null ? null : toRemarkPreview(latestRemark.getRemarkText()),
+                latestRemark == null ? null : latestRemark.getRemarkText(),
+                latestRemark == null ? null : latestRemark.getRemarkedAt()
             );
         });
     }
@@ -970,6 +983,20 @@ public class DocumentServiceImpl implements DocumentService {
             return true;
         }
         return permissionService.hasPermission(actorUserId, AppPermission.VIEW_REMARKS_WHEN_NOT_REPORT_AT);
+    }
+
+    private Long resolveInboxSenderUserId(DocumentMovement movement) {
+        if (movement == null) {
+            return null;
+        }
+        if (movement.getFromUserId() != null) {
+            return movement.getFromUserId();
+        }
+        return movement.getActionByUserId();
+    }
+
+    private String roleName(User user) {
+        return user == null || user.getRole() == null ? null : user.getRole().getRoleName();
     }
 
     private String toRemarkPreview(String value) {

@@ -163,8 +163,19 @@
                     </span>
                   </template>
                 </template>
-                <template v-else-if="d.latestRemarkPreview">{{ d.latestRemarkPreview }}</template>
-                <template v-else>{{ d.companyName || 'No company' }} • {{ displayStatusLabel(d.status) }} • Priority {{ d.priority }}</template>
+                <template v-else>
+                  <span :title="inboxReceivedPreview(d).minuteLine ? null : inboxReceivedPreview(d).minuteTooltip">
+                    {{ inboxReceivedPreview(d).senderLine }}
+                  </span>
+                  <template v-if="inboxReceivedPreview(d).minuteLine">
+                    <br />
+                    <span :title="inboxReceivedPreview(d).minuteTooltip">{{ inboxReceivedPreview(d).minuteLine }}</span>
+                  </template>
+                  <template v-else-if="inboxReceivedPreview(d).fallbackLine">
+                    <br />
+                    <span>{{ inboxReceivedPreview(d).fallbackLine }}</span>
+                  </template>
+                </template>
               </div>
             </div>
 
@@ -509,7 +520,7 @@ import {
 } from "../api/documents.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabel, formatUserLabelById } from "../auth/userLabel";
-import { findPreferredReturnTargetId, resolveWorkflowAutoTarget, sortInboxDefaultDisplay, sortInboxDocumentsBy } from "../utils/inboxLogic";
+import { buildInboxReceivedPreview, findPreferredReturnTargetId, resolveWorkflowAutoTarget, sortInboxDefaultDisplay, sortInboxDocumentsBy } from "../utils/inboxLogic";
 import { canForwardInboxDocument, canReturnInboxDocument } from "../utils/inboxPermissionLogic";
 import { getWorkflowSenderSuccessMessage } from "../utils/workflowNotificationLogic";
 
@@ -768,6 +779,10 @@ function toText(value) {
 
 function displayStatusLabel(statusValue) {
   return String(statusValue || "").toUpperCase() === "ISSUED" ? "DONE" : statusValue;
+}
+
+function inboxReceivedPreview(doc) {
+  return buildInboxReceivedPreview(doc, displayMinuteTime);
 }
 
 function displayMovementActionLabel(actionType) {
@@ -1337,6 +1352,13 @@ function displaySentDate(doc) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function displayMinuteTime(value) {
+  if (!value) return "time unknown";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "time unknown";
+  return parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function onRealtimeDocumentReceived() {

@@ -314,9 +314,38 @@
                 <span class="who">
                   By <b>{{ formatUserLabelById(r.remarkedByUserId, users) }}</b>
                 </span>
-                <span class="when mono">{{ formatDateTime(r.remarkedAt) }}</span>
+                <span class="minuteTopRight">
+                  <span class="when mono">{{ formatDateTime(r.remarkedAt) }}</span>
+                  <span v-if="canEditMinute(r) || canDeleteMinute(r)" class="minuteActions">
+                    <button
+                      v-if="canEditMinute(r)"
+                      type="button"
+                      class="linkBtn"
+                      :disabled="busy || editingRemarkId === r.id"
+                      @click="startEditRemark(r)"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      v-if="canDeleteMinute(r)"
+                      type="button"
+                      class="linkBtn dangerText"
+                      :disabled="busy"
+                      @click="deleteMinute(r)"
+                    >
+                      Delete
+                    </button>
+                  </span>
+                </span>
               </div>
-              <div class="text">{{ r.remarkText }}</div>
+              <template v-if="editingRemarkId === r.id">
+                <textarea class="textarea minuteEditBox" v-model="editingRemarkText" :disabled="busy"></textarea>
+                <div class="minuteEditActions">
+                  <button class="btn btn-primary btn-sm" :disabled="busy || !getEditableMinuteText(editingRemarkText)" @click="saveEditedRemark(r)">Save</button>
+                  <button class="btn btn-sm" :disabled="busy" @click="cancelEditRemark">Cancel</button>
+                </div>
+              </template>
+              <div v-else class="text">{{ r.remarkText }}</div>
             </div>
           </div>
         </div>
@@ -590,6 +619,7 @@ import {
   resolveAttachmentTypeFromName,
 } from "../utils/attachmentViewerLogic";
 import { getDocumentDetailsCapabilities } from "../utils/documentDetailsLogic";
+import { canDeleteMinute, canEditMinute, getEditableMinuteText } from "../utils/minuteEditLogic";
 import { getWorkflowSenderSuccessMessage } from "../utils/workflowNotificationLogic";
 import { listUsers } from "../api/auth.api";
 import {
@@ -598,6 +628,8 @@ import {
   listMovements,
   listRemarks,
   addRemark,
+  updateRemark,
+  deleteRemark,
   listAttachments,
   uploadAttachment,
   deleteAttachment,
@@ -631,6 +663,8 @@ const movements = ref([]);
 const remarks = ref([]);
 const attachments = ref([]);
 const selectedMovementId = ref(null);
+const editingRemarkId = ref(null);
+const editingRemarkText = ref("");
 
 const error = ref("");
 const successMessage = ref("");
@@ -1210,7 +1244,7 @@ async function saveDetails() {
 }
 
   // Manual save minute only
-  async function saveRemarkOnly() {
+async function saveRemarkOnly() {
     error.value = "";
     const text = remarkDraft.value.trim();
     if (!text) {
@@ -1229,6 +1263,58 @@ async function saveDetails() {
     toast.success(successMessage.value);
   } catch (e) {
     error.value = e?.message || "Save minute failed.";
+    toast.error(error.value);
+  } finally {
+    busy.value = false;
+  }
+}
+
+function startEditRemark(remark) {
+  editingRemarkId.value = remark?.id || null;
+  editingRemarkText.value = remark?.remarkText || "";
+}
+
+function cancelEditRemark() {
+  editingRemarkId.value = null;
+  editingRemarkText.value = "";
+}
+
+async function saveEditedRemark(remark) {
+  error.value = "";
+  const text = getEditableMinuteText(editingRemarkText.value);
+  if (!text) {
+    toast.warning("Minute text cannot be empty.");
+    return;
+  }
+
+  busy.value = true;
+  try {
+    await updateRemark(documentId, remark.id, { remarkText: text });
+    cancelEditRemark();
+    await reloadAll();
+    successMessage.value = "Minute updated successfully.";
+    toast.success(successMessage.value);
+  } catch (e) {
+    error.value = e?.message || "Update minute failed.";
+    toast.error(error.value);
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function deleteMinute(remark) {
+  error.value = "";
+  if (!window.confirm("Delete this minute?")) return;
+
+  busy.value = true;
+  try {
+    await deleteRemark(documentId, remark.id);
+    if (editingRemarkId.value === remark.id) cancelEditRemark();
+    await reloadAll();
+    successMessage.value = "Minute deleted successfully.";
+    toast.success(successMessage.value);
+  } catch (e) {
+    error.value = e?.message || "Delete minute failed.";
     toast.error(error.value);
   } finally {
     busy.value = false;
@@ -1585,12 +1671,26 @@ async function removeAttachment(a) {
 
 .empty { font-size:13px; color:#6b7280; padding:8px 0; }
 
-.list { display:flex; flex-direction:column; gap:10px; margin-top:10px; }
-.item { border:1px solid #e5e7eb; border-radius:10px; padding:10px; background:#fafafa; }
-.itemTop { display:flex; justify-content:space-between; gap:10px; }
+.list { display:flex; flex-direction:column; gap:10px; margin-top:10px; min-width:0; }
+.item { border:1px solid #e5e7eb; border-radius:10px; padding:10px; background:#fafafa; min-width:0; max-width:100%; }
+.itemTop { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
 .who { font-size:13px; color:#111827; }
 .when { color:#6b7280; font-size:12px; }
-.text { margin-top:8px; font-size:13px; color:#111827; white-space:pre-wrap; }
+.minuteTopRight { display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+.minuteActions { display:flex; gap:8px; align-items:center; }
+.linkBtn { border:0; background:transparent; color:#2563eb; font-weight:800; cursor:pointer; padding:0; font-size:12px; }
+.linkBtn:disabled { color:#9ca3af; cursor:not-allowed; }
+.dangerText { color:#b91c1c; }
+.minuteEditBox { margin-top:8px; min-height:72px; }
+.minuteEditActions { display:flex; gap:8px; margin-top:8px; }
+.text {
+  margin-top:8px;
+  font-size:13px;
+  color:#111827;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
 
 .movementItem { cursor:pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease; }
 .movementItem:hover { border-color:#cbd5e1; background:#f8fafc; }
@@ -1707,12 +1807,26 @@ async function removeAttachment(a) {
 
 .empty { font-size:13px; color:#6b7280; padding:8px 0; }
 
-.list { display:flex; flex-direction:column; gap:10px; margin-top:10px; }
-.item { border:1px solid #e5e7eb; border-radius:10px; padding:10px; background:#fafafa; }
-.itemTop { display:flex; justify-content:space-between; gap:10px; }
+.list { display:flex; flex-direction:column; gap:10px; margin-top:10px; min-width:0; }
+.item { border:1px solid #e5e7eb; border-radius:10px; padding:10px; background:#fafafa; min-width:0; max-width:100%; }
+.itemTop { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
 .who { font-size:13px; color:#111827; }
 .when { color:#6b7280; font-size:12px; }
-.text { margin-top:8px; font-size:13px; color:#111827; white-space:pre-wrap; }
+.minuteTopRight { display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+.minuteActions { display:flex; gap:8px; align-items:center; }
+.linkBtn { border:0; background:transparent; color:#2563eb; font-weight:800; cursor:pointer; padding:0; font-size:12px; }
+.linkBtn:disabled { color:#9ca3af; cursor:not-allowed; }
+.dangerText { color:#b91c1c; }
+.minuteEditBox { margin-top:8px; min-height:72px; }
+.minuteEditActions { display:flex; gap:8px; margin-top:8px; }
+.text {
+  margin-top:8px;
+  font-size:13px;
+  color:#111827;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
 
 .attachRow { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px; }
 .hiddenFileInput { display:none; }
