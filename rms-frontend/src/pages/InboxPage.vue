@@ -104,7 +104,7 @@
             <span class="tableHintLabel">Inbox Info</span>
             <HoverHint :text="inboxMode === 'received'
               ? `${sortHint}. Unopened means the document has not been opened by you in the current assignment.`
-              : `${sortHint}. Sent shows documents forwarded by you.`" />
+              : `${sortHint}. Sent shows documents you forwarded or returned, plus any undo notices sent back to you.`" />
           </div>
         </div>
 
@@ -148,12 +148,29 @@
               </div>
               <div class="mailPreview">
                 <template v-if="inboxMode === 'sent'">
-                  <template v-if="d.latestRemarkPreview">
+                  <template v-if="undoSendInfo(d).isUndoNotice">
+                    <span class="undoSendInfo">{{ undoSendInfo(d).helper }}</span>
+                    <br />
+                    <span class="sentMetaLine">
+                      <template v-if="undoSendInfo(d).isReceiverUndoNotice">
+                        Document returned to {{ d.toUserName || `User #${d.toUserId ?? 'N/A'}` }}
+                      </template>
+                      <template v-else>
+                        Send was undone
+                      </template>
+                      • {{ displaySentDate(d) }}
+                    </span>
+                  </template>
+                  <template v-else-if="d.latestRemarkPreview">
                     Your latest minute: {{ d.latestRemarkPreview }}
                     <br />
                     <span class="sentMetaLine">
                       Sent to {{ d.toUserName || `User #${d.toUserId ?? 'N/A'}` }}<span v-if="d.autoForwarded"> (auto-forwarded)</span> • {{ String(d.forwardVisibility || 'PRIVATE').toUpperCase() }} • {{ displaySentDate(d) }}
                     </span>
+                    <template v-if="undoSendInfo(d).helper">
+                      <br />
+                      <span class="undoSendInfo">{{ undoSendInfo(d).helper }}</span>
+                    </template>
                   </template>
                   <template v-else>
                     No minute added by you
@@ -161,6 +178,10 @@
                     <span class="sentMetaLine">
                       Sent to {{ d.toUserName || `User #${d.toUserId ?? 'N/A'}` }}<span v-if="d.autoForwarded"> (auto-forwarded)</span> • {{ String(d.forwardVisibility || 'PRIVATE').toUpperCase() }} • {{ displaySentDate(d) }}
                     </span>
+                    <template v-if="undoSendInfo(d).helper">
+                      <br />
+                      <span class="undoSendInfo">{{ undoSendInfo(d).helper }}</span>
+                    </template>
                   </template>
                 </template>
                 <template v-else>
@@ -203,6 +224,14 @@
                   @click.stop="openForwardDialog(d)"
                 >
                   <Send class="actionIcon" aria-hidden="true" />
+                </button>
+                <button
+                  v-if="inboxMode === 'sent' && undoSendInfo(d).canUndo"
+                  class="btn btn-sm undoSendBtn"
+                  :disabled="forwardBusy"
+                  @click.stop="doUndoSend(d)"
+                >
+                  Undo Send
                 </button>
                 <button class="btn btn-sm" @click.stop="open(resolveDocumentId(d))">Open</button>
               </div>
@@ -517,12 +546,14 @@ import {
   listRemarks,
   listSentMessages,
   returnDocument,
+  undoSendDocument,
 } from "../api/documents.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabel, formatUserLabelById } from "../auth/userLabel";
-import { buildInboxReceivedPreview, findPreferredReturnTargetId, resolveWorkflowAutoTarget, sortInboxDefaultDisplay, sortInboxDocumentsBy } from "../utils/inboxLogic";
+import { buildInboxReceivedPreview, findPreferredReturnTargetId, markInboxDocumentViewed, resolveWorkflowAutoTarget, sortInboxDefaultDisplay, sortInboxDocumentsBy } from "../utils/inboxLogic";
 import { canForwardInboxDocument, canReturnInboxDocument } from "../utils/inboxPermissionLogic";
 import { getWorkflowSenderSuccessMessage } from "../utils/workflowNotificationLogic";
+import { getUndoSendInfo, needsUndoReason } from "../utils/undoSendLogic";
 
 const router = useRouter();
 const toast = useToast();
@@ -782,7 +813,11 @@ function displayStatusLabel(statusValue) {
 }
 
 function inboxReceivedPreview(doc) {
-  return buildInboxReceivedPreview(doc, displayMinuteTime);
+  return buildInboxReceivedPreview(doc, displayMinuteTime, currentUser.value?.id);
+}
+
+function undoSendInfo(doc) {
+  return getUndoSendInfo(doc);
 }
 
 function displayMovementActionLabel(actionType) {
@@ -1039,6 +1074,35 @@ function resolveDocumentId(doc) {
   return doc?.documentId ?? doc?.id;
 }
 
+async function doUndoSend(doc) {
+  const documentId = resolveDocumentId(doc);
+  if (!documentId || forwardBusy.value) return;
+
+  let reason = "";
+  if (needsUndoReason(doc)) {
+    const entered = window.prompt("Reason for undo send");
+    if (entered == null) return;
+    reason = entered.trim();
+    if (!reason) {
+      toast.error("Undo Send requires a reason.");
+      return;
+    }
+  } else if (!window.confirm("Undo this sent document?")) {
+    return;
+  }
+
+  forwardBusy.value = true;
+  try {
+    await undoSendDocument(documentId, { reason });
+    toast.success("Document send undone successfully.");
+    await load();
+  } catch (e) {
+    toast.error(e?.message || "Failed to undo sent document.");
+  } finally {
+    forwardBusy.value = false;
+  }
+}
+
 function rowKey(doc) {
   return doc?.movementId ?? doc?.id;
 }
@@ -1056,6 +1120,12 @@ function setMode(mode) {
 
 function isViewedByMe(doc) {
   return !!doc?.viewedByMe;
+}
+
+function markPreviewDocumentViewed(documentId) {
+  if (inboxMode.value !== "received") return;
+  allRows.value = markInboxDocumentViewed(allRows.value, documentId);
+  applyNow();
 }
 
 function canForwardRow(doc) {
@@ -1087,7 +1157,8 @@ async function openPreview(row) {
 
   try {
     const fullDoc = await getDocument(documentId);
-    previewDoc.value = { ...row, ...fullDoc };
+    previewDoc.value = { ...row, ...fullDoc, viewedByMe: true };
+    markPreviewDocumentViewed(documentId);
   } catch (e) {
     previewExtrasError.value = e?.message || "Could not load full preview details.";
   }
@@ -1667,6 +1738,17 @@ h2 { margin:0; line-height:1.15; }
 
 .sentMetaLine {
   color: #6b7280;
+}
+
+.undoSendInfo {
+  color: #b45309;
+  font-weight: 800;
+}
+
+.undoSendBtn {
+  border-color: #f59e0b;
+  color: #92400e;
+  background: #fffbeb;
 }
 
 .mailRight {

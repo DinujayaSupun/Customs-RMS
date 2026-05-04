@@ -186,8 +186,8 @@
             <div class="hintInline">
               <span class="hintLabel">Minute help</span>
               <HoverHint :text="canAddRemark
-                ? `Your minute will be attached when you run a workflow action (${availableWorkflowActionNames}). You can also save it separately using Save Minute.`
-                : 'You can read minutes, but only the user currently shown in Report At with Add Minute permission can add or save minutes.'" />
+                ? `You can save this minute now, or attach it when you run an available workflow action (${availableWorkflowActionNames}).`
+                : 'Minutes are read-only here. Only the current Report At user with Add Minute permission can add or save minutes.'" />
             </div>
 
             <div class="btnRow" style="margin-top:8px;">
@@ -257,7 +257,7 @@
 
               <div class="hintInline">
                 <span class="hintLabel">Forward rules</span>
-                <HoverHint :text="`Forward/Return are available only to the user currently shown in Report At with the relevant permission. Return defaults to the most recent sender when available, and you can still change it manually. Allowed statuses are managed from Permissions: ${forwardReturnAllowedStatusesLabel}.`" />
+                <HoverHint :text="`Forward/Return are available only for the current Report At user with the required permission. Return suggests the most recent sender when possible, but you can choose another allowed user. Allowed statuses: ${forwardReturnAllowedStatusesLabel}.`" />
               </div>
           </div>
 
@@ -272,7 +272,7 @@
 
             <div class="hintInline">
               <span class="hintLabel">Visibility help</span>
-              <HoverHint :text="`Select the next visibility for this document. Options shown here come from your FORWARD_PUBLIC/FORWARD_PRIVATE permissions. If visibility changes, CHANGE_DOCUMENT_VISIBILITY permission is also required. Available now: ${availableForwardVisibilities.join(', ') || 'None'}.`" />
+              <HoverHint :text="`This sets visibility for the next Forward/Return movement. Options come from your public/private forward permissions; changing visibility also requires Change Document Visibility permission. Undo Send does not change the document's saved visibility. Available now: ${availableForwardVisibilities.join(', ') || 'None'}.`" />
             </div>
           </div>
 
@@ -283,6 +283,15 @@
             <button class="btn" :disabled="busy || !canReturn" @click="doReturn">
               Return
             </button>
+            <button
+              v-if="undoSendInfo.canUndo"
+              class="btn undoSendBtn"
+              :disabled="busy"
+              @click="doUndoSend"
+            >
+              Undo Send
+            </button>
+            <span v-else-if="undoSendInfo.helper" class="undoSendInfo">{{ undoSendInfo.helper }}</span>
 
             <div class="spacer"></div>
 
@@ -303,7 +312,7 @@
             <div class="cardTitle">Minutes</div>
             <div class="cardSub">Saved notes and action minutes for this document.</div>
 
-          <div v-if="!canViewRemarks" class="warnBox">Minutes are available only when this document is assigned to you in Report At.</div>
+          <div v-if="!canViewRemarks" class="warnBox">Minutes are hidden because this document is not assigned to you and your role does not allow viewing minutes while it is assigned to someone else.</div>
 
           <div v-else-if="remarks.length === 0" class="empty">No minutes yet.</div>
 
@@ -379,7 +388,7 @@
                   </div>
                   <div class="hintInline">
                     <span class="hintLabel">Main file</span>
-                    <HoverHint text="Main file is version 1 (first uploaded attachment)." />
+                    <HoverHint text="The main file is the first file uploaded for this document." />
                   </div>
                 </div>
                 <div class="btnRow" style="margin-top:0;">
@@ -424,7 +433,7 @@
 
             <div class="hintInline">
               <span class="hintLabel">Upload rules</span>
-            <HoverHint text="Upload is allowed only for the user currently shown in Report At with Upload Attachment permission, and is blocked after ISSUED. First upload becomes main file (v1); later uploads are additional versions/attachments." />
+            <HoverHint text="Upload is allowed only for the current Report At user with Upload Attachment permission, and is blocked after the document is Done. The first uploaded file is the main file; later uploads are added as attachments." />
             </div>
 
             <div v-if="attachmentsSorted.length === 0" class="empty">No files yet.</div>
@@ -621,6 +630,7 @@ import {
 import { getDocumentDetailsCapabilities } from "../utils/documentDetailsLogic";
 import { canDeleteMinute, canEditMinute, getEditableMinuteText } from "../utils/minuteEditLogic";
 import { getWorkflowSenderSuccessMessage } from "../utils/workflowNotificationLogic";
+import { getUndoSendInfo, needsUndoReason } from "../utils/undoSendLogic";
 import { listUsers } from "../api/auth.api";
 import {
   getDocument,
@@ -639,6 +649,7 @@ import {
   rejectDocument,
   issueDocument,
   reopenDocument,
+  undoSendDocument,
   buildAttachmentUrl,
   getWorkflowRules,
 } from "../api/documents.api";
@@ -713,6 +724,7 @@ const canForwardReturnByStatus = computed(() => detailCapabilities.value.canForw
 const forwardReturnAllowedStatusesLabel = computed(() => forwardReturnAllowedStatuses.value.map(displayStatusLabel).join(", ") || "none");
 const canForward = computed(() => detailCapabilities.value.canForward);
 const canReturn  = computed(() => detailCapabilities.value.canReturn);
+const undoSendInfo = computed(() => getUndoSendInfo(doc.value || {}));
 const canChooseWorkflowTarget = computed(() => detailCapabilities.value.canChooseWorkflowTarget);
 const canApprove = computed(() => detailCapabilities.value.canApprove);
 const canReject  = computed(() => detailCapabilities.value.canReject);
@@ -727,7 +739,7 @@ const availableWorkflowActionNames = computed(() => {
   return names.join("/");
 });
 const workflowRulesHint = computed(() => approveRejectButtonsEnabled.value
-    ? "All workflow actions require the document to be assigned to you in Report At, plus the corresponding permission. Done is available only when status is APPROVED (it marks the document as ISSUED). Reopen is allowed only for APPROVED or REJECTED and cannot be done after ISSUED."
+    ? "All workflow actions require the document to be assigned to you in Report At, plus the corresponding permission. Done is available only after approval and then closes the document. Reopen is allowed only for approved or rejected documents, not after the document is Done."
     : "All workflow actions require the document to be assigned to you in Report At, plus the corresponding permission. Approve and Reject are hidden by admin workflow settings. Done can complete documents without a prior approval step, and Reopen can reopen Done documents.");
 
 const daysOpenDisplay = computed(() => detailCapabilities.value.daysOpenDisplay);
@@ -1388,6 +1400,35 @@ async function doReturn() {
   }
 }
 
+async function doUndoSend() {
+  error.value = "";
+  let reason = "";
+  if (needsUndoReason(doc.value || {})) {
+    const entered = window.prompt("Reason for undo send");
+    if (entered == null) return;
+    reason = entered.trim();
+    if (!reason) {
+      error.value = "Undo Send requires a reason.";
+      toast.error(error.value);
+      return;
+    }
+  } else if (!window.confirm("Undo this sent document?")) {
+    return;
+  }
+
+  busy.value = true;
+  try {
+    await undoSendDocument(documentId, { reason });
+    toast.success("Document send undone successfully.");
+    await reloadAll();
+  } catch (e) {
+    error.value = e?.message || "Failed to undo sent document.";
+    toast.error(error.value);
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function doApprove() {
   error.value = "";
   if (!ensureWorkflowMinuteAllowed("Approve")) return;
@@ -2037,6 +2078,19 @@ async function removeAttachment(a) {
 .btn {
   font-weight:800;
   transition:background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+}
+
+.undoSendBtn {
+  border-color:#f59e0b;
+  color:#92400e;
+  background:#fffbeb;
+}
+
+.undoSendInfo {
+  align-self:center;
+  color:#b45309;
+  font-size:12px;
+  font-weight:900;
 }
 
 .btn:hover:not(:disabled) {

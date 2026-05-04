@@ -68,6 +68,62 @@ public record RealtimeNotificationMessage(
         );
     }
 
+    public static RealtimeNotificationMessage documentUndoSend(
+            Long documentId,
+            String documentRefNo,
+            String documentTitle,
+            Long fromUserId,
+            String fromUserName
+    ) {
+        String documentText = (documentTitle == null || documentTitle.isBlank())
+                ? null
+                : documentTitle;
+        if (documentText == null) {
+            documentText = (documentRefNo == null || documentRefNo.isBlank())
+                    ? "Document #" + documentId
+                    : documentRefNo;
+        }
+
+        return new RealtimeNotificationMessage(
+                "DOCUMENT_UNDO_SEND",
+                "Document send was undone: " + documentText,
+                documentId,
+                documentRefNo,
+                documentTitle,
+                fromUserId,
+                fromUserName,
+                LocalDateTime.now()
+        );
+    }
+
+    public static RealtimeNotificationMessage documentUndoReturnedToSender(
+            Long documentId,
+            String documentRefNo,
+            String documentTitle,
+            Long fromUserId,
+            String fromUserName
+    ) {
+        String documentText = (documentTitle == null || documentTitle.isBlank())
+                ? null
+                : documentTitle;
+        if (documentText == null) {
+            documentText = (documentRefNo == null || documentRefNo.isBlank())
+                    ? "Document #" + documentId
+                    : documentRefNo;
+        }
+
+        return new RealtimeNotificationMessage(
+                "DOCUMENT_UNDO_RETURNED",
+                "Document returned to you after undo: " + documentText,
+                documentId,
+                documentRefNo,
+                documentTitle,
+                fromUserId,
+                fromUserName,
+                LocalDateTime.now()
+        );
+    }
+
         public static RealtimeNotificationMessage permissionsUpdated() {
                 return new RealtimeNotificationMessage(
                                 "PERMISSIONS_UPDATED",

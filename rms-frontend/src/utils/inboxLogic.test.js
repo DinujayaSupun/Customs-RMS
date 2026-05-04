@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildInboxReceivedPreview,
   findPreferredReturnTargetId,
+  markInboxDocumentViewed,
   resolveWorkflowAutoTarget,
   sortInboxDefaultDisplay,
 } from "./inboxLogic";
@@ -126,5 +127,70 @@ describe("inboxLogic", () => {
         () => "4:01 PM",
       ).minuteTooltip,
     ).toBe("short minute");
+  });
+
+  it("shows received undo send by you from the pulled-back user", () => {
+    expect(
+      buildInboxReceivedPreview(
+        {
+          undoSendActionType: "UNDO_SEND",
+          undoSendByUserId: 50,
+          undoSendByName: "Pradeep",
+          undoSendByRole: "PMA",
+          undoSendFromUserId: 22,
+          undoSendFromName: "Prasad",
+          undoSendFromRole: "DC",
+          latestRemarkByUserId: 50,
+          latestRemarkByName: "Pradeep",
+          latestRemarkByRole: "PMA",
+          latestRemarkTextPreview: "mistaken forward",
+          latestRemarkText: "mistaken forward full text",
+          latestRemarkAt: "2026-05-04T09:30:00",
+        },
+        () => "9:30 AM",
+        50,
+      ),
+    ).toEqual({
+      senderLine: "Send undone by you from Prasad (DC)",
+      minuteLine: "Last minute by Pradeep (PMA) • 9:30 AM – mistaken forward",
+      minuteTooltip: "mistaken forward full text",
+      fallbackLine: null,
+    });
+  });
+
+  it("shows received undo send by another user from the pulled-back user", () => {
+    expect(
+      buildInboxReceivedPreview(
+        {
+          undoSendActionType: "UNDO_SEND",
+          undoSendByUserId: 50,
+          undoSendByName: "Pradeep",
+          undoSendByRole: "PMA",
+          undoSendFromUserId: 22,
+          undoSendFromName: "Prasad",
+          undoSendFromRole: "DC",
+        },
+        () => "9:30 AM",
+        99,
+      ).senderLine,
+    ).toBe("Send undone by Pradeep (PMA) from Prasad (DC)");
+  });
+
+  it("marks the matching received document as viewed without changing other rows", () => {
+    const rows = [
+      { id: 101, viewedByMe: false, title: "First" },
+      { documentId: 202, viewedByMe: false, title: "Second" },
+      { id: 303, viewedByMe: false, title: "Third" },
+    ];
+
+    const updated = markInboxDocumentViewed(rows, 202);
+
+    expect(updated).toEqual([
+      { id: 101, viewedByMe: false, title: "First" },
+      { documentId: 202, viewedByMe: true, title: "Second" },
+      { id: 303, viewedByMe: false, title: "Third" },
+    ]);
+    expect(updated[0]).toBe(rows[0]);
+    expect(updated[2]).toBe(rows[2]);
   });
 });

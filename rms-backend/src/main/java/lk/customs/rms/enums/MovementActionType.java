@@ -16,5 +16,8 @@ public enum MovementActionType {
     ISSUE,
 
     // NEW: DC can reopen APPROVED/REJECTED back to IN_PROGRESS (not allowed for ISSUED)
-    REOPEN
+    REOPEN,
+
+    // Sender can pull back the latest unopened FORWARD/RETURN within the configured undo window.
+    UNDO_SEND
 }

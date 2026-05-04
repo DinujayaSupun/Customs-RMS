@@ -107,6 +107,14 @@ export async function returnDocument(documentId, payload) {
   }
 }
 
+export async function undoSendDocument(documentId, payload = {}) {
+  try {
+    return (await http.post(`${BASE}/${documentId}/undo-send`, payload)).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
 export async function approveDocument(documentId, payload) {
   try {
     return (await http.post(`${BASE}/${documentId}/approve`, payload)).data;

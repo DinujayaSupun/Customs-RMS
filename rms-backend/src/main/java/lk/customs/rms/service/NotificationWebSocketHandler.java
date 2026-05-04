@@ -114,6 +114,7 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
                 "\"message\":\"" + escape(message.message()) + "\"," +
                 "\"documentId\":" + numberOrNull(message.documentId()) + "," +
                 "\"documentRefNo\":" + textOrNull(message.documentRefNo()) + "," +
+                "\"documentTitle\":" + textOrNull(message.documentTitle()) + "," +
                 "\"fromUserId\":" + numberOrNull(message.fromUserId()) + "," +
                 "\"fromUserName\":" + textOrNull(message.fromUserName()) + "," +
                 "\"createdAt\":" + textOrNull(message.createdAt() == null ? null : message.createdAt().toString()) +

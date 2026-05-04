@@ -46,6 +46,19 @@ public class DocumentResponse {
     private String latestRemarkText;
     private LocalDateTime latestRemarkAt;
     private Boolean viewedByMe;
+    private Boolean canUndoSend;
+    private String undoSendStatus;
+    private LocalDateTime undoSendExpiresAt;
+    private Boolean undoSendReceiverOpened;
+    private String undoSendActionType;
+    private Boolean undoSendRequiresReason;
+    private Boolean undoSendShowExpiredInfo;
+    private Long undoSendByUserId;
+    private String undoSendByName;
+    private String undoSendByRole;
+    private Long undoSendFromUserId;
+    private String undoSendFromName;
+    private String undoSendFromRole;
 
     public static DocumentResponse from(Document d, String createdByName, String ownerName) {
         return from(d, createdByName, ownerName, null, null, false, null);
@@ -80,7 +93,9 @@ public class DocumentResponse {
                                         boolean viewedByMe,
                                         LocalDateTime inboxReceivedAt) {
         return from(d, createdByName, ownerName, mainAttachmentType, latestRemarkPreview, viewedByMe, inboxReceivedAt,
-                null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null,
+                false, null, null, false, null, false, false,
+                null, null, null, null, null, null);
     }
 
     public static DocumentResponse from(Document d,
@@ -99,6 +114,73 @@ public class DocumentResponse {
                                         String latestRemarkTextPreview,
                                         String latestRemarkText,
                                         LocalDateTime latestRemarkAt) {
+        return from(d, createdByName, ownerName, mainAttachmentType, latestRemarkPreview, viewedByMe, inboxReceivedAt,
+                inboxSenderUserId, inboxSenderName, inboxSenderRole, latestRemarkByUserId, latestRemarkByName,
+                latestRemarkByRole, latestRemarkTextPreview, latestRemarkText, latestRemarkAt,
+                false, null, null, false, null, false, false,
+                null, null, null, null, null, null);
+    }
+
+    public static DocumentResponse from(Document d,
+                                        String createdByName,
+                                        String ownerName,
+                                        String mainAttachmentType,
+                                        String latestRemarkPreview,
+                                        boolean viewedByMe,
+                                        LocalDateTime inboxReceivedAt,
+                                        Long inboxSenderUserId,
+                                        String inboxSenderName,
+                                        String inboxSenderRole,
+                                        Long latestRemarkByUserId,
+                                        String latestRemarkByName,
+                                        String latestRemarkByRole,
+                                        String latestRemarkTextPreview,
+                                        String latestRemarkText,
+                                        LocalDateTime latestRemarkAt,
+                                        Boolean canUndoSend,
+                                        String undoSendStatus,
+                                        LocalDateTime undoSendExpiresAt,
+                                        Boolean undoSendReceiverOpened,
+                                        String undoSendActionType,
+                                        Boolean undoSendRequiresReason,
+                                        Boolean undoSendShowExpiredInfo) {
+        return from(d, createdByName, ownerName, mainAttachmentType, latestRemarkPreview, viewedByMe, inboxReceivedAt,
+                inboxSenderUserId, inboxSenderName, inboxSenderRole, latestRemarkByUserId, latestRemarkByName,
+                latestRemarkByRole, latestRemarkTextPreview, latestRemarkText, latestRemarkAt,
+                canUndoSend, undoSendStatus, undoSendExpiresAt, undoSendReceiverOpened, undoSendActionType,
+                undoSendRequiresReason, undoSendShowExpiredInfo,
+                null, null, null, null, null, null);
+    }
+
+    public static DocumentResponse from(Document d,
+                                        String createdByName,
+                                        String ownerName,
+                                        String mainAttachmentType,
+                                        String latestRemarkPreview,
+                                        boolean viewedByMe,
+                                        LocalDateTime inboxReceivedAt,
+                                        Long inboxSenderUserId,
+                                        String inboxSenderName,
+                                        String inboxSenderRole,
+                                        Long latestRemarkByUserId,
+                                        String latestRemarkByName,
+                                        String latestRemarkByRole,
+                                        String latestRemarkTextPreview,
+                                        String latestRemarkText,
+                                        LocalDateTime latestRemarkAt,
+                                        Boolean canUndoSend,
+                                        String undoSendStatus,
+                                        LocalDateTime undoSendExpiresAt,
+                                        Boolean undoSendReceiverOpened,
+                                        String undoSendActionType,
+                                        Boolean undoSendRequiresReason,
+                                        Boolean undoSendShowExpiredInfo,
+                                        Long undoSendByUserId,
+                                        String undoSendByName,
+                                        String undoSendByRole,
+                                        Long undoSendFromUserId,
+                                        String undoSendFromName,
+                                        String undoSendFromRole) {
         return DocumentResponse.builder()
                 .id(d.getId())
                 .refNo(d.getRefNo())
@@ -129,6 +211,19 @@ public class DocumentResponse {
                 .latestRemarkText(latestRemarkText)
                 .latestRemarkAt(latestRemarkAt)
                 .viewedByMe(viewedByMe)
+                .canUndoSend(canUndoSend)
+                .undoSendStatus(undoSendStatus)
+                .undoSendExpiresAt(undoSendExpiresAt)
+                .undoSendReceiverOpened(undoSendReceiverOpened)
+                .undoSendActionType(undoSendActionType)
+                .undoSendRequiresReason(undoSendRequiresReason)
+                .undoSendShowExpiredInfo(undoSendShowExpiredInfo)
+                .undoSendByUserId(undoSendByUserId)
+                .undoSendByName(undoSendByName)
+                .undoSendByRole(undoSendByRole)
+                .undoSendFromUserId(undoSendFromUserId)
+                .undoSendFromName(undoSendFromName)
+                .undoSendFromRole(undoSendFromRole)
                 .build();
     }
 }

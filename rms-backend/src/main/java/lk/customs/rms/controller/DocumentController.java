@@ -86,6 +86,13 @@ public class DocumentController {
         documentService.returns(id, request, currentUserService.requireUserId(authentication));
     }
 
+    @PostMapping("/{id}/undo-send")
+    public void undoSend(@PathVariable Long id,
+                         @RequestBody(required = false) UndoSendRequest request,
+                         Authentication authentication) {
+        documentService.undoSend(id, request == null ? new UndoSendRequest() : request, currentUserService.requireUserId(authentication));
+    }
+
     @PostMapping("/{id}/approve")
     public void approve(@PathVariable Long id,
                         @Valid @RequestBody DecisionRequest request,

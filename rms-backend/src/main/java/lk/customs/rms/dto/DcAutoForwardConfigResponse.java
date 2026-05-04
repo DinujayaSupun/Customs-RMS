@@ -15,4 +15,11 @@ public class DcAutoForwardConfigResponse {
     private String receiverRole;
     private List<String> forwardReturnAllowedStatuses;
     private Boolean approveRejectButtonsEnabled;
+    private Boolean undoSendEnabled;
+    private Integer undoSendWindowHours;
+    private Boolean undoSendRequiresUnopened;
+    private List<String> undoSendAllowedActions;
+    private Boolean undoSendRequiresReason;
+    private Boolean undoSendNotifyReceiver;
+    private Boolean undoSendShowExpiredInfo;
 }

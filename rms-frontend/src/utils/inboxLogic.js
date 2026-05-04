@@ -44,6 +44,16 @@ export function sortInboxDocumentsBy(list, sortBy) {
   }
 }
 
+export function markInboxDocumentViewed(list, documentId) {
+  const targetId = Number(documentId);
+  if (!Number.isFinite(targetId)) return Array.isArray(list) ? [...list] : [];
+
+  return (Array.isArray(list) ? list : []).map((doc) => {
+    const rowId = Number(doc?.documentId ?? doc?.id);
+    return rowId === targetId ? { ...doc, viewedByMe: true } : doc;
+  });
+}
+
 function userLabel({ id, name, role }) {
   const cleanName = String(name || "").trim();
   const cleanRole = String(role || "").trim();
@@ -52,7 +62,7 @@ function userLabel({ id, name, role }) {
   return id == null ? "Unknown user" : `User #${id}`;
 }
 
-export function buildInboxReceivedPreview(doc, formatTime = (value) => value || "time unknown") {
+export function buildInboxReceivedPreview(doc, formatTime = (value) => value || "time unknown", currentUserId = null) {
   const senderId = doc?.inboxSenderUserId ?? null;
   const minuteAuthorId = doc?.latestRemarkByUserId ?? null;
   const sender = userLabel({
@@ -62,6 +72,46 @@ export function buildInboxReceivedPreview(doc, formatTime = (value) => value || 
   });
   const minuteText = String(doc?.latestRemarkTextPreview || "").trim();
   const minuteTooltip = String(doc?.latestRemarkText || doc?.latestRemarkTextPreview || "").trim() || null;
+  const undoAction = String(doc?.undoSendActionType || "").toUpperCase() === "UNDO_SEND";
+
+  if (undoAction) {
+    const undoActorId = doc?.undoSendByUserId ?? null;
+    const undoActor = undoActorId != null && currentUserId != null && Number(undoActorId) === Number(currentUserId)
+      ? "you"
+      : userLabel({
+        id: undoActorId,
+        name: doc?.undoSendByName,
+        role: doc?.undoSendByRole,
+      });
+    const undoFrom = userLabel({
+      id: doc?.undoSendFromUserId,
+      name: doc?.undoSendFromName,
+      role: doc?.undoSendFromRole,
+    });
+    const senderLine = `Send undone by ${undoActor} from ${undoFrom}`;
+
+    if (!minuteText) {
+      return {
+        senderLine,
+        minuteLine: null,
+        minuteTooltip: null,
+        fallbackLine: "No minute added",
+      };
+    }
+
+    const minuteAuthor = userLabel({
+      id: minuteAuthorId,
+      name: doc?.latestRemarkByName,
+      role: doc?.latestRemarkByRole,
+    });
+
+    return {
+      senderLine,
+      minuteLine: `Last minute by ${minuteAuthor} • ${formatTime(doc?.latestRemarkAt)} – ${minuteText}`,
+      minuteTooltip,
+      fallbackLine: null,
+    };
+  }
 
   if (!minuteText) {
     return {

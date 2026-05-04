@@ -4,6 +4,7 @@ import lk.customs.rms.dto.DcAutoForwardConfigResponse;
 import lk.customs.rms.dto.UpdateDcAutoForwardConfigRequest;
 import lk.customs.rms.entity.DcAutoForwardConfig;
 import lk.customs.rms.entity.User;
+import lk.customs.rms.enums.MovementActionType;
 import lk.customs.rms.enums.Status;
 import lk.customs.rms.exception.BadRequestException;
 import lk.customs.rms.repository.DcAutoForwardConfigRepository;
@@ -24,6 +25,8 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
     private static final Long SINGLETON_ID = 1L;
     private static final List<Status> DEFAULT_FORWARD_RETURN_ALLOWED_STATUSES =
             List.of(Status.PENDING, Status.IN_PROGRESS, Status.RETURNED);
+    private static final List<MovementActionType> DEFAULT_UNDO_SEND_ALLOWED_ACTIONS =
+            List.of(MovementActionType.FORWARD, MovementActionType.RETURN);
 
     private final DcAutoForwardConfigRepository configRepository;
     private final UserRepository userRepository;
@@ -48,6 +51,24 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
         config.setEnabled(Boolean.TRUE.equals(request.getEnabled()));
         config.setTimeoutMinutes(request.getTimeoutMinutes());
         config.setApproveRejectButtonsEnabled(Boolean.TRUE.equals(request.getApproveRejectButtonsEnabled()));
+        if (request.getUndoSendEnabled() != null) {
+            config.setUndoSendEnabled(Boolean.TRUE.equals(request.getUndoSendEnabled()));
+        }
+        if (request.getUndoSendWindowHours() != null) {
+            config.setUndoSendWindowHours(request.getUndoSendWindowHours());
+        }
+        if (request.getUndoSendRequiresUnopened() != null) {
+            config.setUndoSendRequiresUnopened(Boolean.TRUE.equals(request.getUndoSendRequiresUnopened()));
+        }
+        if (request.getUndoSendRequiresReason() != null) {
+            config.setUndoSendRequiresReason(Boolean.TRUE.equals(request.getUndoSendRequiresReason()));
+        }
+        if (request.getUndoSendNotifyReceiver() != null) {
+            config.setUndoSendNotifyReceiver(Boolean.TRUE.equals(request.getUndoSendNotifyReceiver()));
+        }
+        if (request.getUndoSendShowExpiredInfo() != null) {
+            config.setUndoSendShowExpiredInfo(Boolean.TRUE.equals(request.getUndoSendShowExpiredInfo()));
+        }
 
         Long receiverUserId = request.getReceiverUserId();
         if (config.isEnabled()) {
@@ -68,6 +89,9 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
         if (request.getForwardReturnAllowedStatuses() != null) {
             List<Status> allowedStatuses = normalizeStatuses(request.getForwardReturnAllowedStatuses());
             config.setForwardReturnAllowedStatuses(toCsv(allowedStatuses));
+        }
+        if (request.getUndoSendAllowedActions() != null) {
+            config.setUndoSendAllowedActions(toActionCsv(normalizeUndoActions(request.getUndoSendAllowedActions())));
         }
 
         config.setUpdatedAt(LocalDateTime.now());
@@ -94,6 +118,12 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<MovementActionType> getUndoSendAllowedActions() {
+        return parseUndoActions(getOrCreateEntity().getUndoSendAllowedActions());
+    }
+
+    @Override
     @Transactional
     public DcAutoForwardConfig getOrCreateEntity() {
         return configRepository.findById(SINGLETON_ID)
@@ -104,6 +134,13 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
                     config.setTimeoutMinutes(60);
                     config.setForwardReturnAllowedStatuses(toCsv(DEFAULT_FORWARD_RETURN_ALLOWED_STATUSES));
                     config.setApproveRejectButtonsEnabled(true);
+                    config.setUndoSendEnabled(true);
+                    config.setUndoSendWindowHours(24);
+                    config.setUndoSendRequiresUnopened(true);
+                    config.setUndoSendAllowedActions(toActionCsv(DEFAULT_UNDO_SEND_ALLOWED_ACTIONS));
+                    config.setUndoSendRequiresReason(true);
+                    config.setUndoSendNotifyReceiver(true);
+                    config.setUndoSendShowExpiredInfo(true);
                     config.setUpdatedAt(LocalDateTime.now());
                     return configRepository.save(config);
                 });
@@ -142,6 +179,13 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
                         .map(Status::name)
                         .toList())
                 .approveRejectButtonsEnabled(config.isApproveRejectButtonsEnabled())
+                .undoSendEnabled(config.isUndoSendEnabled())
+                .undoSendWindowHours(config.getUndoSendWindowHours())
+                .undoSendRequiresUnopened(config.isUndoSendRequiresUnopened())
+                .undoSendAllowedActions(parseUndoActions(config.getUndoSendAllowedActions()).stream().map(MovementActionType::name).toList())
+                .undoSendRequiresReason(config.isUndoSendRequiresReason())
+                .undoSendNotifyReceiver(config.isUndoSendNotifyReceiver())
+                .undoSendShowExpiredInfo(config.isUndoSendShowExpiredInfo())
                 .build();
     }
 
@@ -178,5 +222,40 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
 
     private String toCsv(List<Status> statuses) {
         return String.join(",", statuses.stream().map(Status::name).toList());
+    }
+
+    private List<MovementActionType> normalizeUndoActions(List<String> values) {
+        Set<MovementActionType> actions = new LinkedHashSet<>();
+        for (String raw : values) {
+            if (raw == null || raw.isBlank()) continue;
+            try {
+                MovementActionType action = MovementActionType.valueOf(raw.trim().toUpperCase());
+                if (action != MovementActionType.FORWARD && action != MovementActionType.RETURN) {
+                    throw new BadRequestException("Undo Send can apply only to FORWARD and RETURN.");
+                }
+                actions.add(action);
+            } catch (IllegalArgumentException ex) {
+                throw new BadRequestException("Invalid undo send action: " + raw);
+            }
+        }
+        if (actions.isEmpty()) {
+            throw new BadRequestException("Select at least one action where Undo Send is allowed.");
+        }
+        return new ArrayList<>(actions);
+    }
+
+    private List<MovementActionType> parseUndoActions(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return DEFAULT_UNDO_SEND_ALLOWED_ACTIONS;
+        }
+        try {
+            return normalizeUndoActions(List.of(csv.split(",")));
+        } catch (BadRequestException ex) {
+            return DEFAULT_UNDO_SEND_ALLOWED_ACTIONS;
+        }
+    }
+
+    private String toActionCsv(List<MovementActionType> actions) {
+        return String.join(",", actions.stream().map(MovementActionType::name).toList());
     }
 }

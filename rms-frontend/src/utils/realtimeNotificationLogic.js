@@ -1,6 +1,8 @@
 const DOCUMENT_NOTIFICATION_TYPES = new Set([
   "DOCUMENT_FORWARDED",
   "DOCUMENT_RETURNED",
+  "DOCUMENT_UNDO_SEND",
+  "DOCUMENT_UNDO_RETURNED",
 ]);
 
 export function isDocumentNotification(payload) {

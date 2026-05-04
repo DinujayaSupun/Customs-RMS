@@ -75,6 +75,16 @@ import java.util.stream.Collectors;
 @Service
 public class DocumentServiceImpl implements DocumentService {
 
+    private record UndoSendState(
+            boolean canUndo,
+            String status,
+            LocalDateTime expiresAt,
+            boolean receiverOpened,
+            String actionType,
+            boolean requiresReason,
+            boolean showExpiredInfo
+    ) {}
+
     private final DocumentRepository documentRepository;
     private final DocumentAttachmentRepository attachmentRepository;
     private final DocumentMovementRepository movementRepository;
@@ -235,7 +245,7 @@ public class DocumentServiceImpl implements DocumentService {
             : movementRepository.findLatestInboundByActorAndDocumentIds(
                     actorUserId,
                     docIds,
-                    List.of(MovementActionType.CREATE, MovementActionType.FORWARD, MovementActionType.RETURN)
+                    List.of(MovementActionType.CREATE, MovementActionType.FORWARD, MovementActionType.RETURN, MovementActionType.UNDO_SEND)
                 )
                 .stream()
                 .collect(Collectors.toMap(
@@ -253,6 +263,13 @@ public class DocumentServiceImpl implements DocumentService {
             DocumentMovement latestInbound = latestInboundByDoc.get(d.getId());
             Long inboxSenderUserId = resolveInboxSenderUserId(latestInbound);
             User inboxSender = inboxSenderUserId == null ? null : userRepository.findById(inboxSenderUserId).orElse(null);
+            boolean undoInboxMovement = latestInbound != null && latestInbound.getActionType() == MovementActionType.UNDO_SEND;
+            User undoActor = undoInboxMovement && latestInbound.getActionByUserId() != null
+                ? userRepository.findById(latestInbound.getActionByUserId()).orElse(null)
+                : null;
+            User undoFrom = undoInboxMovement && latestInbound.getFromUserId() != null
+                ? userRepository.findById(latestInbound.getFromUserId()).orElse(null)
+                : null;
             return DocumentResponse.from(
                 d,
                 createdByName,
@@ -269,7 +286,20 @@ public class DocumentServiceImpl implements DocumentService {
                 latestRemark == null ? null : roleName(latestRemark.getRemarkedBy()),
                 latestRemark == null ? null : toRemarkPreview(latestRemark.getRemarkText()),
                 latestRemark == null ? null : latestRemark.getRemarkText(),
-                latestRemark == null ? null : latestRemark.getRemarkedAt()
+                latestRemark == null ? null : latestRemark.getRemarkedAt(),
+                false,
+                undoInboxMovement ? "UNDONE" : null,
+                null,
+                false,
+                undoInboxMovement ? "UNDO_SEND" : null,
+                false,
+                false,
+                undoInboxMovement ? latestInbound.getActionByUserId() : null,
+                undoActor == null ? null : undoActor.getFullName(),
+                roleName(undoActor),
+                undoInboxMovement ? latestInbound.getFromUserId() : null,
+                undoFrom == null ? null : undoFrom.getFullName(),
+                roleName(undoFrom)
             );
         });
     }
@@ -282,7 +312,21 @@ public class DocumentServiceImpl implements DocumentService {
         String normalizedSearch = search == null ? "" : search.trim().toLowerCase();
 
         List<DocumentMovement> actorMovements = movementRepository
-            .findByActionTypeAndActionByUserIdOrderByActionAtDescIdDesc(MovementActionType.FORWARD, actorUserId);
+            .findByActionTypeInAndActionByUserIdOrderByActionAtDescIdDesc(
+                List.of(MovementActionType.FORWARD, MovementActionType.RETURN),
+                actorUserId
+            );
+        List<DocumentMovement> undoNotices = movementRepository
+            .findByActionTypeAndFromUserIdOrderByActionAtDescIdDesc(MovementActionType.UNDO_SEND, actorUserId);
+        actorMovements = java.util.stream.Stream.concat(actorMovements.stream(), undoNotices.stream())
+            .sorted((a, b) -> {
+                LocalDateTime aTime = a.getActionAt();
+                LocalDateTime bTime = b.getActionAt();
+                int timeCompare = java.util.Comparator.nullsLast(LocalDateTime::compareTo).compare(bTime, aTime);
+                if (timeCompare != 0) return timeCompare;
+                return java.util.Comparator.nullsLast(Long::compareTo).compare(b.getId(), a.getId());
+            })
+            .toList();
 
         List<Long> docIds = actorMovements.stream().map(DocumentMovement::getDocumentId).distinct().toList();
         Map<Long, Document> docsById = docIds.isEmpty()
@@ -360,6 +404,24 @@ public class DocumentServiceImpl implements DocumentService {
                 .findByEntityTypeAndEntityIdInAndActionTypeOrderByPerformedAtAsc("MOVEMENT", pageDocIds, "AUTO_FORWARD_DC_TIMEOUT")
                 .stream()
                 .collect(Collectors.groupingBy(AuditLog::getEntityId));
+        List<DocumentMovement> undoMovements = pageDocIds.isEmpty()
+            ? List.of()
+            : movementRepository.findByDocumentIdInAndActionTypeOrderByDocumentIdAscActionAtAsc(
+                pageDocIds,
+                MovementActionType.UNDO_SEND
+            );
+        Map<Long, List<DocumentMovement>> undoMovementsByDoc = undoMovements.stream()
+            .collect(Collectors.groupingBy(DocumentMovement::getDocumentId));
+        List<Long> undoActorIds = undoMovements.stream()
+            .map(DocumentMovement::getActionByUserId)
+            .filter(java.util.Objects::nonNull)
+            .distinct()
+            .toList();
+        Map<Long, User> undoActorsById = undoActorIds.isEmpty()
+            ? Map.of()
+            : userRepository.findAllById(undoActorIds)
+                .stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
 
         List<SentMessageResponse> sentRows = pageMovements.stream().map(movement -> {
             Document doc = docsById.get(movement.getDocumentId());
@@ -377,6 +439,17 @@ public class DocumentServiceImpl implements DocumentService {
                 .anyMatch(log -> log.getPerformedAt() != null
                     && movement.getActionAt() != null
                     && !log.getPerformedAt().isBefore(movement.getActionAt()));
+            boolean undoNotice = movement.getActionType() == MovementActionType.UNDO_SEND;
+            UndoSendState undoState = undoNotice
+                ? new UndoSendState(false, "UNDONE", null, false, "UNDO_SEND", false, true)
+                : resolveUndoSendState(doc, movement, actorUserId);
+            DocumentMovement undoMovement = undoNotice
+                ? movement
+                : findUndoMovementForSentMovement(
+                    movement,
+                    undoMovementsByDoc.getOrDefault(movement.getDocumentId(), List.of())
+                );
+            User undoActor = undoMovement == null ? null : undoActorsById.get(undoMovement.getActionByUserId());
             return SentMessageResponse.builder()
                 .movementId(movement.getId())
                 .documentId(movement.getDocumentId())
@@ -392,10 +465,35 @@ public class DocumentServiceImpl implements DocumentService {
                 .latestRemarkPreview(ownMinutePreview)
                 .sentAt(movement.getActionAt())
                 .autoForwarded(autoForwarded)
+                .canUndoSend(undoState.canUndo())
+                .undoSendStatus(undoState.status())
+                .undoSendExpiresAt(undoState.expiresAt())
+                .undoSendReceiverOpened(undoState.receiverOpened())
+                .undoSendActionType(undoState.actionType())
+                .undoSendRequiresReason(undoState.requiresReason())
+                .undoSendShowExpiredInfo(undoState.showExpiredInfo())
+                .undoSendByUserId(undoMovement == null ? null : undoMovement.getActionByUserId())
+                .undoSendByName(undoActor == null ? null : undoActor.getFullName())
+                .undoSendByRole(undoActor == null || undoActor.getRole() == null ? null : undoActor.getRole().getRoleName())
                 .build();
             }).toList();
 
             return new PageImpl<>(sentRows, pageable, filteredMovements.size());
+    }
+
+    private DocumentMovement findUndoMovementForSentMovement(DocumentMovement sentMovement, List<DocumentMovement> undoMovements) {
+        if (sentMovement == null || undoMovements == null || undoMovements.isEmpty()) {
+            return null;
+        }
+        return undoMovements.stream()
+            .filter(undo -> java.util.Objects.equals(undo.getActionByUserId(), sentMovement.getActionByUserId()))
+            .filter(undo -> java.util.Objects.equals(undo.getFromUserId(), sentMovement.getToUserId()))
+            .filter(undo -> java.util.Objects.equals(undo.getToUserId(), sentMovement.getFromUserId()))
+            .filter(undo -> undo.getActionAt() != null
+                && sentMovement.getActionAt() != null
+                && !undo.getActionAt().isBefore(sentMovement.getActionAt()))
+            .findFirst()
+            .orElse(null);
     }
 
     @Override
@@ -414,8 +512,19 @@ public class DocumentServiceImpl implements DocumentService {
                 .map(this::toRemarkPreview)
                 .orElse(null)
             : null;
+        UndoSendState undoState = movementRepository.findFirstByDocumentIdOrderByActionAtDescIdDesc(d.getId())
+                .map(movement -> resolveUndoSendState(d, movement, actorUserId))
+                .orElse(resolveUndoSendState(d, null, actorUserId));
 
-        return DocumentResponse.from(d, createdByName, ownerName, mainAttachmentType, latestRemarkPreview, true);
+        return DocumentResponse.from(d, createdByName, ownerName, mainAttachmentType, latestRemarkPreview, true,
+                null, null, null, null, null, null, null, null, null, null,
+                undoState.canUndo(),
+                undoState.status(),
+                undoState.expiresAt(),
+                undoState.receiverOpened(),
+                undoState.actionType(),
+                undoState.requiresReason(),
+                undoState.showExpiredInfo());
     }
 
     @Override
@@ -621,6 +730,77 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
+    @Transactional
+    public void undoSend(Long documentId, UndoSendRequest request, Long actorUserId) {
+        Document d = requireDocument(documentId);
+        User actor = requireUser(actorUserId);
+        DocumentMovement latestMovement = movementRepository.findFirstByDocumentIdOrderByActionAtDescIdDesc(documentId)
+                .orElseThrow(() -> new BadRequestException("No sent movement found to undo."));
+
+        UndoSendState state = resolveUndoSendState(d, latestMovement, actorUserId);
+        if (!state.canUndo()) {
+            throw new BadRequestException(undoBlockedMessage(state.status()));
+        }
+
+        String reason = request == null || request.getReason() == null ? "" : request.getReason().trim();
+        if (state.requiresReason() && reason.isEmpty()) {
+            throw new BadRequestException("Undo Send requires a reason.");
+        }
+
+        Long receiverUserId = latestMovement.getToUserId();
+        Long senderUserId = latestMovement.getFromUserId();
+        if (senderUserId == null) {
+            throw new BadRequestException("Cannot undo this movement because the sender is unknown.");
+        }
+
+        d.setCurrentOwnerUserId(senderUserId);
+        d.setStatus(Status.IN_PROGRESS);
+        d.setCompletedAt(null);
+        documentUserViewRepository.deleteByDocumentIdAndUserId(d.getId(), senderUserId);
+        applyDcAutoForwardTrackingAfterOwnershipChange(d, actor);
+        touchDocument(d);
+        documentRepository.save(d);
+
+        DocumentMovement undoMovement = DocumentMovement.create(
+                documentId,
+                receiverUserId,
+                senderUserId,
+                actorUserId,
+                MovementActionType.UNDO_SEND,
+                latestMovement.getForwardVisibility()
+        );
+        movementRepository.save(undoMovement);
+
+        auditLogService.logMovement(
+                documentId,
+                actorUserId,
+                "UNDO_SEND",
+                "Undo send from userId=" + receiverUserId + " back to userId=" + senderUserId
+                        + (reason.isBlank() ? "" : ". Reason: " + reason)
+        );
+
+        var config = dcAutoForwardConfigService.getOrCreateEntity();
+        if (config.isUndoSendNotifyReceiver()) {
+            realtimeNotificationService.notifyDocumentUndoSend(
+                    receiverUserId,
+                    d.getId(),
+                    d.getRefNo(),
+                    d.getTitle(),
+                    actor.getId(),
+                    actor.getFullName()
+            );
+        }
+        realtimeNotificationService.notifyDocumentUndoReturnedToSender(
+                senderUserId,
+                d.getId(),
+                d.getRefNo(),
+                d.getTitle(),
+                actor.getId(),
+                actor.getFullName()
+        );
+    }
+
+    @Override
     public void approve(Long documentId, DecisionRequest request, Long actorUserId) {
         if (!dcAutoForwardConfigService.isApproveRejectButtonsEnabled()) {
             throw new BadRequestException("Approve action is disabled by admin workflow settings.");
@@ -805,6 +985,82 @@ public class DocumentServiceImpl implements DocumentService {
         if (d.getStatus() != Status.APPROVED) {
             throw new BadRequestException("Cannot issue. Document must be APPROVED first.");
         }
+    }
+
+    private UndoSendState resolveUndoSendState(Document doc, DocumentMovement movement, Long actorUserId) {
+        var config = dcAutoForwardConfigService.getOrCreateEntity();
+        boolean requiresReason = config.isUndoSendRequiresReason();
+        boolean showExpiredInfo = config.isUndoSendShowExpiredInfo();
+
+        if (movement == null) {
+            return new UndoSendState(false, "NO_SENT_MOVEMENT", null, false, null, requiresReason, showExpiredInfo);
+        }
+
+        LocalDateTime sentAt = movement.getActionAt();
+        Integer configuredHours = config.getUndoSendWindowHours();
+        int windowHours = configuredHours == null || configuredHours < 1 ? 24 : configuredHours;
+        LocalDateTime expiresAt = sentAt == null ? null : sentAt.plusHours(windowHours);
+        boolean receiverOpened = isReceiverOpenedAfterMovement(movement);
+        String actionType = movement.getActionType() == null ? null : movement.getActionType().name();
+
+        if (!config.isUndoSendEnabled()) {
+            return new UndoSendState(false, "DISABLED", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        if (doc == null || doc.isDeleted()) {
+            return new UndoSendState(false, "DOCUMENT_UNAVAILABLE", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        if (movement.getActionType() != MovementActionType.FORWARD && movement.getActionType() != MovementActionType.RETURN) {
+            return new UndoSendState(false, "ALREADY_MOVED", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        if (!dcAutoForwardConfigService.getUndoSendAllowedActions().contains(movement.getActionType())) {
+            return new UndoSendState(false, "ACTION_NOT_ALLOWED", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        if (movement.getFromUserId() == null || !movement.getFromUserId().equals(actorUserId)) {
+            return new UndoSendState(false, "NOT_SENDER", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        if (doc.getStatus() == Status.ISSUED || doc.getStatus() == Status.REJECTED || doc.getCompletedAt() != null) {
+            return new UndoSendState(false, "FINALIZED", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        if (doc.getCurrentOwnerUserId() == null || !doc.getCurrentOwnerUserId().equals(movement.getToUserId())) {
+            return new UndoSendState(false, "ALREADY_MOVED", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        boolean latestMovement = movementRepository.findFirstByDocumentIdOrderByActionAtDescIdDesc(doc.getId())
+                .map(latest -> latest.getId() != null && latest.getId().equals(movement.getId()))
+                .orElse(false);
+        if (!latestMovement) {
+            return new UndoSendState(false, "ALREADY_MOVED", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        if (expiresAt != null && LocalDateTime.now().isAfter(expiresAt)) {
+            return new UndoSendState(false, "EXPIRED", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        if (config.isUndoSendRequiresUnopened() && receiverOpened) {
+            return new UndoSendState(false, "OPENED", expiresAt, true, actionType, requiresReason, showExpiredInfo);
+        }
+
+        return new UndoSendState(true, "AVAILABLE", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+    }
+
+    private boolean isReceiverOpenedAfterMovement(DocumentMovement movement) {
+        if (movement == null || movement.getDocumentId() == null || movement.getToUserId() == null || movement.getActionAt() == null) {
+            return false;
+        }
+        return documentUserViewRepository.findByDocumentIdAndUserId(movement.getDocumentId(), movement.getToUserId())
+                .map(DocumentUserView::getViewedAt)
+                .map(viewedAt -> !viewedAt.isBefore(movement.getActionAt()))
+                .orElse(false);
+    }
+
+    private String undoBlockedMessage(String status) {
+        return switch (status == null ? "" : status) {
+            case "DISABLED" -> "Undo Send is disabled by admin.";
+            case "ACTION_NOT_ALLOWED" -> "Undo Send is not allowed for this action.";
+            case "NOT_SENDER" -> "Only the sender can undo this sent document.";
+            case "FINALIZED" -> "Cannot undo a finalized document.";
+            case "ALREADY_MOVED" -> "Cannot undo because the document has already moved.";
+            case "EXPIRED" -> "Undo Send has expired.";
+            case "OPENED" -> "Cannot undo because the receiver has already opened the document.";
+            default -> "Undo Send is not available for this document.";
+        };
     }
 
     // ==========================================================

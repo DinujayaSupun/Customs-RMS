@@ -94,6 +94,57 @@
           </label>
         </div>
 
+        <div class="section">
+          <div class="sectionHead">
+            <h3>Undo Send</h3>
+            <p>Control whether senders can pull back their latest Forward/Return within a time window. You can also require that the receiver has not opened it yet.</p>
+          </div>
+
+          <div class="configGrid undoConfigGrid">
+            <label class="toggleWrap configToggle">
+              <input type="checkbox" :checked="undoSendEnabled" @change="onUndoSendEnabledChange($event.target.checked)" />
+              <span>Enable Undo Send</span>
+            </label>
+
+            <div class="controlBlock">
+              <label>Undo window (hours)</label>
+              <input class="input" type="number" min="1" max="168" :disabled="!undoSendEnabled" v-model.number="undoSendWindowHours" @input="markConfigDirty" />
+            </div>
+
+            <label class="toggleWrap statusToggle">
+              <input type="checkbox" :checked="undoSendRequiresUnopened" :disabled="!undoSendEnabled" @change="onUndoToggle('requiresUnopened', $event.target.checked)" />
+              <span>Require receiver unopened</span>
+            </label>
+
+            <label class="toggleWrap statusToggle">
+              <input type="checkbox" :checked="undoSendRequiresReason" :disabled="!undoSendEnabled" @change="onUndoToggle('requiresReason', $event.target.checked)" />
+              <span>Require undo reason</span>
+            </label>
+
+            <label class="toggleWrap statusToggle">
+              <input type="checkbox" :checked="undoSendNotifyReceiver" :disabled="!undoSendEnabled" @change="onUndoToggle('notifyReceiver', $event.target.checked)" />
+              <span>Notify receiver on undo</span>
+            </label>
+
+            <label class="toggleWrap statusToggle">
+              <input type="checkbox" :checked="undoSendShowExpiredInfo" :disabled="!undoSendEnabled" @change="onUndoToggle('showExpiredInfo', $event.target.checked)" />
+              <span>Show expired undo info</span>
+            </label>
+          </div>
+
+          <div class="statusRuleGrid undoActionsGrid">
+            <label v-for="actionName in undoSendActionOptions" :key="actionName" class="toggleWrap statusToggle">
+              <input
+                type="checkbox"
+                :checked="isUndoSendActionAllowed(actionName)"
+                :disabled="!undoSendEnabled"
+                @change="setUndoSendAction(actionName, $event.target.checked)"
+              />
+              <span>{{ actionName === 'FORWARD' ? 'Forward' : 'Return' }}</span>
+            </label>
+          </div>
+        </div>
+
         <div class="tableWrap">
           <table class="table">
             <thead>
@@ -166,6 +217,14 @@ const dcReceiverUserId = ref(null);
 const workflowStatuses = ["PENDING", "IN_PROGRESS", "RETURNED", "APPROVED", "REJECTED", "ISSUED"];
 const forwardReturnAllowedStatuses = ref(["PENDING", "IN_PROGRESS", "RETURNED"]);
 const approveRejectButtonsEnabled = ref(true);
+const undoSendActionOptions = ["FORWARD", "RETURN"];
+const undoSendEnabled = ref(true);
+const undoSendWindowHours = ref(24);
+const undoSendRequiresUnopened = ref(true);
+const undoSendAllowedActions = ref(["FORWARD", "RETURN"]);
+const undoSendRequiresReason = ref(true);
+const undoSendNotifyReceiver = ref(true);
+const undoSendShowExpiredInfo = ref(true);
 
 const eligibleReceivers = computed(() =>
   allUsers.value.filter((u) => ["DDC", "SDDC"].includes(String(u.role || "").toUpperCase()))
@@ -209,6 +268,20 @@ function onApproveRejectButtonsEnabledChange(enabled) {
   markConfigDirty();
 }
 
+function onUndoSendEnabledChange(enabled) {
+  undoSendEnabled.value = !!enabled;
+  markConfigDirty();
+}
+
+function onUndoToggle(key, enabled) {
+  const value = !!enabled;
+  if (key === "requiresUnopened") undoSendRequiresUnopened.value = value;
+  if (key === "requiresReason") undoSendRequiresReason.value = value;
+  if (key === "notifyReceiver") undoSendNotifyReceiver.value = value;
+  if (key === "showExpiredInfo") undoSendShowExpiredInfo.value = value;
+  markConfigDirty();
+}
+
 function friendlyLabel(permission) {
   const normalized = String(permission || "").toUpperCase();
   if (normalized === "ISSUE_DOCUMENT") {
@@ -246,6 +319,21 @@ function setForwardReturnStatus(statusName, allowed) {
   markConfigDirty();
 }
 
+function isUndoSendActionAllowed(actionName) {
+  return undoSendAllowedActions.value.includes(actionName);
+}
+
+function setUndoSendAction(actionName, allowed) {
+  const next = new Set(undoSendAllowedActions.value);
+  if (allowed) {
+    next.add(actionName);
+  } else {
+    next.delete(actionName);
+  }
+  undoSendAllowedActions.value = undoSendActionOptions.filter((action) => next.has(action));
+  markConfigDirty();
+}
+
 async function load() {
   loading.value = true;
   error.value = "";
@@ -270,6 +358,15 @@ async function load() {
       ? workflowStatuses.filter((statusName) => config.forwardReturnAllowedStatuses.includes(statusName))
       : ["PENDING", "IN_PROGRESS", "RETURNED"];
     approveRejectButtonsEnabled.value = config?.approveRejectButtonsEnabled !== false;
+    undoSendEnabled.value = config?.undoSendEnabled !== false;
+    undoSendWindowHours.value = Number(config?.undoSendWindowHours || 24);
+    undoSendRequiresUnopened.value = config?.undoSendRequiresUnopened !== false;
+    undoSendAllowedActions.value = Array.isArray(config?.undoSendAllowedActions) && config.undoSendAllowedActions.length > 0
+      ? undoSendActionOptions.filter((actionName) => config.undoSendAllowedActions.includes(actionName))
+      : ["FORWARD", "RETURN"];
+    undoSendRequiresReason.value = config?.undoSendRequiresReason !== false;
+    undoSendNotifyReceiver.value = config?.undoSendNotifyReceiver !== false;
+    undoSendShowExpiredInfo.value = config?.undoSendShowExpiredInfo !== false;
 
     dirty.value = false;
     configDirty.value = false;
@@ -296,6 +393,13 @@ async function save() {
     if (forwardReturnAllowedStatuses.value.length === 0) {
       throw new Error("Select at least one status where Forward/Return is allowed.");
     }
+    const undoWindowHours = Number(undoSendWindowHours.value);
+    if (!Number.isFinite(undoWindowHours) || undoWindowHours < 1 || undoWindowHours > 168) {
+      throw new Error("Undo Send window must be between 1 and 168 hours.");
+    }
+    if (undoSendAllowedActions.value.length === 0) {
+      throw new Error("Select Forward, Return, or both for Undo Send.");
+    }
 
     const entries = [];
     for (const permission of permissions.value) {
@@ -316,6 +420,13 @@ async function save() {
         receiverUserId: dcReceiverUserId.value == null ? null : Number(dcReceiverUserId.value),
         forwardReturnAllowedStatuses: forwardReturnAllowedStatuses.value,
         approveRejectButtonsEnabled: !!approveRejectButtonsEnabled.value,
+        undoSendEnabled: !!undoSendEnabled.value,
+        undoSendWindowHours: undoWindowHours,
+        undoSendRequiresUnopened: !!undoSendRequiresUnopened.value,
+        undoSendAllowedActions: undoSendAllowedActions.value,
+        undoSendRequiresReason: !!undoSendRequiresReason.value,
+        undoSendNotifyReceiver: !!undoSendNotifyReceiver.value,
+        undoSendShowExpiredInfo: !!undoSendShowExpiredInfo.value,
       },
     });
 
@@ -333,6 +444,15 @@ async function save() {
       ? workflowStatuses.filter((statusName) => updatedConfig.forwardReturnAllowedStatuses.includes(statusName))
       : forwardReturnAllowedStatuses.value;
     approveRejectButtonsEnabled.value = updatedConfig?.approveRejectButtonsEnabled !== false;
+    undoSendEnabled.value = updatedConfig?.undoSendEnabled !== false;
+    undoSendWindowHours.value = Number(updatedConfig?.undoSendWindowHours || undoWindowHours);
+    undoSendRequiresUnopened.value = updatedConfig?.undoSendRequiresUnopened !== false;
+    undoSendAllowedActions.value = Array.isArray(updatedConfig?.undoSendAllowedActions) && updatedConfig.undoSendAllowedActions.length > 0
+      ? undoSendActionOptions.filter((actionName) => updatedConfig.undoSendAllowedActions.includes(actionName))
+      : undoSendAllowedActions.value;
+    undoSendRequiresReason.value = updatedConfig?.undoSendRequiresReason !== false;
+    undoSendNotifyReceiver.value = updatedConfig?.undoSendNotifyReceiver !== false;
+    undoSendShowExpiredInfo.value = updatedConfig?.undoSendShowExpiredInfo !== false;
 
     dirty.value = false;
     configDirty.value = false;

@@ -44,6 +44,38 @@ public class RealtimeNotificationService {
         notificationWebSocketHandler.sendToUser(recipientUserId, message);
     }
 
+    public void notifyDocumentUndoSend(Long recipientUserId,
+                                       Long documentId,
+                                       String documentRefNo,
+                                       String documentTitle,
+                                       Long fromUserId,
+                                       String fromUserName) {
+        RealtimeNotificationMessage message = RealtimeNotificationMessage.documentUndoSend(
+                documentId,
+                documentRefNo,
+                documentTitle,
+                fromUserId,
+                fromUserName
+        );
+        notificationWebSocketHandler.sendToUser(recipientUserId, message);
+    }
+
+    public void notifyDocumentUndoReturnedToSender(Long recipientUserId,
+                                                   Long documentId,
+                                                   String documentRefNo,
+                                                   String documentTitle,
+                                                   Long fromUserId,
+                                                   String fromUserName) {
+        RealtimeNotificationMessage message = RealtimeNotificationMessage.documentUndoReturnedToSender(
+                documentId,
+                documentRefNo,
+                documentTitle,
+                fromUserId,
+                fromUserName
+        );
+        notificationWebSocketHandler.sendToUser(recipientUserId, message);
+    }
+
     public void notifyPermissionsUpdated() {
         notificationWebSocketHandler.sendToAll(RealtimeNotificationMessage.permissionsUpdated());
     }

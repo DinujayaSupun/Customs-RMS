@@ -31,6 +31,27 @@ public class DcAutoForwardConfig {
     @Column(name = "approve_reject_buttons_enabled", nullable = false)
     private boolean approveRejectButtonsEnabled = true;
 
+    @Column(name = "undo_send_enabled", nullable = false)
+    private boolean undoSendEnabled = true;
+
+    @Column(name = "undo_send_window_hours", nullable = false)
+    private Integer undoSendWindowHours = 24;
+
+    @Column(name = "undo_send_requires_unopened", nullable = false)
+    private boolean undoSendRequiresUnopened = true;
+
+    @Column(name = "undo_send_allowed_actions", nullable = false, length = 80)
+    private String undoSendAllowedActions = "FORWARD,RETURN";
+
+    @Column(name = "undo_send_requires_reason", nullable = false)
+    private boolean undoSendRequiresReason = true;
+
+    @Column(name = "undo_send_notify_receiver", nullable = false)
+    private boolean undoSendNotifyReceiver = true;
+
+    @Column(name = "undo_send_show_expired_info", nullable = false)
+    private boolean undoSendShowExpiredInfo = true;
+
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt = LocalDateTime.now();
 }

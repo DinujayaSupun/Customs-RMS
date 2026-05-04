@@ -148,6 +148,96 @@ class AdminAndWorkflowRoutingIntegrationTests {
     }
 
     @Test
+    void senderCanUndoLatestUnopenedForwardWithinConfiguredWindow() throws Exception {
+        String password = "Undo1234";
+        User sender = createUser("DC", "undo-sender-", password);
+        User receiver = createUser("DDC", "undo-receiver-", password);
+        String senderToken = loginAndGetToken(sender.getUsername(), password);
+
+        long documentId = createDocument(sender, senderToken, "undo-forward");
+        forwardDocument(documentId, senderToken, receiver.getId());
+
+        mockMvc.perform(get("/api/documents/sent-messages")
+                        .header("Authorization", bearer(senderToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].documentId").value(documentId))
+                .andExpect(jsonPath("$.content[0].canUndoSend").value(true))
+                .andExpect(jsonPath("$.content[0].undoSendStatus").value("AVAILABLE"));
+
+        mockMvc.perform(post("/api/documents/{id}/undo-send", documentId)
+                        .header("Authorization", bearer(senderToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"Sent to wrong officer\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/documents/{id}", documentId)
+                        .header("Authorization", bearer(senderToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentOwnerUserId").value(sender.getId()));
+
+        mockMvc.perform(get("/api/documents")
+                        .header("Authorization", bearer(senderToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].documentId").doesNotExist())
+                .andExpect(jsonPath("$.content[0].id").value(documentId))
+                .andExpect(jsonPath("$.content[0].undoSendActionType").value("UNDO_SEND"))
+                .andExpect(jsonPath("$.content[0].undoSendByUserId").value(sender.getId()))
+                .andExpect(jsonPath("$.content[0].undoSendByName").value(sender.getFullName()))
+                .andExpect(jsonPath("$.content[0].undoSendByRole").value("DC"))
+                .andExpect(jsonPath("$.content[0].undoSendFromUserId").value(receiver.getId()))
+                .andExpect(jsonPath("$.content[0].undoSendFromName").value(receiver.getFullName()))
+                .andExpect(jsonPath("$.content[0].undoSendFromRole").value("DDC"));
+
+        mockMvc.perform(get("/api/documents/sent-messages")
+                        .header("Authorization", bearer(senderToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].documentId").value(documentId))
+                .andExpect(jsonPath("$.content[0].canUndoSend").value(false))
+                .andExpect(jsonPath("$.content[0].undoSendByUserId").value(sender.getId()))
+                .andExpect(jsonPath("$.content[0].undoSendByName").value(sender.getFullName()))
+                .andExpect(jsonPath("$.content[0].undoSendByRole").value("DC"));
+
+        String receiverToken = loginAndGetToken(receiver.getUsername(), password);
+        mockMvc.perform(get("/api/documents/sent-messages")
+                        .header("Authorization", bearer(receiverToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].documentId").value(documentId))
+                .andExpect(jsonPath("$.content[0].undoSendActionType").value("UNDO_SEND"))
+                .andExpect(jsonPath("$.content[0].undoSendByUserId").value(sender.getId()))
+                .andExpect(jsonPath("$.content[0].undoSendByName").value(sender.getFullName()))
+                .andExpect(jsonPath("$.content[0].undoSendByRole").value("DC"));
+    }
+
+    @Test
+    void senderCannotUndoForwardAfterReceiverOpenedDocument() throws Exception {
+        String password = "Undo1234";
+        User sender = createUser("DC", "undo-open-sender-", password);
+        User receiver = createUser("DDC", "undo-open-receiver-", password);
+        String senderToken = loginAndGetToken(sender.getUsername(), password);
+        String receiverToken = loginAndGetToken(receiver.getUsername(), password);
+
+        long documentId = createDocument(sender, senderToken, "undo-opened");
+        forwardDocument(documentId, senderToken, receiver.getId());
+
+        mockMvc.perform(get("/api/documents/{id}", documentId)
+                        .header("Authorization", bearer(receiverToken)))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/documents/{id}/undo-send", documentId)
+                        .header("Authorization", bearer(senderToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"Need to revise\"}"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/documents/sent-messages")
+                        .header("Authorization", bearer(senderToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].documentId").value(documentId))
+                .andExpect(jsonPath("$.content[0].canUndoSend").value(false))
+                .andExpect(jsonPath("$.content[0].undoSendStatus").value("OPENED"));
+    }
+
+    @Test
     void receivedInboxSeparatesActualSenderFromLatestMinuteAuthor() throws Exception {
         String password = "Flow1234";
         User dc = createUser("DC", "inbox-sender-dc-", password);
@@ -551,6 +641,20 @@ class AdminAndWorkflowRoutingIntegrationTests {
         return json.get("id").asLong();
     }
 
+    private void forwardDocument(long documentId, String token, long toUserId) throws Exception {
+        mockMvc.perform(post("/api/documents/{id}/forward", documentId)
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "toUserId": %d,
+                                  "forwardVisibility": "PUBLIC",
+                                  "remarkText": "Please check this"
+                                }
+                                """.formatted(toUserId)))
+                .andExpect(status().isOk());
+    }
+
     private long addMinute(long documentId, String token, String text) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/documents/{documentId}/remarks", documentId)
                         .header("Authorization", bearer(token))
@@ -603,6 +707,13 @@ class AdminAndWorkflowRoutingIntegrationTests {
         config.setId(1L);
         config.setApproveRejectButtonsEnabled(true);
         config.setForwardReturnAllowedStatuses("PENDING,IN_PROGRESS,RETURNED");
+        config.setUndoSendEnabled(true);
+        config.setUndoSendWindowHours(24);
+        config.setUndoSendRequiresUnopened(true);
+        config.setUndoSendAllowedActions("FORWARD,RETURN");
+        config.setUndoSendRequiresReason(true);
+        config.setUndoSendNotifyReceiver(true);
+        config.setUndoSendShowExpiredInfo(true);
         dcAutoForwardConfigRepository.saveAndFlush(config);
     }
 
@@ -611,6 +722,13 @@ class AdminAndWorkflowRoutingIntegrationTests {
         config.setId(1L);
         config.setApproveRejectButtonsEnabled(false);
         config.setForwardReturnAllowedStatuses("PENDING,IN_PROGRESS,RETURNED");
+        config.setUndoSendEnabled(true);
+        config.setUndoSendWindowHours(24);
+        config.setUndoSendRequiresUnopened(true);
+        config.setUndoSendAllowedActions("FORWARD,RETURN");
+        config.setUndoSendRequiresReason(true);
+        config.setUndoSendNotifyReceiver(true);
+        config.setUndoSendShowExpiredInfo(true);
         dcAutoForwardConfigRepository.saveAndFlush(config);
     }
 

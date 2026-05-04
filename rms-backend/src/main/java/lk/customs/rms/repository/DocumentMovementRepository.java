@@ -15,6 +15,9 @@ import java.util.Optional;
 public interface DocumentMovementRepository extends JpaRepository<DocumentMovement, Long> {
     List<DocumentMovement> findByDocumentIdOrderByActionAtAsc(Long documentId);
     List<DocumentMovement> findByActionTypeAndActionByUserIdOrderByActionAtDescIdDesc(MovementActionType actionType, Long actionByUserId);
+    List<DocumentMovement> findByActionTypeInAndActionByUserIdOrderByActionAtDescIdDesc(Collection<MovementActionType> actionTypes, Long actionByUserId);
+    List<DocumentMovement> findByActionTypeAndFromUserIdOrderByActionAtDescIdDesc(MovementActionType actionType, Long fromUserId);
+    Optional<DocumentMovement> findFirstByDocumentIdOrderByActionAtDescIdDesc(Long documentId);
     List<DocumentMovement> findByDocumentIdInAndToUserIdAndActionTypeInOrderByDocumentIdAscActionAtAsc(
             List<Long> documentIds,
             Long toUserId,
@@ -25,6 +28,10 @@ public interface DocumentMovementRepository extends JpaRepository<DocumentMoveme
             Long documentId,
             Long toUserId,
             Collection<MovementActionType> actionTypes
+    );
+    List<DocumentMovement> findByDocumentIdInAndActionTypeOrderByDocumentIdAscActionAtAsc(
+            List<Long> documentIds,
+            MovementActionType actionType
     );
 
     boolean existsByDocumentIdAndActionAtAfter(Long documentId, java.time.LocalDateTime actionAt);
