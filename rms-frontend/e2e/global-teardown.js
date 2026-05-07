@@ -1,15 +1,19 @@
-const apiBaseUrl = process.env.RMS_E2E_API_BASE_URL || "http://localhost:8080/api";
+const apiBaseUrl = process.env.RMS_E2E_API_BASE_URL || "http://localhost:8081/api";
 const E2E_USER_PREFIX = "e2e-auto-";
 const E2E_DOC_PREFIX = "E2E-AUTO-";
 
+function envValue(name) {
+  return process.env[name] || "";
+}
+
 const adminCreds = {
-  username: process.env.RMS_E2E_ADMIN_USER || "admin",
-  password: process.env.RMS_E2E_ADMIN_PASS || "Admin@123",
+  username: envValue("RMS_E2E_ADMIN_USER") || "admin",
+  password: envValue("RMS_E2E_ADMIN_PASS") || "E2eAdmin123",
 };
 
 const dcCreds = {
-  username: process.env.RMS_E2E_DC_USER || "dc",
-  password: process.env.RMS_E2E_DC_PASS || "Pass@123",
+  username: envValue("RMS_E2E_DC_USER") || "dc",
+  password: envValue("RMS_E2E_DC_PASS") || "E2eDefault123",
 };
 
 async function apiLogin(username, password) {
@@ -129,6 +133,11 @@ async function deactivateE2eUsers(adminToken, fallbackDcUserId) {
 
 export default async function globalTeardown() {
   try {
+    if (!adminCreds.username || !adminCreds.password) {
+      console.warn("[e2e-cleanup] E2E admin credentials missing; skipping cleanup.");
+      return;
+    }
+
     const adminLogin = await apiLogin(adminCreds.username, adminCreds.password);
     const adminToken = adminLogin?.accessToken;
 

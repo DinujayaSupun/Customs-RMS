@@ -1,27 +1,10 @@
-import axios from "axios";
 import { getAccessToken } from "../auth/currentUser";
+import { createAuthedHttp, getApiErrorMessage } from "./apiClient";
 
-const http = axios.create({
-  baseURL: `${import.meta.env.VITE_API_BASE_URL || "http://localhost:8080"}/api`,
-  timeout: 20000,
-});
-
-http.interceptors.request.use((config) => {
-  const token = getAccessToken();
-  if (token) {
-    config.headers = config.headers || {};
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+const http = createAuthedHttp();
 
 function getMsg(e) {
-  return (
-    e?.response?.data?.message ||
-    e?.response?.data?.error ||
-    e?.message ||
-    "Request failed"
-  );
+  return getApiErrorMessage(e, { includeDetails: true });
 }
 
 export async function login(username, password) {
@@ -132,9 +115,33 @@ export async function adminDeactivateUser(userId, fallbackDcUserId) {
   }
 }
 
+export async function adminBulkDeactivateUsers(userIds, fallbackDcUserId) {
+  try {
+    await http.post("/admin/users/bulk-deactivate", { userIds, fallbackDcUserId });
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
 export async function adminResetPassword(userId, newPassword) {
   try {
     await http.patch(`/admin/users/${userId}/reset-password`, { newPassword });
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function adminDeleteUser(userId) {
+  try {
+    await http.delete(`/admin/users/${userId}`);
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function adminBulkDeleteUsers(userIds) {
+  try {
+    await http.post("/admin/users/bulk-delete", { userIds });
   } catch (e) {
     throw new Error(getMsg(e));
   }
@@ -183,6 +190,14 @@ export async function adminGetDcAutoForwardConfig() {
 export async function adminUpdateDcAutoForwardConfig(payload) {
   try {
     return (await http.put("/admin/permissions/dc-auto-forward", payload)).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function adminSavePermissionsPage(payload) {
+  try {
+    return (await http.put("/admin/permissions/page", payload)).data;
   } catch (e) {
     throw new Error(getMsg(e));
   }

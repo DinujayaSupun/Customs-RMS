@@ -1,27 +1,9 @@
-import axios from "axios";
-import { getAccessToken } from "../auth/currentUser";
+import { createAuthedHttp, getApiErrorMessage } from "./apiClient";
 
-const http = axios.create({
-  baseURL: `${import.meta.env.VITE_API_BASE_URL || "http://localhost:8080"}/api`,
-  timeout: 20000,
-});
-
-http.interceptors.request.use((config) => {
-  const token = getAccessToken();
-  if (token) {
-    config.headers = config.headers || {};
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+const http = createAuthedHttp();
 
 function getMsg(e) {
-  return (
-    e?.response?.data?.message ||
-    e?.response?.data?.error ||
-    e?.message ||
-    "Request failed"
-  );
+  return getApiErrorMessage(e);
 }
 
 export async function listAuditLogs(params = {}) {
@@ -32,17 +14,30 @@ export async function listAuditLogs(params = {}) {
   }
 }
 
-export function buildAuditLogsExportUrl(params = {}) {
-  const url = new URL("http://localhost:8080/api/audit-logs/export");
-
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && String(value).trim() !== "") {
-      url.searchParams.set(key, String(value));
-    }
+export async function getAuditLogFilterOptions() {
+  try {
+    return (await http.get("/audit-logs/filter-options")).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
   }
+}
 
-  const token = getAccessToken();
-  if (token) url.searchParams.set("access_token", token);
+export async function exportAuditLogsCsv(params = {}) {
+  try {
+    const response = await http.get("/audit-logs/export", {
+      params,
+      responseType: "blob",
+    });
 
-  return url.toString();
+    const disposition = response.headers?.["content-disposition"] || "";
+    const match = disposition.match(/filename="?([^"]+)"?/i);
+    const fileName = match?.[1] || "audit-logs.csv";
+
+    return {
+      blob: response.data,
+      fileName,
+    };
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
 }

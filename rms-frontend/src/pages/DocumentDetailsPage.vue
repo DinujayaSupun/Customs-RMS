@@ -3,12 +3,12 @@
     <!-- TOP BAR -->
     <div class="topbar">
       <div>
-        <h2 class="title">Document #{{ doc?.refNo || ("ID " + documentId) }}</h2>
+        <h2 class="title">{{ doc?.refNo ? `Document ${doc.refNo}` : "Document" }}</h2>
 
         <div class="meta">
           <span class="pill">Status: {{ displayStatusLabel(doc?.status) || "-" }}</span>
           <span class="pill">Priority: {{ doc?.priority || "-" }}</span>
-          <span class="pill">Owner: {{ ownerLabel }}</span>
+        <span class="pill">Report At: {{ ownerLabel }}</span>
         </div>
 
         <div class="subMeta">
@@ -56,9 +56,12 @@
       <!-- LEFT -->
       <div class="col">
         <!-- DETAILS -->
-        <div class="card">
+        <div class="card detailsCard">
           <div class="cardHead">
-            <div class="cardTitle">Details</div>
+            <div>
+              <div class="cardTitle">Details</div>
+              <div class="cardSub">Core document metadata and lifecycle dates.</div>
+            </div>
             <div class="btnRow" style="margin-top:0;">
               <button
                 v-if="canEditDetails && !isEditingDetails"
@@ -113,7 +116,7 @@
             <div class="k">Approved At</div>
             <div class="v mono">{{ completedAtDisplay }}</div>
 
-            <div class="k">Completed (Done) At</div>
+              <div class="k">Done At</div>
             <div class="v mono">{{ issuedAtDisplay }}</div>
           </div>
 
@@ -134,6 +137,11 @@
             </div>
 
             <div class="formRow">
+              <div class="label">Received Date</div>
+              <input class="input" type="date" v-model="detailsForm.receivedDate" :disabled="busy" />
+            </div>
+
+            <div class="formRow">
               <div class="label">Priority</div>
               <select class="input" v-model="detailsForm.priority" :disabled="busy">
                 <option value="LOW">LOW</option>
@@ -143,25 +151,25 @@
               </select>
             </div>
 
-            <div class="formRow">
-              <div class="label">Received Date (Read Only)</div>
-              <input class="input" :value="formatDate(doc.receivedDate)" disabled />
-            </div>
           </div>
         </div>
 
         <!-- ACTIONS -->
-        <div class="card">
+        <div class="card workflowCard">
           <div class="cardTitle">Workflow Actions</div>
+          <div class="cardSub">Add a minute, choose the next officer, and run the allowed action.</div>
 
-          <div class="hint">
-            Current User:
-            <b>{{ formatUserLabel(currentUser) }}</b>
-            <span class="dot">•</span>
-            Owner:
-            <b :style="{ color: isOwner ? '#065f46' : '#991b1b' }">
-              {{ isOwner ? "YES" : "NO" }}
-            </b>
+          <div class="ownershipBanner" :class="{ owner: isOwner }">
+            <div>
+              <span class="ownershipLabel">Current User</span>
+              <b>{{ formatUserLabel(currentUser) }}</b>
+            </div>
+            <div>
+              <span class="ownershipLabel">Report At Status</span>
+              <b>
+              {{ isOwner ? "You can act on this document" : "Read-only until the document is routed to you in Report At" }}
+              </b>
+            </div>
           </div>
 
           <!-- ✅ ONE remark box (used for forward + manual save) -->
@@ -178,8 +186,8 @@
             <div class="hintInline">
               <span class="hintLabel">Minute help</span>
               <HoverHint :text="canAddRemark
-                ? 'Your minute will be attached when you run a workflow action (Forward/Return/Approve/Reject/Done/Reopen). You can also save it separately using Save Minute.'
-                : 'You can read minutes, but only the current owner with Add Remark permission can add or save minutes.'" />
+                ? `You can save this minute now, or attach it when you run an available workflow action (${availableWorkflowActionNames}).`
+                : 'Minutes are read-only here. Only the current Report At user with Add Minute permission can add or save minutes.'" />
             </div>
 
             <div class="btnRow" style="margin-top:8px;">
@@ -196,18 +204,61 @@
           <div class="formRow">
             <div class="label">Forward To</div>
 
-            <!-- ✅ fixed dropdown -->
-            <select class="input" v-model="toUserId" :disabled="busy || !canForward">
-              <option :value="null">-- Select user --</option>
-              <option v-for="u in forwardTargets" :key="u.id" :value="Number(u.id)">
-                {{ formatUserLabel(u) }}
-              </option>
-            </select>
+            <div class="forwardSearchWrap">
+              <input
+                class="input forwardSearch"
+                v-model="forwardUserSearch"
+                :disabled="busy || !canChooseWorkflowTarget"
+                placeholder="Search user by name, role, department, or ID..."
+                spellcheck="false"
+                @focus="forwardSearchFocused = true"
+                @blur="forwardSearchFocused = false"
+                @keydown.escape="forwardSearchFocused = false"
+              />
 
-            <div class="hintInline">
-              <span class="hintLabel">Forward rules</span>
-              <HoverHint text="Forward/Return are available only to the current owner with the relevant permission. PMA can send only to DC. Forward/Return are blocked when status is APPROVED, REJECTED, or ISSUED." />
+              <div v-if="showForwardSearchDropdown" class="forwardSearchDropdown">
+                <button
+                  v-for="u in filteredForwardTargets"
+                  :key="u.id"
+                  type="button"
+                  class="forwardSearchOption"
+                  :class="{ active: Number(u.id) === Number(toUserId) }"
+                  @mousedown.prevent="selectForwardUser(u)"
+                >
+                  <span class="forwardUserName">{{ formatUserLabel(u) }}</span>
+                  <span class="forwardUserMeta">{{ u.username || "-" }}<span v-if="u.department"> • {{ u.department }}</span></span>
+                </button>
+                <div v-if="filteredForwardTargets.length === 0" class="forwardSearchEmpty">
+                  No matching users
+                </div>
+              </div>
             </div>
+
+            <div v-if="selectedForwardUser" class="forwardSelected">
+              <span>Selected user</span>
+              <b>{{ formatUserLabel(selectedForwardUser) }}</b>
+            </div>
+            <div v-else class="forwardSelected muted">
+              Select a user from the search results before forwarding or returning.
+            </div>
+
+            <div class="forwardSearchMeta">
+              <span>{{ forwardUserSearch.trim() ? `${filteredForwardTargets.length} of ${forwardTargets.length} users shown` : `${forwardTargets.length} users available` }}</span>
+              <button
+                v-if="forwardUserSearch"
+                type="button"
+                class="linkBtn"
+                :disabled="busy"
+                @click="forwardUserSearch = ''"
+              >
+                Clear search
+              </button>
+            </div>
+
+              <div class="hintInline">
+                <span class="hintLabel">Forward rules</span>
+                <HoverHint :text="`Forward/Return are available only for the current Report At user with the required permission. Return suggests the most recent sender when possible, but you can choose another allowed user. Allowed statuses: ${forwardReturnAllowedStatusesLabel}.`" />
+              </div>
           </div>
 
           <div class="formRow">
@@ -221,7 +272,7 @@
 
             <div class="hintInline">
               <span class="hintLabel">Visibility help</span>
-              <HoverHint :text="`Select the next visibility for this document. Options shown here come from your FORWARD_PUBLIC/FORWARD_PRIVATE permissions. If visibility changes, CHANGE_DOCUMENT_VISIBILITY permission is also required. Available now: ${availableForwardVisibilities.join(', ') || 'None'}.`" />
+              <HoverHint :text="`This sets visibility for the next Forward/Return movement. Options come from your public/private forward permissions; changing visibility also requires Change Document Visibility permission. Undo Send does not change the document's saved visibility. Available now: ${availableForwardVisibilities.join(', ') || 'None'}.`" />
             </div>
           </div>
 
@@ -232,26 +283,38 @@
             <button class="btn" :disabled="busy || !canReturn" @click="doReturn">
               Return
             </button>
+            <button
+              v-if="undoSendInfo.canUndo"
+              class="btn undoSendBtn"
+              :disabled="busy"
+              @click="doUndoSend"
+            >
+              Undo Send
+            </button>
+            <span v-else-if="undoSendInfo.helper" class="undoSendInfo">{{ undoSendInfo.helper }}</span>
 
             <div class="spacer"></div>
 
-            <button class="btn" :disabled="busy || !canApprove" @click="doApprove">Approve</button>
-            <button class="btn" :disabled="busy || !canReject" @click="doReject">Reject</button>
+            <button v-if="approveRejectButtonsEnabled" class="btn" :disabled="busy || !canApprove" @click="doApprove">Approve</button>
+            <button v-if="approveRejectButtonsEnabled" class="btn" :disabled="busy || !canReject" @click="doReject">Reject</button>
             <button class="btn" :disabled="busy || !canIssue" @click="doIssue">Done</button>
             <button class="btn" :disabled="busy || !canReopen" @click="doReopen">Reopen</button>
           </div>
 
           <div class="hintInline">
             <span class="hintLabel">Workflow rules</span>
-            <HoverHint text="All workflow actions require current ownership plus the corresponding permission. Done is available only when status is APPROVED (it marks the document as ISSUED). Reopen is allowed only for APPROVED or REJECTED and cannot be done after ISSUED." />
+            <HoverHint :text="workflowRulesHint" />
           </div>
         </div>
 
         <!-- ✅ REMARKS LIST (ALWAYS VISIBLE) -->
-        <div class="card">
-          <div class="cardTitle">Minutes</div>
+          <div class="card minutesCard">
+            <div class="cardTitle">Minutes</div>
+            <div class="cardSub">Saved notes and action minutes for this document.</div>
 
-          <div v-if="remarks.length === 0" class="empty">No minutes yet.</div>
+          <div v-if="!canViewRemarks" class="warnBox">Minutes are hidden because this document is not assigned to you and your role does not allow viewing minutes while it is assigned to someone else.</div>
+
+          <div v-else-if="remarks.length === 0" class="empty">No minutes yet.</div>
 
           <div v-else class="list">
             <!-- ✅ correct backend fields -->
@@ -260,9 +323,38 @@
                 <span class="who">
                   By <b>{{ formatUserLabelById(r.remarkedByUserId, users) }}</b>
                 </span>
-                <span class="when mono">{{ formatDateTime(r.remarkedAt) }}</span>
+                <span class="minuteTopRight">
+                  <span class="when mono">{{ formatDateTime(r.remarkedAt) }}</span>
+                  <span v-if="canEditMinute(r) || canDeleteMinute(r)" class="minuteActions">
+                    <button
+                      v-if="canEditMinute(r)"
+                      type="button"
+                      class="linkBtn"
+                      :disabled="busy || editingRemarkId === r.id"
+                      @click="startEditRemark(r)"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      v-if="canDeleteMinute(r)"
+                      type="button"
+                      class="linkBtn dangerText"
+                      :disabled="busy"
+                      @click="deleteMinute(r)"
+                    >
+                      Delete
+                    </button>
+                  </span>
+                </span>
               </div>
-              <div class="text">{{ r.remarkText }}</div>
+              <template v-if="editingRemarkId === r.id">
+                <textarea class="textarea minuteEditBox" v-model="editingRemarkText" :disabled="busy"></textarea>
+                <div class="minuteEditActions">
+                  <button class="btn btn-primary btn-sm" :disabled="busy || !getEditableMinuteText(editingRemarkText)" @click="saveEditedRemark(r)">Save</button>
+                  <button class="btn btn-sm" :disabled="busy" @click="cancelEditRemark">Cancel</button>
+                </div>
+              </template>
+              <div v-else class="text">{{ r.remarkText }}</div>
             </div>
           </div>
         </div>
@@ -271,12 +363,13 @@
       <!-- RIGHT -->
       <div class="col">
         <!-- FILES -->
-        <div class="card">
+        <div class="card filesCard">
           <div class="cardTitle">Files</div>
+          <div class="cardSub">Preview, open, upload, or remove document attachments.</div>
 
           <!-- (Keeping your existing file visibility rule) -->
           <div v-if="!canViewHistory" class="lockBox">
-            Only the <b>current owner</b> can view file history. DC can view all.
+              Only the <b>user currently shown in Report At</b> can view file history.
           </div>
 
           <template v-else>
@@ -295,7 +388,7 @@
                   </div>
                   <div class="hintInline">
                     <span class="hintLabel">Main file</span>
-                    <HoverHint text="Main file is version 1 (first uploaded attachment)." />
+                    <HoverHint text="The main file is the first file uploaded for this document." />
                   </div>
                 </div>
                 <div class="btnRow" style="margin-top:0;">
@@ -340,7 +433,7 @@
 
             <div class="hintInline">
               <span class="hintLabel">Upload rules</span>
-              <HoverHint text="Upload is allowed only for the current owner with Upload Attachment permission, and is blocked after ISSUED. First upload becomes main file (v1); later uploads are additional versions/attachments." />
+            <HoverHint text="Upload is allowed only for the current Report At user with Upload Attachment permission, and is blocked after the document is Done. The first uploaded file is the main file; later uploads are added as attachments." />
             </div>
 
             <div v-if="attachmentsSorted.length === 0" class="empty">No files yet.</div>
@@ -380,11 +473,12 @@
         </div>
 
         <!-- MOVEMENTS -->
-        <div class="card">
+        <div class="card timelineCard">
           <div class="cardTitle">Movement Timeline</div>
+          <div class="cardSub">Track every workflow handoff and action history.</div>
 
           <div v-if="!canViewHistory" class="lockBox">
-            Only the <b>current owner</b> can view movement history. DC can view all.
+              Only the <b>user currently shown in Report At</b> can view movement history.
           </div>
 
           <template v-else>
@@ -399,7 +493,7 @@
               >
                 <div class="itemTop">
                   <span class="who">
-                    <b>{{ m.actionType }}</b>
+                    <b>{{ displayMovementActionLabel(m.actionType) }}</b>
                     <span v-if="m.fromUserId"> | from {{ formatUserLabelById(m.fromUserId, users) }}</span>
                     <span v-if="m.toUserId"> → to {{ formatUserLabelById(m.toUserId, users) }}</span>
                   </span>
@@ -413,8 +507,12 @@
                 <div v-if="selectedMovementId === m.id" class="timelineRemarks">
                   <div class="timelineRemarksTitle">Minutes for this movement</div>
 
-                  <div v-if="getRemarksForMovement(m.id).length === 0" class="smallHint">
-                    No remark linked to this movement.
+                  <div v-if="!canViewRemarks" class="smallHint">
+                    Minutes are hidden for your role on this document.
+                  </div>
+
+                  <div v-else-if="getRemarksForMovement(m.id).length === 0" class="smallHint">
+                    No minute linked to this movement.
                   </div>
 
                   <div v-else class="list timelineRemarksList">
@@ -523,6 +621,16 @@ import HoverHint from "../components/HoverHint.vue";
 import { useToast } from "../composables/useToast";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabel, formatUserLabelById } from "../auth/userLabel";
+import {
+  getAttachmentViewerState,
+  isImageAttachmentName,
+  isPdfAttachmentName,
+  resolveAttachmentTypeFromName,
+} from "../utils/attachmentViewerLogic";
+import { getDocumentDetailsCapabilities } from "../utils/documentDetailsLogic";
+import { canDeleteMinute, canEditMinute, getEditableMinuteText } from "../utils/minuteEditLogic";
+import { getWorkflowSenderSuccessMessage } from "../utils/workflowNotificationLogic";
+import { getUndoSendInfo, needsUndoReason } from "../utils/undoSendLogic";
 import { listUsers } from "../api/auth.api";
 import {
   getDocument,
@@ -530,6 +638,8 @@ import {
   listMovements,
   listRemarks,
   addRemark,
+  updateRemark,
+  deleteRemark,
   listAttachments,
   uploadAttachment,
   deleteAttachment,
@@ -539,7 +649,9 @@ import {
   rejectDocument,
   issueDocument,
   reopenDocument,
+  undoSendDocument,
   buildAttachmentUrl,
+  getWorkflowRules,
 } from "../api/documents.api";
 
 const route = useRoute();
@@ -550,15 +662,20 @@ const documentId = Number(route.params.id);
 const currentUser = ref(getCurrentUser());
 function refreshCurrentUser() {
   currentUser.value = getCurrentUser();
+  loadWorkflowRules();
 }
 
 const users = ref([]);
+const forwardReturnAllowedStatuses = ref(["PENDING", "IN_PROGRESS", "RETURNED"]);
+const approveRejectButtonsEnabled = ref(true);
 
 const doc = ref(null);
 const movements = ref([]);
 const remarks = ref([]);
 const attachments = ref([]);
 const selectedMovementId = ref(null);
+const editingRemarkId = ref(null);
+const editingRemarkText = ref("");
 
 const error = ref("");
 const successMessage = ref("");
@@ -569,11 +686,14 @@ const detailsForm = ref({
   refNo: "",
   title: "",
   companyName: "",
+  receivedDate: "",
   priority: "MEDIUM",
 });
 
 const toUserId = ref(null);
 const forwardVisibility = ref("PUBLIC");
+const forwardUserSearch = ref("");
+const forwardSearchFocused = ref(false);
 
 // ✅ ONE remark box
 const remarkDraft = ref("");
@@ -585,46 +705,44 @@ const viewerOpen = ref(false);
 const selectedFile = ref(null);
 const viewerSearch = ref("");
 
-const isOwner = computed(() => !!doc.value && Number(doc.value.currentOwnerUserId) === Number(currentUser.value.id));
-const canViewAllHistory = computed(() => hasPermission(currentUser.value, "VIEW_ALL_HISTORY"));
-const isIssued = computed(() => !!doc.value && doc.value.status === "ISSUED");
-const isEditLocked = computed(() => !!doc.value && (!!doc.value.completedAt || isIssued.value));
-const canEditDetails = computed(() => !!doc.value && isOwner.value && !isEditLocked.value && hasPermission(currentUser.value, "EDIT_DOCUMENT_DETAILS"));
-
-// Keep your existing “history” rule for files/movements
-const canViewHistory = computed(() => !!doc.value && (isOwner.value || canViewAllHistory.value));
-
-// Upload: only current owner
-const canUploadAttachments = computed(() => !!doc.value && isOwner.value && !isIssued.value && hasPermission(currentUser.value, "UPLOAD_ATTACHMENT"));
-
-// Actions
-const canForwardPublic = computed(() => hasPermission(currentUser.value, "FORWARD_PUBLIC"));
-const canForwardPrivate = computed(() => hasPermission(currentUser.value, "FORWARD_PRIVATE"));
-const availableForwardVisibilities = computed(() => {
-  const options = [];
-  if (canForwardPublic.value) options.push("PUBLIC");
-  if (canForwardPrivate.value) options.push("PRIVATE");
-  return options;
+const detailCapabilities = computed(() => getDocumentDetailsCapabilities({
+  doc: doc.value,
+  user: currentUser.value,
+  approveRejectButtonsEnabled: approveRejectButtonsEnabled.value,
+  forwardReturnAllowedStatuses: forwardReturnAllowedStatuses.value,
+}));
+const isOwner = computed(() => detailCapabilities.value.isOwner);
+const canViewAllHistory = computed(() => detailCapabilities.value.canViewAllHistory);
+const canViewRemarks = computed(() => detailCapabilities.value.canViewRemarks);
+const isIssued = computed(() => detailCapabilities.value.isIssued);
+const isEditLocked = computed(() => detailCapabilities.value.isEditLocked);
+const canEditDetails = computed(() => detailCapabilities.value.canEditDetails);
+const canViewHistory = computed(() => detailCapabilities.value.canViewHistory);
+const canUploadAttachments = computed(() => detailCapabilities.value.canUploadAttachments);
+const availableForwardVisibilities = computed(() => detailCapabilities.value.availableForwardVisibilities);
+const canForwardReturnByStatus = computed(() => detailCapabilities.value.canForwardReturnByStatus);
+const forwardReturnAllowedStatusesLabel = computed(() => forwardReturnAllowedStatuses.value.map(displayStatusLabel).join(", ") || "none");
+const canForward = computed(() => detailCapabilities.value.canForward);
+const canReturn  = computed(() => detailCapabilities.value.canReturn);
+const undoSendInfo = computed(() => getUndoSendInfo(doc.value || {}));
+const canChooseWorkflowTarget = computed(() => detailCapabilities.value.canChooseWorkflowTarget);
+const canApprove = computed(() => detailCapabilities.value.canApprove);
+const canReject  = computed(() => detailCapabilities.value.canReject);
+const canIssue   = computed(() => detailCapabilities.value.canIssue);
+const canReopen  = computed(() => detailCapabilities.value.canReopen);
+const availableWorkflowActionNames = computed(() => {
+  const names = ["Forward", "Return"];
+  if (approveRejectButtonsEnabled.value) {
+    names.push("Approve", "Reject");
+  }
+  names.push("Done", "Reopen");
+  return names.join("/");
 });
-const canForward = computed(() => !!doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "FORWARD_DOCUMENT") && availableForwardVisibilities.value.length > 0);
-const canReturn  = computed(() => !!doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "RETURN_DOCUMENT"));
+const workflowRulesHint = computed(() => approveRejectButtonsEnabled.value
+    ? "All workflow actions require the document to be assigned to you in Report At, plus the corresponding permission. Done is available only after approval and then closes the document. Reopen is allowed only for approved or rejected documents, not after the document is Done."
+    : "All workflow actions require the document to be assigned to you in Report At, plus the corresponding permission. Approve and Reject are hidden by admin workflow settings. Done can complete documents without a prior approval step, and Reopen can reopen Done documents.");
 
-const canApprove = computed(() => doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "APPROVE_DOCUMENT") && doc.value.status !== "APPROVED");
-const canReject  = computed(() => doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "REJECT_DOCUMENT") && doc.value.status !== "REJECTED");
-const canIssue   = computed(() => doc.value && isOwner.value && hasPermission(currentUser.value, "ISSUE_DOCUMENT") && doc.value.status === "APPROVED" && !doc.value.issuedAt);
-const canReopen  = computed(() => doc.value && !isIssued.value && isOwner.value && hasPermission(currentUser.value, "REOPEN_DOCUMENT") && ["APPROVED","REJECTED"].includes(doc.value.status));
-
-const daysOpenDisplay = computed(() => {
-  const received = doc.value?.receivedDate;
-  if (!received) return "-";
-
-  const start = new Date(received);
-  if (Number.isNaN(start.getTime())) return "-";
-
-  const dayMs = 24 * 60 * 60 * 1000;
-  const diff = Math.floor((Date.now() - start.getTime()) / dayMs);
-  return String(Math.max(0, diff));
-});
+const daysOpenDisplay = computed(() => detailCapabilities.value.daysOpenDisplay);
 
 const completedAtDisplay = computed(() => {
   if (!doc.value?.completedAt) return "-";
@@ -651,27 +769,96 @@ const issuedAtDisplay = computed(() => {
 });
 
 // Manual add remark: only current owner
-const canAddRemark = computed(() => !!doc.value && isOwner.value && !isIssued.value && hasPermission(currentUser.value, "ADD_REMARK"));
-
-// textarea allowed if owner can act/save
-const canTypeRemark = computed(() => canAddRemark.value || canForward.value || canReturn.value || canApprove.value || canReject.value || canIssue.value || canReopen.value);
+const canAddRemark = computed(() => detailCapabilities.value.canAddRemark);
+const canTypeRemark = computed(() => detailCapabilities.value.canTypeRemark);
 
 const forwardTargets = computed(() => {
   const all = users.value.filter((u) => Number(u.id) !== Number(currentUser.value.id));
-  if (currentUser.value.role === "PMA") return all.filter((u) => u.role === "DC");
   return all;
 });
 
-// ✅ Keep toUserId valid
+const preferredReturnTargetId = computed(() => {
+  if (!canReturn.value || !currentUser.value?.id || forwardTargets.value.length === 0) return null;
+
+  const validIds = new Set(forwardTargets.value.map((u) => Number(u.id)));
+  for (let index = movements.value.length - 1; index >= 0; index -= 1) {
+    const movement = movements.value[index];
+    const actionType = String(movement?.actionType || "").toUpperCase();
+    const toUserId = Number(movement?.toUserId);
+    const fromUserId = Number(movement?.fromUserId);
+    if (!["FORWARD", "RETURN"].includes(actionType)) continue;
+    if (toUserId !== Number(currentUser.value.id)) continue;
+    if (!Number.isFinite(fromUserId) || !validIds.has(fromUserId)) continue;
+    return fromUserId;
+  }
+
+  return null;
+});
+
+const selectedForwardUser = computed(() => {
+  return forwardTargets.value.find((u) => Number(u.id) === Number(toUserId.value)) || null;
+});
+
+const filteredForwardTargets = computed(() => {
+  const q = forwardUserSearch.value.trim().toLowerCase();
+  if (!q) return forwardTargets.value;
+
+  return forwardTargets.value.filter((u) => {
+    const searchableText = [
+      formatUserLabel(u),
+      u.username,
+      u.fullName,
+      u.name,
+      u.role,
+      u.department,
+      u.id,
+    ]
+      .filter((part) => part !== null && part !== undefined && String(part).trim() !== "")
+      .join(" ")
+      .toLowerCase();
+
+    return searchableText.includes(q);
+  });
+});
+
+const showForwardSearchDropdown = computed(() => {
+  return canChooseWorkflowTarget.value && forwardSearchFocused.value && (forwardUserSearch.value.trim() || filteredForwardTargets.value.length > 0);
+});
+
+const autoSelectedTargetId = ref(null);
+
+function selectForwardUser(user) {
+  if (!user) return;
+  toUserId.value = Number(user.id);
+  forwardUserSearch.value = formatUserLabel(user);
+  forwardSearchFocused.value = false;
+  autoSelectedTargetId.value = null;
+}
+
+// Keep the workflow target valid and default Return to the most recent sender.
 watch(
-  forwardTargets,
-  (list) => {
+  [forwardTargets, preferredReturnTargetId, canChooseWorkflowTarget],
+  ([list, preferredReturnId, canChooseTarget]) => {
+    if (!canChooseTarget) {
+      toUserId.value = null;
+      autoSelectedTargetId.value = null;
+      return;
+    }
+
     const valid = new Set(list.map((x) => Number(x.id)));
     const cur = toUserId.value;
-    if (cur == null || !valid.has(Number(cur))) {
-      toUserId.value = list[0] ? Number(list[0].id) : null;
+    const desiredTargetId = preferredReturnId != null
+      ? Number(preferredReturnId)
+      : (list[0] ? Number(list[0].id) : null);
+    const currentTargetId = cur == null ? null : Number(cur);
+    const currentIsValid = currentTargetId != null && valid.has(currentTargetId);
+    const shouldAutoSelect = !currentIsValid || (autoSelectedTargetId.value != null && Number(autoSelectedTargetId.value) === currentTargetId);
+
+    if (shouldAutoSelect) {
+      toUserId.value = desiredTargetId;
+      autoSelectedTargetId.value = desiredTargetId;
     } else {
-      toUserId.value = Number(cur);
+      toUserId.value = currentTargetId;
     }
   },
   { immediate: true }
@@ -688,12 +875,9 @@ watch(
   { immediate: true }
 );
 
-const attachmentsSorted = computed(() => [...attachments.value].sort((a, b) => Number(a.versionNo) - Number(b.versionNo)));
-
-const mainFile = computed(() => {
-  if (!attachmentsSorted.value.length) return null;
-  return attachmentsSorted.value.find(a => Number(a.versionNo) === 1) || attachmentsSorted.value[0];
-});
+const attachmentViewerState = computed(() => getAttachmentViewerState(attachments.value));
+const attachmentsSorted = computed(() => attachmentViewerState.value.sortedAttachments);
+const mainFile = computed(() => attachmentViewerState.value.primaryAttachment);
 
 const mainAttachmentType = computed(() => {
   if (mainFile.value?.fileName) {
@@ -760,22 +944,10 @@ const movementRemarksById = computed(() => {
 });
 
 function isPdf(name) {
-  return (name || "").toLowerCase().endsWith(".pdf");
+  return isPdfAttachmentName(name);
 }
 function isImage(name) {
-  const n = (name || "").toLowerCase();
-  return n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".gif") || n.endsWith(".webp");
-}
-
-function resolveAttachmentTypeFromName(fileName) {
-  const lower = String(fileName || "").toLowerCase();
-  if (lower.endsWith(".pdf")) return "PDF";
-  if (lower.endsWith(".doc") || lower.endsWith(".docx")) return "DOC";
-  if (lower.endsWith(".xls") || lower.endsWith(".xlsx") || lower.endsWith(".csv")) return "XLS";
-  if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".gif") || lower.endsWith(".bmp") || lower.endsWith(".webp")) return "IMG";
-  if (lower.endsWith(".txt")) return "TXT";
-  if (lower.endsWith(".zip") || lower.endsWith(".rar") || lower.endsWith(".7z")) return "ZIP";
-  return "FILE";
+  return isImageAttachmentName(name);
 }
 
 function docTypeClass(type) {
@@ -827,6 +999,10 @@ function formatDateTime(d) {
 
 function displayStatusLabel(statusValue) {
   return String(statusValue || "").toUpperCase() === "ISSUED" ? "DONE" : statusValue;
+}
+
+function displayMovementActionLabel(actionType) {
+  return String(actionType || "").toUpperCase() === "ISSUE" ? "DONE" : actionType;
 }
 
 function isDateOnlyValue(value) {
@@ -881,14 +1057,65 @@ function remarkOrNull() {
   return t ? t : null;
 }
 
+function ensureWorkflowMinuteAllowed(actionLabel) {
+  if (!remarkDraft.value.trim()) return true;
+  if (canAddRemark.value) return true;
+
+  error.value = `You entered a minute, but your role does not have permission to save minutes during ${actionLabel}. Clear the minute and try again, or ask an admin for Add Minute permission.`;
+  toast.warning(error.value, 5200);
+  return false;
+}
+
+function toWorkflowGuidance(message, actionLabel) {
+  const text = String(message || "").trim();
+  if (!text) return `${actionLabel} failed. Please try again.`;
+
+  if (/not allowed to add minutes/i.test(text)) {
+    return `This ${actionLabel.toLowerCase()} was blocked because the minute box contains text and your role cannot save minutes. Clear the minute and try again, or ask an admin for Add Minute permission.`;
+  }
+  if (/not allowed to complete documents/i.test(text)) {
+    return "Done is blocked because your role does not have the Done permission. Ask an admin to enable Done Document permission for your role.";
+  }
+  if (/approve action is disabled by admin workflow settings/i.test(text)) {
+    return "Approve is hidden by admin workflow settings for this workflow. Use the visible actions on this page instead.";
+  }
+  if (/reject action is disabled by admin workflow settings/i.test(text)) {
+    return "Reject is hidden by admin workflow settings for this workflow. Use the visible actions on this page instead.";
+  }
+  if (/not allowed to approve documents/i.test(text)) {
+    return "Approve is blocked because your role does not have the Approve permission. Ask an admin to enable APPROVE_DOCUMENT for your role.";
+  }
+  if (/not allowed to reject documents/i.test(text)) {
+    return "Reject is blocked because your role does not have the Reject permission. Ask an admin to enable REJECT_DOCUMENT for your role.";
+  }
+  if (/not allowed to forward documents/i.test(text)) {
+    return "Forward is blocked because your role does not have the Forward permission. Ask an admin to enable FORWARD_DOCUMENT for your role.";
+  }
+  if (/not allowed to return documents/i.test(text)) {
+    return "Return is blocked because your role does not have the Return permission. Ask an admin to enable RETURN_DOCUMENT for your role.";
+  }
+  if (/only the current owner/i.test(text)) {
+    return `${actionLabel} is available only to the user currently shown in Report At for this document. Ask that user to act, or have the document routed to you first.`;
+  }
+  if (/must be approved first|document must be approved first/i.test(text)) {
+    return "Done is available only after the document has been approved. Approve it first, then try Done again.";
+  }
+  if (/already issued/i.test(text)) {
+    return "This document is already marked Done, so there is nothing more to complete.";
+  }
+  if (/rejected document/i.test(text) && /issue/i.test(text)) {
+    return "Done cannot be used on a rejected document. Reopen or reprocess the document first if it needs more work.";
+  }
+  return text;
+}
+
 async function reloadAll() {
   error.value = "";
   busy.value = true;
   try {
     doc.value = await getDocument(documentId);
 
-    // ✅ ALWAYS load remarks (so after forward you still see your remark)
-    remarks.value = await listRemarks(documentId);
+    remarks.value = canViewRemarks.value ? await listRemarks(documentId) : [];
 
     // Keep your history lock only for movements/files
     if (canViewHistory.value) {
@@ -916,6 +1143,19 @@ async function reloadAll() {
   }
 }
 
+async function loadWorkflowRules() {
+  try {
+    const rules = await getWorkflowRules();
+    if (Array.isArray(rules?.forwardReturnAllowedStatuses) && rules.forwardReturnAllowedStatuses.length > 0) {
+      forwardReturnAllowedStatuses.value = rules.forwardReturnAllowedStatuses.map((status) => String(status).toUpperCase());
+    }
+    approveRejectButtonsEnabled.value = rules?.approveRejectButtonsEnabled !== false;
+  } catch {
+    forwardReturnAllowedStatuses.value = ["PENDING", "IN_PROGRESS", "RETURNED"];
+    approveRejectButtonsEnabled.value = true;
+  }
+}
+
 onMounted(async () => {
   window.addEventListener("rms_auth_changed", refreshCurrentUser);
   window.addEventListener("rms_permissions_updated", refreshCurrentUser);
@@ -924,6 +1164,7 @@ onMounted(async () => {
   } catch {
     users.value = [];
   }
+  await loadWorkflowRules();
   await reloadAll();
 });
 
@@ -944,6 +1185,7 @@ function startEditDetails() {
     refNo: doc.value.refNo || "",
     title: doc.value.title || "",
     companyName: doc.value.companyName || "",
+    receivedDate: String(doc.value.receivedDate || ""),
     priority: doc.value.priority || "MEDIUM",
   };
   isEditingDetails.value = true;
@@ -968,6 +1210,7 @@ async function saveDetails() {
     refNo: String(detailsForm.value.refNo || "").trim(),
     title: String(detailsForm.value.title || "").trim(),
     companyName: String(detailsForm.value.companyName || "").trim(),
+    receivedDate: String(detailsForm.value.receivedDate || "").trim(),
     priority: detailsForm.value.priority,
   };
 
@@ -983,6 +1226,11 @@ async function saveDetails() {
   }
   if (!payload.companyName) {
     error.value = "Company is required.";
+    toast.warning(error.value);
+    return;
+  }
+  if (!payload.receivedDate) {
+    error.value = "Received date is required.";
     toast.warning(error.value);
     return;
   }
@@ -1007,14 +1255,14 @@ async function saveDetails() {
   }
 }
 
-// ✅ manual save remark only
+  // Manual save minute only
 async function saveRemarkOnly() {
-  error.value = "";
-  const text = remarkDraft.value.trim();
-  if (!text) {
-    toast.warning("Type a remark before saving.");
-    return;
-  }
+    error.value = "";
+    const text = remarkDraft.value.trim();
+    if (!text) {
+      toast.warning("Type a minute before saving.");
+      return;
+    }
 
   busy.value = true;
   try {
@@ -1023,10 +1271,62 @@ async function saveRemarkOnly() {
     });
     remarkDraft.value = "";
     await reloadAll();
-    successMessage.value = "Remark saved successfully.";
+    successMessage.value = "Minute saved successfully.";
     toast.success(successMessage.value);
   } catch (e) {
-    error.value = e?.message || "Save remark failed.";
+    error.value = e?.message || "Save minute failed.";
+    toast.error(error.value);
+  } finally {
+    busy.value = false;
+  }
+}
+
+function startEditRemark(remark) {
+  editingRemarkId.value = remark?.id || null;
+  editingRemarkText.value = remark?.remarkText || "";
+}
+
+function cancelEditRemark() {
+  editingRemarkId.value = null;
+  editingRemarkText.value = "";
+}
+
+async function saveEditedRemark(remark) {
+  error.value = "";
+  const text = getEditableMinuteText(editingRemarkText.value);
+  if (!text) {
+    toast.warning("Minute text cannot be empty.");
+    return;
+  }
+
+  busy.value = true;
+  try {
+    await updateRemark(documentId, remark.id, { remarkText: text });
+    cancelEditRemark();
+    await reloadAll();
+    successMessage.value = "Minute updated successfully.";
+    toast.success(successMessage.value);
+  } catch (e) {
+    error.value = e?.message || "Update minute failed.";
+    toast.error(error.value);
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function deleteMinute(remark) {
+  error.value = "";
+  if (!window.confirm("Delete this minute?")) return;
+
+  busy.value = true;
+  try {
+    await deleteRemark(documentId, remark.id);
+    if (editingRemarkId.value === remark.id) cancelEditRemark();
+    await reloadAll();
+    successMessage.value = "Minute deleted successfully.";
+    toast.success(successMessage.value);
+  } catch (e) {
+    error.value = e?.message || "Delete minute failed.";
     toast.error(error.value);
   } finally {
     busy.value = false;
@@ -1035,6 +1335,7 @@ async function saveRemarkOnly() {
 
 async function doForward() {
   error.value = "";
+  if (!ensureWorkflowMinuteAllowed("Forward")) return;
   if (!toUserId.value) {
     error.value = "Please select a user to forward.";
     toast.warning(error.value);
@@ -1062,11 +1363,11 @@ async function doForward() {
 
     // Forward succeeded. The document may no longer be viewable by this user after ownership change.
     remarkDraft.value = "";
-    successMessage.value = "Document forwarded successfully.";
+    successMessage.value = getWorkflowSenderSuccessMessage("FORWARD");
     toast.success(successMessage.value);
     router.push("/inbox");
   } catch (e) {
-    error.value = e?.message || "Forward failed.";
+    error.value = toWorkflowGuidance(e?.message || "Forward failed.", "Forward");
     toast.error(error.value);
   } finally {
     busy.value = false;
@@ -1075,6 +1376,12 @@ async function doForward() {
 
 async function doReturn() {
   error.value = "";
+  if (!ensureWorkflowMinuteAllowed("Return")) return;
+  if (!toUserId.value) {
+    error.value = "Please select a user to return.";
+    toast.warning(error.value);
+    return;
+  }
   busy.value = true;
   try {
     await returnDocument(documentId, {
@@ -1083,10 +1390,39 @@ async function doReturn() {
     });
     remarkDraft.value = "";
     await reloadAll();
-    successMessage.value = "Document returned successfully.";
+    successMessage.value = getWorkflowSenderSuccessMessage("RETURN");
     toast.success(successMessage.value);
   } catch (e) {
-    error.value = e?.message || "Return failed.";
+    error.value = toWorkflowGuidance(e?.message || "Return failed.", "Return");
+    toast.error(error.value);
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function doUndoSend() {
+  error.value = "";
+  let reason = "";
+  if (needsUndoReason(doc.value || {})) {
+    const entered = window.prompt("Reason for undo send");
+    if (entered == null) return;
+    reason = entered.trim();
+    if (!reason) {
+      error.value = "Undo Send requires a reason.";
+      toast.error(error.value);
+      return;
+    }
+  } else if (!window.confirm("Undo this sent document?")) {
+    return;
+  }
+
+  busy.value = true;
+  try {
+    await undoSendDocument(documentId, { reason });
+    toast.success("Document send undone successfully.");
+    await reloadAll();
+  } catch (e) {
+    error.value = e?.message || "Failed to undo sent document.";
     toast.error(error.value);
   } finally {
     busy.value = false;
@@ -1095,6 +1431,7 @@ async function doReturn() {
 
 async function doApprove() {
   error.value = "";
+  if (!ensureWorkflowMinuteAllowed("Approve")) return;
   busy.value = true;
   try {
     await approveDocument(documentId, { remarkText: remarkOrNull() });
@@ -1103,7 +1440,7 @@ async function doApprove() {
     successMessage.value = "Document approved successfully.";
     toast.success(successMessage.value);
   } catch (e) {
-    error.value = e?.message || "Approve failed.";
+    error.value = toWorkflowGuidance(e?.message || "Approve failed.", "Approve");
     toast.error(error.value);
   } finally {
     busy.value = false;
@@ -1112,6 +1449,7 @@ async function doApprove() {
 
 async function doReject() {
   error.value = "";
+  if (!ensureWorkflowMinuteAllowed("Reject")) return;
   busy.value = true;
   try {
     await rejectDocument(documentId, { remarkText: remarkOrNull() });
@@ -1120,7 +1458,7 @@ async function doReject() {
     successMessage.value = "Document rejected successfully.";
     toast.success(successMessage.value);
   } catch (e) {
-    error.value = e?.message || "Reject failed.";
+    error.value = toWorkflowGuidance(e?.message || "Reject failed.", "Reject");
     toast.error(error.value);
   } finally {
     busy.value = false;
@@ -1129,6 +1467,7 @@ async function doReject() {
 
 async function doIssue() {
   error.value = "";
+  if (!ensureWorkflowMinuteAllowed("Done")) return;
   busy.value = true;
   try {
     await issueDocument(documentId, { remarkText: remarkOrNull() });
@@ -1137,7 +1476,7 @@ async function doIssue() {
     successMessage.value = "Document completed successfully.";
     toast.success(successMessage.value);
   } catch (e) {
-    error.value = e?.message || "Issue failed.";
+    error.value = toWorkflowGuidance(e?.message || "Done failed.", "Done");
     toast.error(error.value);
   } finally {
     busy.value = false;
@@ -1146,9 +1485,10 @@ async function doIssue() {
 
 async function doReopen() {
   error.value = "";
+  if (!ensureWorkflowMinuteAllowed("Reopen")) return;
   const txt = remarkDraft.value.trim();
   if (!txt) {
-    error.value = "Reopen requires a reason. Type it in the Remark box first.";
+    error.value = "Reopen requires a reason. Type it in the Minute box first.";
     toast.warning(error.value);
     return;
   }
@@ -1161,7 +1501,7 @@ async function doReopen() {
     successMessage.value = "Document reopened successfully.";
     toast.success(successMessage.value);
   } catch (e) {
-    error.value = e?.message || "Reopen failed.";
+    error.value = toWorkflowGuidance(e?.message || "Reopen failed.", "Reopen");
     toast.error(error.value);
   } finally {
     busy.value = false;
@@ -1246,6 +1586,98 @@ async function removeAttachment(a) {
 .formRow { margin-top:10px; }
 .label { font-size:12px; font-weight:800; margin-bottom:6px; color:#374151; }
 .input { height:38px; width:100%; border:1px solid #e5e7eb; border-radius:8px; padding:0 10px; outline:none; }
+.forwardSearchWrap {
+  position:relative;
+  margin-bottom:8px;
+}
+.forwardSearch { background:#f9fafb; }
+.forwardSearchDropdown {
+  position:absolute;
+  z-index:25;
+  top:calc(100% + 4px);
+  left:0;
+  right:0;
+  max-height:230px;
+  overflow:auto;
+  border:1px solid #dbe3ef;
+  border-radius:10px;
+  background:#fff;
+  box-shadow:0 14px 30px rgba(15, 23, 42, 0.14);
+  padding:6px;
+}
+.forwardSearchOption {
+  width:100%;
+  border:0;
+  border-radius:8px;
+  background:transparent;
+  cursor:pointer;
+  display:grid;
+  gap:3px;
+  padding:9px 10px;
+  text-align:left;
+}
+.forwardSearchOption:hover,
+.forwardSearchOption.active {
+  background:#eff6ff;
+}
+.forwardUserName {
+  color:#111827;
+  font-size:13px;
+  font-weight:800;
+}
+.forwardUserMeta,
+.forwardSearchEmpty {
+  color:#6b7280;
+  font-size:12px;
+}
+.forwardSearchEmpty {
+  padding:10px;
+}
+.forwardSelected {
+  display:grid;
+  gap:3px;
+  margin-top:8px;
+  padding:9px 10px;
+  border:1px solid #dbeafe;
+  border-radius:8px;
+  background:#eff6ff;
+  color:#1e3a8a;
+  font-size:12px;
+}
+.forwardSelected span {
+  color:#64748b;
+  font-weight:700;
+}
+.forwardSelected b {
+  color:#111827;
+  font-size:13px;
+}
+.forwardSelected.muted {
+  display:block;
+  color:#6b7280;
+  background:#f9fafb;
+  border-color:#e5e7eb;
+}
+.forwardSearchMeta {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-top:6px;
+  color:#6b7280;
+  font-size:12px;
+}
+.linkBtn {
+  border:0;
+  background:transparent;
+  color:#2563eb;
+  cursor:pointer;
+  font-size:12px;
+  font-weight:700;
+  padding:0;
+}
+.linkBtn:hover:not(:disabled) { text-decoration:underline; }
+.linkBtn:disabled { opacity:0.6; cursor:not-allowed; }
 .textarea { width:100%; min-height:80px; border:1px solid #e5e7eb; border-radius:8px; padding:10px; outline:none; resize:vertical; }
 .smallHint { margin-top:6px; font-size:12px; color:#6b7280; }
 
@@ -1280,12 +1712,26 @@ async function removeAttachment(a) {
 
 .empty { font-size:13px; color:#6b7280; padding:8px 0; }
 
-.list { display:flex; flex-direction:column; gap:10px; margin-top:10px; }
-.item { border:1px solid #e5e7eb; border-radius:10px; padding:10px; background:#fafafa; }
-.itemTop { display:flex; justify-content:space-between; gap:10px; }
+.list { display:flex; flex-direction:column; gap:10px; margin-top:10px; min-width:0; }
+.item { border:1px solid #e5e7eb; border-radius:10px; padding:10px; background:#fafafa; min-width:0; max-width:100%; }
+.itemTop { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
 .who { font-size:13px; color:#111827; }
 .when { color:#6b7280; font-size:12px; }
-.text { margin-top:8px; font-size:13px; color:#111827; white-space:pre-wrap; }
+.minuteTopRight { display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+.minuteActions { display:flex; gap:8px; align-items:center; }
+.linkBtn { border:0; background:transparent; color:#2563eb; font-weight:800; cursor:pointer; padding:0; font-size:12px; }
+.linkBtn:disabled { color:#9ca3af; cursor:not-allowed; }
+.dangerText { color:#b91c1c; }
+.minuteEditBox { margin-top:8px; min-height:72px; }
+.minuteEditActions { display:flex; gap:8px; margin-top:8px; }
+.text {
+  margin-top:8px;
+  font-size:13px;
+  color:#111827;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
 
 .movementItem { cursor:pointer; transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease; }
 .movementItem:hover { border-color:#cbd5e1; background:#f8fafc; }
@@ -1402,12 +1848,26 @@ async function removeAttachment(a) {
 
 .empty { font-size:13px; color:#6b7280; padding:8px 0; }
 
-.list { display:flex; flex-direction:column; gap:10px; margin-top:10px; }
-.item { border:1px solid #e5e7eb; border-radius:10px; padding:10px; background:#fafafa; }
-.itemTop { display:flex; justify-content:space-between; gap:10px; }
+.list { display:flex; flex-direction:column; gap:10px; margin-top:10px; min-width:0; }
+.item { border:1px solid #e5e7eb; border-radius:10px; padding:10px; background:#fafafa; min-width:0; max-width:100%; }
+.itemTop { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
 .who { font-size:13px; color:#111827; }
 .when { color:#6b7280; font-size:12px; }
-.text { margin-top:8px; font-size:13px; color:#111827; white-space:pre-wrap; }
+.minuteTopRight { display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+.minuteActions { display:flex; gap:8px; align-items:center; }
+.linkBtn { border:0; background:transparent; color:#2563eb; font-weight:800; cursor:pointer; padding:0; font-size:12px; }
+.linkBtn:disabled { color:#9ca3af; cursor:not-allowed; }
+.dangerText { color:#b91c1c; }
+.minuteEditBox { margin-top:8px; min-height:72px; }
+.minuteEditActions { display:flex; gap:8px; margin-top:8px; }
+.text {
+  margin-top:8px;
+  font-size:13px;
+  color:#111827;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
 
 .attachRow { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px; }
 .hiddenFileInput { display:none; }
@@ -1456,6 +1916,302 @@ async function removeAttachment(a) {
 .docType-TXT { background:#eef2ff; border-color:#c7d2fe; color:#3730a3; }
 .docType-ZIP { background:#fffbeb; border-color:#fde68a; color:#92400e; }
 .docType-FILE { background:#f3f4f6; border-color:#e5e7eb; color:#4b5563; }
+
+/* Polished document workspace */
+.topbar {
+  background:
+    radial-gradient(90% 120% at 100% 0%, rgba(37, 99, 235, 0.12), transparent 58%),
+    linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border:1px solid #e5e7eb;
+  border-radius:14px;
+  padding:16px;
+  box-shadow:0 8px 24px rgba(17, 24, 39, 0.06);
+}
+
+.title {
+  color:#0f172a;
+  letter-spacing:-0.02em;
+}
+
+.meta .pill {
+  background:#f8fafc;
+  color:#1f2937;
+  border-color:#dbe3ef;
+  font-weight:800;
+}
+
+.meta .pill:first-child {
+  background:#eff6ff;
+  color:#1d4ed8;
+  border-color:#bfdbfe;
+}
+
+.subMeta {
+  flex-wrap:wrap;
+}
+
+.grid {
+  align-items:start;
+}
+
+.card {
+  border-radius:14px;
+  border-color:#e2e8f0;
+  box-shadow:0 8px 22px rgba(17, 24, 39, 0.045);
+}
+
+.cardTitle {
+  margin-bottom:2px;
+  color:#0f172a;
+  font-size:16px;
+  letter-spacing:-0.01em;
+}
+
+.cardSub {
+  color:#6b7280;
+  font-size:12px;
+  line-height:1.45;
+  margin-bottom:12px;
+}
+
+.detailsCard .kv {
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap:0;
+  overflow:hidden;
+  border:1px solid #eef2f7;
+  border-radius:12px;
+}
+
+.detailsCard .k,
+.detailsCard .v {
+  padding:10px 12px;
+  border-bottom:1px solid #eef2f7;
+}
+
+.detailsCard .k {
+  background:#f8fafc;
+  color:#64748b;
+}
+
+.detailsCard .v {
+  min-width:0;
+  background:#fff;
+  overflow-wrap:anywhere;
+}
+
+.detailsCard .k:nth-last-child(2),
+.detailsCard .v:last-child {
+  border-bottom:0;
+}
+
+.workflowCard {
+  border-color:#bfdbfe;
+  background:
+    linear-gradient(180deg, #ffffff 0%, #f8fbff 100%),
+    #fff;
+}
+
+.ownershipBanner {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin:12px 0 14px;
+}
+
+.ownershipBanner > div {
+  display:grid;
+  gap:4px;
+  padding:11px 12px;
+  border:1px solid #fecaca;
+  border-radius:12px;
+  background:#fef2f2;
+}
+
+.ownershipBanner.owner > div {
+  border-color:#bfdbfe;
+  background:#eff6ff;
+}
+
+.ownershipLabel {
+  color:#64748b;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:0.07em;
+  text-transform:uppercase;
+}
+
+.ownershipBanner b {
+  color:#111827;
+  font-size:13px;
+}
+
+.formRow {
+  margin-top:14px;
+}
+
+.label {
+  letter-spacing:0.01em;
+}
+
+.input,
+.textarea,
+.search {
+  transition:border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+.input:focus,
+.textarea:focus,
+.search:focus {
+  border-color:#93c5fd;
+  box-shadow:0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.textarea {
+  min-height:96px;
+  line-height:1.5;
+}
+
+.forwardSelected {
+  border-color:#bfdbfe;
+}
+
+.btn {
+  font-weight:800;
+  transition:background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+}
+
+.undoSendBtn {
+  border-color:#f59e0b;
+  color:#92400e;
+  background:#fffbeb;
+}
+
+.undoSendInfo {
+  align-self:center;
+  color:#b45309;
+  font-size:12px;
+  font-weight:900;
+}
+
+.btn:hover:not(:disabled) {
+  transform:translateY(-1px);
+  box-shadow:0 8px 18px rgba(17, 24, 39, 0.08);
+}
+
+.btnRow .spacer + .btn {
+  border-color:#bfdbfe;
+  color:#1d4ed8;
+}
+
+.btnRow .spacer + .btn + .btn {
+  border-color:#fecaca;
+  color:#991b1b;
+}
+
+.btnRow .spacer + .btn + .btn + .btn,
+.btnRow .spacer + .btn + .btn + .btn + .btn {
+  color:#374151;
+}
+
+.filesCard .fileRow {
+  padding:12px;
+  border:1px solid #eef2f7;
+  border-radius:12px;
+  background:#f8fafc;
+}
+
+.miniPreview {
+  overflow:hidden;
+  border-radius:12px;
+}
+
+.attachRow {
+  padding:12px;
+  border:1px dashed #cbd5e1;
+  border-radius:12px;
+  background:#f9fafb;
+}
+
+.item {
+  background:#fff;
+  border-color:#e2e8f0;
+  box-shadow:0 4px 12px rgba(17, 24, 39, 0.035);
+}
+
+.minutesCard .item {
+  border-left:4px solid #2563eb;
+}
+
+.empty {
+  border:1px dashed #d1d5db;
+  border-radius:10px;
+  background:#f9fafb;
+  text-align:center;
+}
+
+.lockBox,
+.errorBox,
+.successBox {
+  box-shadow:0 6px 16px rgba(17, 24, 39, 0.04);
+}
+
+@media (max-width: 1100px) {
+  .grid {
+    grid-template-columns:1fr;
+  }
+
+  .rightBtns {
+    justify-content:flex-start;
+  }
+}
+
+@media (max-width: 720px) {
+  .topbar,
+  .card {
+    border-radius:12px;
+  }
+
+  .topbar,
+  .cardHead,
+  .fileRow,
+  .viewerHead {
+    flex-direction:column;
+    align-items:stretch;
+  }
+
+  .detailsCard .kv {
+    grid-template-columns:1fr;
+  }
+
+  .detailsCard .k {
+    border-bottom:0;
+    padding-bottom:3px;
+  }
+
+  .detailsCard .v {
+    padding-top:3px;
+  }
+
+  .ownershipBanner {
+    grid-template-columns:1fr;
+  }
+
+  .btnRow,
+  .rightBtns,
+  .viewerBtns,
+  .attachRow {
+    align-items:stretch;
+    flex-direction:column;
+  }
+
+  .btn {
+    width:100%;
+  }
+
+  .itemTop {
+    flex-direction:column;
+  }
+}
 
 /* Busy overlay */
 .busyOverlay {

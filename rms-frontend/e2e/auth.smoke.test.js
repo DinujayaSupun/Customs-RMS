@@ -5,8 +5,8 @@ test("login page renders and rejects invalid credentials", async ({ page }) => {
   await page.goto("/login");
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 
-  await page.getByPlaceholder("dc").fill("invalid-user");
-  await page.getByPlaceholder("Pass@123").fill("invalid-pass");
+  await page.getByPlaceholder("Enter username").fill("invalid-user");
+  await page.getByPlaceholder("Enter password").fill("invalid-pass");
   await page.getByRole("button", { name: "Sign In" }).click();
 
   await expect(page.getByText("Invalid username or password.")).toBeVisible();

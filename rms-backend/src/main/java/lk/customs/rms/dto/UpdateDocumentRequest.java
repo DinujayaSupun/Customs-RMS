@@ -6,6 +6,8 @@ import lk.customs.rms.enums.Priority;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.LocalDate;
+
 @Getter
 @Setter
 public class UpdateDocumentRequest {
@@ -18,6 +20,9 @@ public class UpdateDocumentRequest {
 
     @NotBlank
     private String companyName;
+
+    @NotNull
+    private LocalDate receivedDate;
 
     @NotNull
     private Priority priority;

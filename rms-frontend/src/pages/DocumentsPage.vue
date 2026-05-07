@@ -40,9 +40,21 @@
         </div>
 
         <div class="control">
+          <label class="controlLabel">Received From</label>
+          <input v-model="receivedFrom" class="input" type="date" />
+        </div>
+
+        <div class="control">
+          <label class="controlLabel">Received To</label>
+          <input v-model="receivedTo" class="input" type="date" />
+        </div>
+
+        <div class="control">
           <label class="controlLabel">Sort By</label>
           <select v-model="sortBy" class="input">
-            <option value="recent">Most Recent</option>
+            <option value="recent">Recently Updated</option>
+            <option value="days_open_desc">Days Open (High-Low)</option>
+            <option value="days_open_asc">Days Open (Low-High)</option>
             <option value="ref_asc">Ref No (A-Z)</option>
             <option value="ref_desc">Ref No (Z-A)</option>
             <option value="title_asc">Title (A-Z)</option>
@@ -72,6 +84,7 @@
             <col class="col-ref" />
             <col class="col-title" />
             <col class="col-company" />
+            <col class="col-days" />
             <col class="col-priority" />
             <col class="col-status" />
             <col class="col-owner" />
@@ -82,20 +95,21 @@
               <th>Ref No</th>
               <th>Title</th>
               <th>Company</th>
+              <th>Days Open</th>
               <th>Priority</th>
               <th>Status</th>
-              <th>Owner</th>
+              <th>Report At</th>
               <th>Actions</th>
             </tr>
           </thead>
 
           <tbody>
             <tr v-if="loading">
-              <td colspan="7" class="muted">Loading...</td>
+              <td colspan="8" class="muted">Loading...</td>
             </tr>
 
             <tr v-else-if="rows.length === 0">
-              <td colspan="7" class="muted">No documents found.</td>
+              <td colspan="8" class="muted">No documents found.</td>
             </tr>
 
             <tr v-else v-for="d in rows" :key="d.id">
@@ -117,6 +131,7 @@
               </td>
               <td :title="d.title"><span class="truncateText">{{ d.title }}</span></td>
               <td :title="d.companyName"><span class="truncateText">{{ d.companyName }}</span></td>
+              <td>{{ daysOpenFor(d) }}</td>
 
               <td><span class="pill" :class="'pill-'+d.priority">{{ d.priority }}</span></td>
               <td><span class="pill" :class="'pill-'+d.status">{{ displayStatusLabel(d.status) }}</span></td>
@@ -130,7 +145,7 @@
                 <button
                   class="iconBtn"
                   :disabled="!canPreview(d)"
-                  :title="canPreview(d) ? 'Preview' : 'Preview allowed only for DC or current owner'"
+                  :title="canPreview(d) ? 'Preview' : 'Preview allowed only for DC or the user shown in Report At'"
                   :aria-label="canPreview(d) ? 'Preview document' : 'Preview not allowed'"
                   @click="openPreview(d)"
                 >
@@ -150,55 +165,101 @@
 
     <!-- Preview Modal -->
     <div v-if="previewOpen" class="overlay" @click.self="previewOpen=false">
-      <div class="modal">
+      <div class="modal previewModal">
         <div class="modalHead">
           <div>
+            <div class="modalEyebrow">Quick Look</div>
             <div class="modalTitle">Document Preview</div>
             <div class="modalSub">{{ previewDoc?.refNo }} — {{ previewDoc?.title }}</div>
           </div>
-          <button class="iconBtn" @click="previewOpen=false">✕</button>
+          <button class="iconBtn modalClose" @click="previewOpen=false" aria-label="Close preview">✕</button>
         </div>
 
         <div class="modalBody">
           <div class="previewPills">
             <span class="pill" :class="'pill-'+previewDoc?.status">{{ displayStatusLabel(previewDoc?.status) || '-' }}</span>
             <span class="pill" :class="'pill-'+previewDoc?.priority">{{ previewDoc?.priority || '-' }}</span>
-            <span class="pill pill-PENDING">Owner: {{ ownerLabel(previewDoc?.currentOwnerUserId) }}</span>
+            <span class="pill pill-PENDING">Report At: {{ ownerLabel(previewDoc?.currentOwnerUserId) }}</span>
           </div>
 
-          <div class="previewGrid">
-            <div><span class="label">Company:</span> {{ previewDoc?.companyName || '-' }}</div>
-            <div><span class="label">Received:</span> {{ formatDateSafe(previewDoc?.receivedDate) }}</div>
-            <div><span class="label">Days Open:</span> {{ previewDaysOpen }}</div>
-            <div><span class="label">Main File Type:</span> {{ previewMainAttachmentType }}</div>
-            <div><span class="label">Attachments:</span> {{ previewAttachmentCount }}</div>
-            <div><span class="label">Main File Previewable:</span> {{ previewIsMainFilePreviewable ? 'Yes' : 'No' }}</div>
-          </div>
+          <div class="previewContent">
+            <div class="viewerCard">
+              <div class="viewerHead">
+                <div>
+                  <div class="opsTitle">Document Viewer</div>
+                  <div class="viewerSub">{{ previewMainAttachment?.fileName || "No main file available" }}</div>
+                </div>
+                <button
+                  v-if="previewMainAttachment"
+                  class="btn btn-sm"
+                  type="button"
+                  @click="window.open(previewAttachmentUrl(previewMainAttachment), '_blank')"
+                >
+                  Open File
+                </button>
+              </div>
 
-          <div v-if="previewLoadingExtras" class="note">Loading additional preview details...</div>
-          <div v-else-if="previewExtrasError" class="note noteWarn">{{ previewExtrasError }}</div>
+              <div v-if="previewMainAttachment" class="viewerBody">
+                <iframe
+                  v-if="previewIsPdf"
+                  :src="previewAttachmentUrl(previewMainAttachment)"
+                  class="viewerFrame"
+                  title="Document preview"
+                ></iframe>
 
-          <div v-if="previewCanSeeOperational" class="opsCard">
-            <div class="opsTitle">Latest Activity</div>
-            <div class="opsRow">
-              <span class="label">Last Action:</span>
-              <span>
-                {{ previewLastMovement?.actionType || '-' }}
-                <span v-if="previewLastMovement">• {{ formatDateTimeSafe(previewLastMovement.actionAt) }}</span>
-              </span>
-            </div>
-            <div class="opsRow">
-              <span class="label">Action By:</span>
-              <span>{{ previewLastMovement ? ownerLabel(previewLastMovement.actionByUserId) : '-' }}</span>
-            </div>
-            <div class="opsRow">
-              <span class="label">Latest Remark:</span>
-              <span class="remarkPreview">{{ previewLastRemark?.remarkText || 'No remarks yet.' }}</span>
-            </div>
-          </div>
+                <img
+                  v-else-if="previewIsImage"
+                  :src="previewAttachmentUrl(previewMainAttachment)"
+                  class="viewerImage"
+                  alt="Document preview"
+                />
 
-          <div class="note">
-            Preview shows a quick decision summary. Open full document for complete workflow, files, and timeline.
+                <div v-else class="viewerFallback viewerFallbackInner">
+                  Inline preview is not available for this file type. Use <b>Open File</b> to view it.
+                </div>
+              </div>
+
+              <div v-else class="viewerFallback">
+                No main file is available for preview yet.
+              </div>
+            </div>
+
+            <div class="previewSide">
+              <div class="previewGrid">
+                <div><span class="label">Company:</span> {{ previewDoc?.companyName || '-' }}</div>
+                <div><span class="label">Received:</span> {{ formatDateSafe(previewDoc?.receivedDate) }}</div>
+                <div><span class="label">Days Open:</span> {{ previewDaysOpen }}</div>
+                <div><span class="label">Main File Type:</span> {{ previewMainAttachmentType }}</div>
+                <div><span class="label">Attachments:</span> {{ previewAttachmentCount }}</div>
+                <div><span class="label">Main File Previewable:</span> {{ previewIsMainFilePreviewable ? 'Yes' : 'No' }}</div>
+              </div>
+
+              <div v-if="previewLoadingExtras" class="note">Loading additional preview details...</div>
+              <div v-else-if="previewExtrasError" class="note noteWarn">{{ previewExtrasError }}</div>
+
+              <div v-if="previewCanSeeOperational" class="opsCard">
+                <div class="opsTitle">Latest Activity</div>
+                <div class="opsRow">
+                  <span class="label">Last Action:</span>
+                  <span>
+                    {{ displayMovementActionLabel(previewLastMovement?.actionType) || '-' }}
+                    <span v-if="previewLastMovement">• {{ formatDateTimeSafe(previewLastMovement.actionAt) }}</span>
+                  </span>
+                </div>
+                <div class="opsRow">
+                  <span class="label">Action By:</span>
+                  <span>{{ previewLastMovement ? ownerLabel(previewLastMovement.actionByUserId) : '-' }}</span>
+                </div>
+                <div class="opsRow">
+                  <span class="label">Latest Minute:</span>
+                  <span class="remarkPreview">{{ previewCanViewRemarks ? (previewLastRemark?.remarkText || 'No minutes yet.') : 'Minutes are available only when this document is assigned to you in Report At.' }}</span>
+                </div>
+              </div>
+
+              <div class="note decisionNote">
+                Preview shows a quick decision summary. Open full document for complete workflow, files, and timeline.
+              </div>
+            </div>
           </div>
         </div>
 
@@ -217,19 +278,26 @@ import { useRouter } from "vue-router";
 import { File, FileText, FileSpreadsheet, Image, Archive, Eye } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
-import { listDocuments, listMovements, listRemarks, listAttachments } from "../api/documents.api";
+import { listDocuments, listMovements, listRemarks, listAttachments, buildAttachmentUrl } from "../api/documents.api";
 import { listUsers } from "../api/auth.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabelById } from "../auth/userLabel";
+import { getPrimaryAttachment, isImageAttachmentName, isPdfAttachmentName, isPreviewableAttachmentName, resolveAttachmentTypeFromName } from "../utils/attachmentViewerLogic";
+import { formatDateSafe, formatDateTimeSafe } from "../utils/dateFormat";
+import { matchesReceivedDateRange, sortDocumentsBy } from "../utils/documentsLogic";
+import { canPreviewDocument, canSeePreviewOperational, canSeePreviewRemarks, getDocumentsPageDaysOpenDisplay } from "../utils/documentsPageLogic";
 
 const router = useRouter();
 
 const currentUser = ref(getCurrentUser());
 const canCreate = computed(() => hasPermission(currentUser.value, "CREATE_DOCUMENT"));
+const canViewRemarksWhenNotReportAt = computed(() => hasPermission(currentUser.value, "VIEW_REMARKS_WHEN_NOT_REPORT_AT"));
 
 const q = ref("");
 const status = ref("");
 const priority = ref("");
+const receivedFrom = ref("");
+const receivedTo = ref("");
 const sortBy = ref("recent");
 
 const sortHint = computed(() => {
@@ -240,13 +308,17 @@ const sortHint = computed(() => {
       return "Sorted by Ref No (Z-A)";
     case "title_asc":
       return "Sorted by Title (A-Z)";
+    case "days_open_desc":
+      return "Sorted by Days Open (High-Low)";
+    case "days_open_asc":
+      return "Sorted by Days Open (Low-High)";
     case "priority_desc":
       return "Sorted by Priority (High-Low)";
     case "status_asc":
       return "Sorted by Status (Workflow)";
     case "recent":
     default:
-      return "Sorted by Most Recent";
+      return "Sorted by Recently Updated";
   }
 });
 
@@ -271,9 +343,12 @@ function displayStatusLabel(statusValue) {
   return String(statusValue || "").toUpperCase() === "ISSUED" ? "DONE" : statusValue;
 }
 
+function displayMovementActionLabel(actionType) {
+  return String(actionType || "").toUpperCase() === "ISSUE" ? "DONE" : actionType;
+}
+
 function canPreview(doc) {
-  if (hasPermission(currentUser.value, "VIEW_ALL_HISTORY")) return true;
-  return doc.currentOwnerUserId === currentUser.value.id;
+  return canPreviewDocument(doc, currentUser.value);
 }
 
 function openPreview(doc) {
@@ -326,8 +401,11 @@ const previewIsOwner = computed(() => {
 });
 
 const previewCanSeeOperational = computed(() => {
-  if (!previewDoc.value || !currentUser.value) return false;
-  return hasPermission(currentUser.value, "VIEW_ALL_HISTORY") || previewIsOwner.value;
+  return canSeePreviewOperational(previewDoc.value, currentUser.value);
+});
+
+const previewCanViewRemarks = computed(() => {
+  return canSeePreviewRemarks(previewDoc.value, currentUser.value);
 });
 
 const previewLastMovement = computed(() => {
@@ -349,9 +427,7 @@ const previewLastRemark = computed(() => {
 });
 
 const previewMainAttachment = computed(() => {
-  if (!previewAttachments.value.length) return null;
-  const sorted = [...previewAttachments.value].sort((a, b) => Number(a.versionNo) - Number(b.versionNo));
-  return sorted.find((a) => Number(a.versionNo) === 1) || sorted[0];
+  return getPrimaryAttachment(previewAttachments.value);
 });
 
 const previewAttachmentCount = computed(() => previewAttachments.value.length);
@@ -365,43 +441,28 @@ const previewMainAttachmentType = computed(() => {
 
 const previewIsMainFilePreviewable = computed(() => {
   const name = previewMainAttachment.value?.fileName;
-  if (!name) return false;
-  const n = String(name).toLowerCase();
-  return n.endsWith(".pdf") || n.endsWith(".png") || n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".gif") || n.endsWith(".webp");
+  return isPreviewableAttachmentName(name);
+});
+
+const previewIsPdf = computed(() => {
+  return isPdfAttachmentName(previewMainAttachment.value?.fileName);
+});
+
+const previewIsImage = computed(() => {
+  return isImageAttachmentName(previewMainAttachment.value?.fileName);
 });
 
 const previewDaysOpen = computed(() => {
-  const raw = previewDoc.value?.receivedDate;
-  if (!raw) return "-";
-  const dt = new Date(raw);
-  if (Number.isNaN(dt.getTime())) return "-";
-  const dayMs = 24 * 60 * 60 * 1000;
-  return Math.max(0, Math.floor((Date.now() - dt.getTime()) / dayMs));
+  return daysOpenFor(previewDoc.value);
 });
 
-function resolveAttachmentTypeFromName(fileName) {
-  const lower = String(fileName ?? "").toLowerCase();
-  if (lower.endsWith(".pdf")) return "PDF";
-  if (lower.endsWith(".doc") || lower.endsWith(".docx")) return "DOC";
-  if (lower.endsWith(".xls") || lower.endsWith(".xlsx") || lower.endsWith(".csv")) return "XLS";
-  if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".gif") || lower.endsWith(".bmp") || lower.endsWith(".webp")) return "IMG";
-  if (lower.endsWith(".txt")) return "TXT";
-  if (lower.endsWith(".zip") || lower.endsWith(".rar") || lower.endsWith(".7z")) return "ZIP";
-  return "FILE";
+function daysOpenFor(document) {
+  return getDocumentsPageDaysOpenDisplay(document);
 }
 
-function formatDateSafe(value) {
-  if (!value) return "-";
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return String(value);
-  return dt.toLocaleDateString();
-}
-
-function formatDateTimeSafe(value) {
-  if (!value) return "-";
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return String(value);
-  return dt.toLocaleString();
+function previewAttachmentUrl(attachment) {
+  if (!attachment?.id) return "";
+  return buildAttachmentUrl(attachment.id, { inline: true });
 }
 
 function ownerLabel(userId) {
@@ -428,8 +489,10 @@ function applyFilters(list) {
 
     const matchStatus = !status.value || d.status === status.value;
     const matchPriority = !priority.value || d.priority === priority.value;
+    const matchReceived = (!receivedFrom.value && !receivedTo.value)
+      || matchesReceivedDateRange(d, receivedFrom.value, receivedTo.value);
 
-    return matchQ && matchStatus && matchPriority;
+    return matchQ && matchStatus && matchPriority && matchReceived;
   });
 }
 
@@ -466,7 +529,7 @@ function attachmentTypeLabel(type) {
 }
 
 function toRecentScore(doc) {
-  const source = doc.updatedAt ?? doc.receivedDate ?? doc.createdAt;
+  const source = doc.updatedAt ?? doc.createdAt ?? doc.receivedDate;
   const parsed = Date.parse(source);
   if (!Number.isNaN(parsed)) return parsed;
   const idNumber = Number(doc.id);
@@ -474,29 +537,19 @@ function toRecentScore(doc) {
 }
 
 function sortDocuments(list) {
-  const arr = [...list];
-  switch (sortBy.value) {
-    case "ref_asc":
-      return arr.sort((a, b) => toText(a.refNo).localeCompare(toText(b.refNo)));
-    case "ref_desc":
-      return arr.sort((a, b) => toText(b.refNo).localeCompare(toText(a.refNo)));
-    case "title_asc":
-      return arr.sort((a, b) => toText(a.title).localeCompare(toText(b.title)));
-    case "priority_desc":
-      return arr.sort((a, b) => (PRIORITY_ORDER[b.priority] ?? 0) - (PRIORITY_ORDER[a.priority] ?? 0));
-    case "status_asc":
-      return arr.sort((a, b) => (STATUS_ORDER[a.status] ?? 999) - (STATUS_ORDER[b.status] ?? 999));
-    case "recent":
-    default:
-      return arr.sort((a, b) => toRecentScore(b) - toRecentScore(a));
-  }
+  return sortDocumentsBy(list, sortBy.value, toDaysOpenScore);
 }
 
 function applyNow() {
   rows.value = sortDocuments(applyFilters(all.value));
 }
 
-watch([q, status, priority, sortBy], () => {
+function toDaysOpenScore(doc) {
+  const daysOpen = daysOpenFor(doc);
+  return daysOpen === "-" || daysOpen === "Closed" ? -1 : Number(daysOpen);
+}
+
+watch([q, status, priority, receivedFrom, receivedTo, sortBy], () => {
   applyNow();
 });
 
@@ -572,7 +625,7 @@ h2 { margin:0; line-height:1.15; }
 
 .filters {
   display:grid;
-  grid-template-columns: 1.6fr 1fr 1fr 1fr;
+  grid-template-columns: 1.6fr 1fr 1fr 1fr 1fr 1fr;
   gap:12px;
   align-items:end;
 }
@@ -632,6 +685,7 @@ h2 { margin:0; line-height:1.15; }
 .col-ref { width:170px; }
 .col-title { width:240px; }
 .col-company { width:220px; }
+.col-days { width:110px; }
 .col-priority { width:120px; }
 .col-status { width:140px; }
 .col-owner { width:180px; }
@@ -862,9 +916,223 @@ h2 { margin:0; line-height:1.15; }
   overflow:hidden;
 }
 
+/* Polished preview modal */
+.overlay {
+  background:rgba(17, 24, 39, 0.56);
+  backdrop-filter: blur(2px);
+}
+
+.previewModal {
+  max-width:920px;
+  max-height:min(86vh, 860px);
+  border-radius:18px;
+  box-shadow:0 24px 64px rgba(15, 23, 42, 0.22);
+  display:flex;
+  flex-direction:column;
+}
+
+.previewModal .modalHead {
+  align-items:center;
+  padding:18px 20px;
+  border-bottom:1px solid #eef2f7;
+  background:
+    radial-gradient(80% 110% at 100% 0%, rgba(37, 99, 235, 0.1), transparent 55%),
+    linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  flex-shrink:0;
+}
+
+.modalEyebrow {
+  color:#2563eb;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:0.1em;
+  text-transform:uppercase;
+  margin-bottom:3px;
+}
+
+.previewModal .modalTitle {
+  color:#0f172a;
+  font-size:19px;
+  letter-spacing:-0.02em;
+}
+
+.previewModal .modalSub {
+  color:#64748b;
+  font-size:13px;
+  margin-top:4px;
+}
+
+.modalClose {
+  border-radius:999px;
+  color:#374151;
+}
+
+.previewModal .modalBody {
+  padding:20px;
+  overflow-y:auto;
+  flex:1 1 auto;
+}
+
+.previewModal .previewPills {
+  margin-bottom:16px;
+}
+
+.previewContent {
+  display:grid;
+  grid-template-columns:minmax(0, 1.55fr) minmax(280px, 0.95fr);
+  gap:16px;
+  align-items:start;
+}
+
+.viewerCard {
+  border:1px solid #dbeafe;
+  border-radius:14px;
+  background:#f8fbff;
+  overflow:hidden;
+}
+
+.viewerHead {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  padding:14px;
+  border-bottom:1px solid #e5edf8;
+}
+
+.viewerSub {
+  color:#64748b;
+  font-size:12px;
+  margin-top:4px;
+  word-break:break-word;
+}
+
+.viewerBody {
+  padding:14px;
+}
+
+.viewerFrame {
+  width:100%;
+  height:420px;
+  border:1px solid #dbe4f0;
+  border-radius:10px;
+  background:#fff;
+}
+
+.viewerImage {
+  display:block;
+  max-width:100%;
+  max-height:420px;
+  margin:0 auto;
+  border:1px solid #dbe4f0;
+  border-radius:10px;
+  background:#fff;
+}
+
+.viewerFallback {
+  margin:14px;
+  padding:14px;
+  border:1px dashed #cbd5e1;
+  border-radius:10px;
+  background:#fff;
+  color:#64748b;
+  font-size:13px;
+}
+
+.viewerFallbackInner {
+  margin:0;
+}
+
+.previewSide {
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+  min-width:0;
+}
+
+.previewModal .previewGrid {
+  gap:0;
+  overflow:hidden;
+  border:1px solid #e5e7eb;
+  border-radius:14px;
+  background:#fff;
+  margin:0;
+}
+
+.previewModal .previewGrid > div {
+  padding:12px 14px;
+  border-right:1px solid #eef2f7;
+  border-bottom:1px solid #eef2f7;
+  color:#111827;
+  font-size:13px;
+}
+
+.previewModal .previewGrid > div:nth-child(2n) {
+  border-right:0;
+}
+
+.previewModal .previewGrid > div:nth-last-child(-n + 2) {
+  border-bottom:0;
+}
+
+.previewModal .label {
+  display:block;
+  color:#64748b;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:0.06em;
+  text-transform:uppercase;
+  margin-bottom:5px;
+}
+
+.previewModal .opsCard {
+  border-color:#dbeafe;
+  border-radius:14px;
+  background:#f8fbff;
+  padding:14px;
+}
+
+.previewModal .opsTitle {
+  color:#1d4ed8;
+}
+
+.previewModal .opsRow {
+  grid-template-columns:130px 1fr;
+  align-items:start;
+  padding:7px 0;
+  border-bottom:1px solid #e5edf8;
+}
+
+.previewModal .opsRow:last-child {
+  border-bottom:0;
+}
+
+.previewModal .note {
+  border-radius:12px;
+}
+
+.decisionNote {
+  background:#f8fafc;
+}
+
+.previewModal .modalFoot {
+  padding:16px 20px;
+  border-top:1px solid #eef2f7;
+  background:#f9fafb;
+  flex-shrink:0;
+}
+
+.previewModal .modalFoot .btn {
+  min-width:86px;
+}
+
+.previewModal .modalFoot .btn-primary {
+  min-width:180px;
+}
+
 @media (max-width: 960px) {
   .filters {
-    grid-template-columns:1fr 1fr;
+    grid-template-columns:1fr 1fr 1fr;
     align-items:stretch;
   }
 
@@ -889,6 +1157,21 @@ h2 { margin:0; line-height:1.15; }
     grid-template-columns:1fr;
   }
 
+  .previewContent {
+    grid-template-columns:1fr;
+  }
+
+  .previewModal .previewGrid > div,
+  .previewModal .previewGrid > div:nth-child(2n),
+  .previewModal .previewGrid > div:nth-last-child(-n + 2) {
+    border-right:0;
+    border-bottom:1px solid #eef2f7;
+  }
+
+  .previewModal .previewGrid > div:last-child {
+    border-bottom:0;
+  }
+
   .opsRow {
     grid-template-columns:1fr;
     gap:2px;
@@ -898,6 +1181,28 @@ h2 { margin:0; line-height:1.15; }
   .btn-sm,
   .iconBtn {
     min-height:36px;
+  }
+
+  .previewModal {
+    max-height:calc(100vh - 28px);
+    overflow:hidden;
+  }
+
+  .previewModal .modalHead,
+  .previewModal .modalFoot {
+    padding:14px;
+  }
+
+  .previewModal .modalBody {
+    padding:14px;
+  }
+
+  .previewModal .modalFoot {
+    flex-direction:column;
+  }
+
+  .previewModal .modalFoot .btn {
+    width:100%;
   }
 }
 </style>

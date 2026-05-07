@@ -23,6 +23,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static lk.customs.rms.enums.Status.ISSUED;
+
 @Service
 public class AttachmentServiceImpl implements AttachmentService {
 
@@ -57,6 +59,7 @@ public class AttachmentServiceImpl implements AttachmentService {
 
                 User uploader = requireUser(actorUserId);
                 permissionService.ensurePermission(actorUserId, AppPermission.UPLOAD_ATTACHMENT, "You are not allowed to upload attachments.");
+                ensureDocumentIsNotIssued(doc, "upload");
 
                 if (!doc.getCurrentOwnerUserId().equals(actorUserId)) {
                         throw new BadRequestException("Only the current owner can upload attachments.");
@@ -86,6 +89,8 @@ public class AttachmentServiceImpl implements AttachmentService {
         a.setDeleted(false);
 
         DocumentAttachment saved = attachmentRepository.save(a);
+        touchDocument(doc);
+        documentRepository.save(doc);
 
         auditLogService.logAttachment(documentId, saved.getId(), actorUserId, "UPLOAD",
                 "Attachment uploaded: v" + nextVersion + " " + saved.getFileName());
@@ -141,6 +146,7 @@ public class AttachmentServiceImpl implements AttachmentService {
 
                 requireUser(actorUserId);
                 permissionService.ensurePermission(actorUserId, AppPermission.DELETE_ATTACHMENT, "You are not allowed to delete attachments.");
+                ensureDocumentIsNotIssued(doc, "delete");
 
                 if (!doc.getCurrentOwnerUserId().equals(actorUserId)) {
                     throw new BadRequestException("Only the current owner can delete attachments.");
@@ -159,6 +165,9 @@ public class AttachmentServiceImpl implements AttachmentService {
             latest.setIsLatest(true);
             attachmentRepository.save(latest);
         }
+
+        touchDocument(doc);
+        documentRepository.save(doc);
 
         auditLogService.logAttachment(a.getDocumentId(), a.getId(), actorUserId, "DELETE",
                 "Attachment soft-deleted: v" + a.getVersionNo() + " " + a.getFileName());
@@ -186,6 +195,11 @@ public class AttachmentServiceImpl implements AttachmentService {
                 .build();
     }
 
+    private void touchDocument(Document doc) {
+        if (doc == null) return;
+        doc.setUpdatedAt(LocalDateTime.now());
+    }
+
         private User requireUser(Long userId) {
                 return userRepository.findById(userId)
                                 .orElseThrow(() -> new BadRequestException("User not found: " + userId));
@@ -200,6 +214,12 @@ public class AttachmentServiceImpl implements AttachmentService {
                         return;
                 }
 
-                throw new BadRequestException("You are not allowed to view file history for this document.");
+        throw new BadRequestException("You are not allowed to view file history for this document.");
+        }
+
+        private void ensureDocumentIsNotIssued(Document doc, String action) {
+                if (doc != null && doc.getStatus() == ISSUED) {
+                        throw new BadRequestException("Cannot " + action + " attachments after document is ISSUED.");
+                }
         }
 }

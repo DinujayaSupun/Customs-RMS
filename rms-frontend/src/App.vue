@@ -15,6 +15,10 @@ import {
   disconnectRealtimeNotifications,
   subscribeRealtimeNotifications,
 } from "./services/realtimeNotifications";
+import {
+  getDocumentNotificationMessage,
+  isDocumentNotification,
+} from "./utils/realtimeNotificationLogic";
 
 const route = useRoute();
 const router = useRouter();
@@ -97,9 +101,9 @@ function handleRealtimeMessage(payload) {
     return;
   }
 
-  if (payload.type !== "DOCUMENT_FORWARDED") return;
+  if (!isDocumentNotification(payload)) return;
 
-  const message = payload.message || "A new document has been assigned to you.";
+  const message = getDocumentNotificationMessage(payload);
   if (payload.documentId) {
     infoWithAction(message, `/documents/${payload.documentId}`, "Open document", 5500);
   } else {

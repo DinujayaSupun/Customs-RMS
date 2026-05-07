@@ -1,27 +1,10 @@
-import axios from "axios";
 import { getAccessToken } from "../auth/currentUser";
+import { createAuthedHttp, getApiErrorMessage } from "./apiClient";
 
-const http = axios.create({
-  baseURL: `${import.meta.env.VITE_API_BASE_URL || "http://localhost:8080"}/api`,
-  timeout: 20000,
-});
-
-http.interceptors.request.use((config) => {
-  const token = getAccessToken();
-  if (token) {
-    config.headers = config.headers || {};
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
+const http = createAuthedHttp();
 
 function getMsg(e) {
-  return (
-    e?.response?.data?.message ||
-    e?.response?.data?.error ||
-    e?.message ||
-    "Request failed"
-  );
+  return getApiErrorMessage(e);
 }
 
 /**
@@ -48,6 +31,14 @@ export async function listDocuments({ page = 0, size = 100, search } = {}) {
 export async function getMyWorkloadStats() {
   try {
     return (await http.get(`${BASE}/my-workload-stats`)).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function getWorkflowRules() {
+  try {
+    return (await http.get("/workflow-rules")).data;
   } catch (e) {
     throw new Error(getMsg(e));
   }
@@ -116,6 +107,14 @@ export async function returnDocument(documentId, payload) {
   }
 }
 
+export async function undoSendDocument(documentId, payload = {}) {
+  try {
+    return (await http.post(`${BASE}/${documentId}/undo-send`, payload)).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
 export async function approveDocument(documentId, payload) {
   try {
     return (await http.post(`${BASE}/${documentId}/approve`, payload)).data;
@@ -160,6 +159,22 @@ export async function listRemarks(documentId) {
 export async function addRemark(documentId, payload) {
   try {
     return (await http.post(`${BASE}/${documentId}/remarks`, payload)).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function updateRemark(documentId, remarkId, payload) {
+  try {
+    return (await http.put(`${BASE}/${documentId}/remarks/${remarkId}`, payload)).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function deleteRemark(documentId, remarkId) {
+  try {
+    return (await http.delete(`${BASE}/${documentId}/remarks/${remarkId}`)).data;
   } catch (e) {
     throw new Error(getMsg(e));
   }

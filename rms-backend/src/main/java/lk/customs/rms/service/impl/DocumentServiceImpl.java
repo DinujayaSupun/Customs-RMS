@@ -6,6 +6,7 @@ import lk.customs.rms.entity.DocumentAttachment;
 import lk.customs.rms.entity.DocumentMovement;
 import lk.customs.rms.entity.DocumentRemark;
 import lk.customs.rms.entity.DocumentUserView;
+import lk.customs.rms.entity.AuditLog;
 import lk.customs.rms.entity.User;
 import lk.customs.rms.enums.AppPermission;
 import lk.customs.rms.enums.MovementActionType;
@@ -17,8 +18,10 @@ import lk.customs.rms.repository.DocumentAttachmentRepository;
 import lk.customs.rms.repository.DocumentRemarkRepository;
 import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.DocumentUserViewRepository;
+import lk.customs.rms.repository.AuditLogRepository;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.service.AuditLogService;
+import lk.customs.rms.service.DcAutoForwardConfigService;
 import lk.customs.rms.service.DocumentService;
 import lk.customs.rms.service.PermissionService;
 import lk.customs.rms.service.RealtimeNotificationService;
@@ -48,26 +51,23 @@ import java.util.stream.Collectors;
  *   1) Ownership rule:
  *      - Only CURRENT OWNER can forward/return/add remarks.
  *
- *   2) PMA restriction:
- *      - PMA can forward/return ONLY to DC.
- *
- *   3) Permission-controlled decisions:
+ *   2) Permission-controlled decisions:
  *      - Approve / Reject / Issue / Reopen depend on the assigned role permissions.
  *      - User must still be the current owner to do those actions.
  *
- *   4) FINAL STATE LOCK (critical):
+ *   3) FINAL STATE LOCK (critical):
  *      - Once ISSUED or REJECTED => NO further workflow actions allowed.
  *      - If APPROVED => ONLY ISSUE is allowed (no forward/return/approve/reject).
  *      - ISSUE allowed ONLY when status == APPROVED.
  *
- *   5) REOPEN (NEW):
+ *   4) REOPEN (NEW):
  *      - Only users with reopen permission can REOPEN an APPROVED or REJECTED document.
  *      - Not allowed if ISSUED (final).
  *      - Requires a reason (remarkText must not be empty).
  *      - Sets status back to IN_PROGRESS and clears completedAt.
  *      - Logs Movement(REOPEN) + Audit log + Remark.
  *
- *   6) Remarks:
+ *   5) Remarks:
  *      - Can be added standalone OR during workflow action.
  *      - Always saved BEFORE ownership changes.
  * ==========================================================
@@ -75,15 +75,27 @@ import java.util.stream.Collectors;
 @Service
 public class DocumentServiceImpl implements DocumentService {
 
+    private record UndoSendState(
+            boolean canUndo,
+            String status,
+            LocalDateTime expiresAt,
+            boolean receiverOpened,
+            String actionType,
+            boolean requiresReason,
+            boolean showExpiredInfo
+    ) {}
+
     private final DocumentRepository documentRepository;
     private final DocumentAttachmentRepository attachmentRepository;
     private final DocumentMovementRepository movementRepository;
     private final DocumentRemarkRepository remarkRepository;
     private final DocumentUserViewRepository documentUserViewRepository;
     private final UserRepository userRepository;
+    private final AuditLogRepository auditLogRepository;
     private final AuditLogService auditLogService;
     private final PermissionService permissionService;
     private final RealtimeNotificationService realtimeNotificationService;
+    private final DcAutoForwardConfigService dcAutoForwardConfigService;
 
     public DocumentServiceImpl(
             DocumentRepository documentRepository,
@@ -92,9 +104,11 @@ public class DocumentServiceImpl implements DocumentService {
             DocumentRemarkRepository remarkRepository,
             DocumentUserViewRepository documentUserViewRepository,
             UserRepository userRepository,
+            AuditLogRepository auditLogRepository,
             AuditLogService auditLogService,
                 PermissionService permissionService,
-                RealtimeNotificationService realtimeNotificationService
+                RealtimeNotificationService realtimeNotificationService,
+                DcAutoForwardConfigService dcAutoForwardConfigService
     ) {
         this.documentRepository = documentRepository;
         this.attachmentRepository = attachmentRepository;
@@ -102,9 +116,11 @@ public class DocumentServiceImpl implements DocumentService {
         this.remarkRepository = remarkRepository;
         this.documentUserViewRepository = documentUserViewRepository;
         this.userRepository = userRepository;
+        this.auditLogRepository = auditLogRepository;
         this.auditLogService = auditLogService;
         this.permissionService = permissionService;
         this.realtimeNotificationService = realtimeNotificationService;
+        this.dcAutoForwardConfigService = dcAutoForwardConfigService;
     }
 
     // ==========================================================
@@ -136,7 +152,9 @@ public class DocumentServiceImpl implements DocumentService {
 
         doc.setCreatedByUserId(createdBy.getId());
         doc.setCurrentOwnerUserId(createdBy.getId());
-        doc.setCreatedAt(LocalDateTime.now());
+        LocalDateTime now = LocalDateTime.now();
+        doc.setCreatedAt(now);
+        doc.setUpdatedAt(now);
         doc.setDeleted(false);
 
         Document saved = documentRepository.save(doc);
@@ -213,26 +231,26 @@ public class DocumentServiceImpl implements DocumentService {
                     a -> resolveAttachmentTypeFromFileName(a.getFileName()),
                     (first, second) -> first
                 ));
-        Map<Long, String> latestRemarkPreviews = docIds.isEmpty()
+        Map<Long, DocumentRemark> latestRemarks = docIds.isEmpty()
             ? Map.of()
             : remarkRepository.findLatestByDocumentIdsWithUser(docIds)
                 .stream()
                 .collect(Collectors.toMap(
                     DocumentRemark::getDocumentId,
-                    this::toRemarkPreview,
+                    remark -> remark,
                     (first, second) -> first
                 ));
-        Map<Long, LocalDateTime> inboxReceivedAtByDoc = docIds.isEmpty()
+        Map<Long, DocumentMovement> latestInboundByDoc = docIds.isEmpty()
             ? Map.of()
             : movementRepository.findLatestInboundByActorAndDocumentIds(
                     actorUserId,
                     docIds,
-                    List.of(MovementActionType.CREATE, MovementActionType.FORWARD, MovementActionType.RETURN)
+                    List.of(MovementActionType.CREATE, MovementActionType.FORWARD, MovementActionType.RETURN, MovementActionType.UNDO_SEND)
                 )
                 .stream()
                 .collect(Collectors.toMap(
                     DocumentMovement::getDocumentId,
-                    DocumentMovement::getActionAt,
+                    movement -> movement,
                     (first, second) -> first
                 ));
 
@@ -240,14 +258,48 @@ public class DocumentServiceImpl implements DocumentService {
             String createdByName = userRepository.findById(d.getCreatedByUserId()).map(User::getFullName).orElse(null);
             String ownerName = userRepository.findById(d.getCurrentOwnerUserId()).map(User::getFullName).orElse(null);
             boolean viewedByMe = viewedDocIds.contains(d.getId());
+            DocumentRemark latestRemark = canViewRemarks(d, actorUserId) ? latestRemarks.get(d.getId()) : null;
+            String latestRemarkPreview = latestRemark == null ? null : toRemarkPreview(latestRemark);
+            DocumentMovement latestInbound = latestInboundByDoc.get(d.getId());
+            Long inboxSenderUserId = resolveInboxSenderUserId(latestInbound);
+            User inboxSender = inboxSenderUserId == null ? null : userRepository.findById(inboxSenderUserId).orElse(null);
+            boolean undoInboxMovement = latestInbound != null && latestInbound.getActionType() == MovementActionType.UNDO_SEND;
+            User undoActor = undoInboxMovement && latestInbound.getActionByUserId() != null
+                ? userRepository.findById(latestInbound.getActionByUserId()).orElse(null)
+                : null;
+            User undoFrom = undoInboxMovement && latestInbound.getFromUserId() != null
+                ? userRepository.findById(latestInbound.getFromUserId()).orElse(null)
+                : null;
             return DocumentResponse.from(
                 d,
                 createdByName,
                 ownerName,
                 mainAttachmentTypes.get(d.getId()),
-                latestRemarkPreviews.get(d.getId()),
+                latestRemarkPreview,
                 viewedByMe,
-                inboxReceivedAtByDoc.get(d.getId())
+                latestInbound == null ? null : latestInbound.getActionAt(),
+                inboxSenderUserId,
+                inboxSender == null ? null : inboxSender.getFullName(),
+                roleName(inboxSender),
+                latestRemark == null ? null : latestRemark.getRemarkedByUserId(),
+                latestRemark == null || latestRemark.getRemarkedBy() == null ? null : latestRemark.getRemarkedBy().getFullName(),
+                latestRemark == null ? null : roleName(latestRemark.getRemarkedBy()),
+                latestRemark == null ? null : toRemarkPreview(latestRemark.getRemarkText()),
+                latestRemark == null ? null : latestRemark.getRemarkText(),
+                latestRemark == null ? null : latestRemark.getRemarkedAt(),
+                false,
+                undoInboxMovement ? "UNDONE" : null,
+                null,
+                false,
+                undoInboxMovement ? "UNDO_SEND" : null,
+                false,
+                false,
+                undoInboxMovement ? latestInbound.getActionByUserId() : null,
+                undoActor == null ? null : undoActor.getFullName(),
+                roleName(undoActor),
+                undoInboxMovement ? latestInbound.getFromUserId() : null,
+                undoFrom == null ? null : undoFrom.getFullName(),
+                roleName(undoFrom)
             );
         });
     }
@@ -260,7 +312,21 @@ public class DocumentServiceImpl implements DocumentService {
         String normalizedSearch = search == null ? "" : search.trim().toLowerCase();
 
         List<DocumentMovement> actorMovements = movementRepository
-            .findByActionTypeAndActionByUserIdOrderByActionAtDescIdDesc(MovementActionType.FORWARD, actorUserId);
+            .findByActionTypeInAndActionByUserIdOrderByActionAtDescIdDesc(
+                List.of(MovementActionType.FORWARD, MovementActionType.RETURN),
+                actorUserId
+            );
+        List<DocumentMovement> undoNotices = movementRepository
+            .findByActionTypeAndFromUserIdOrderByActionAtDescIdDesc(MovementActionType.UNDO_SEND, actorUserId);
+        actorMovements = java.util.stream.Stream.concat(actorMovements.stream(), undoNotices.stream())
+            .sorted((a, b) -> {
+                LocalDateTime aTime = a.getActionAt();
+                LocalDateTime bTime = b.getActionAt();
+                int timeCompare = java.util.Comparator.nullsLast(LocalDateTime::compareTo).compare(bTime, aTime);
+                if (timeCompare != 0) return timeCompare;
+                return java.util.Comparator.nullsLast(Long::compareTo).compare(b.getId(), a.getId());
+            })
+            .toList();
 
         List<Long> docIds = actorMovements.stream().map(DocumentMovement::getDocumentId).distinct().toList();
         Map<Long, Document> docsById = docIds.isEmpty()
@@ -332,6 +398,30 @@ public class DocumentServiceImpl implements DocumentService {
                 .findByDocumentIdInAndRemarkedByUserIdOrderByDocumentIdAscRemarkedAtAsc(pageDocIds, actorUserId)
                 .stream()
                 .collect(Collectors.groupingBy(DocumentRemark::getDocumentId));
+        Map<Long, List<AuditLog>> autoForwardLogsByDoc = pageDocIds.isEmpty()
+            ? Map.of()
+            : auditLogRepository
+                .findByEntityTypeAndEntityIdInAndActionTypeOrderByPerformedAtAsc("MOVEMENT", pageDocIds, "AUTO_FORWARD_DC_TIMEOUT")
+                .stream()
+                .collect(Collectors.groupingBy(AuditLog::getEntityId));
+        List<DocumentMovement> undoMovements = pageDocIds.isEmpty()
+            ? List.of()
+            : movementRepository.findByDocumentIdInAndActionTypeOrderByDocumentIdAscActionAtAsc(
+                pageDocIds,
+                MovementActionType.UNDO_SEND
+            );
+        Map<Long, List<DocumentMovement>> undoMovementsByDoc = undoMovements.stream()
+            .collect(Collectors.groupingBy(DocumentMovement::getDocumentId));
+        List<Long> undoActorIds = undoMovements.stream()
+            .map(DocumentMovement::getActionByUserId)
+            .filter(java.util.Objects::nonNull)
+            .distinct()
+            .toList();
+        Map<Long, User> undoActorsById = undoActorIds.isEmpty()
+            ? Map.of()
+            : userRepository.findAllById(undoActorIds)
+                .stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
 
         List<SentMessageResponse> sentRows = pageMovements.stream().map(movement -> {
             Document doc = docsById.get(movement.getDocumentId());
@@ -340,6 +430,26 @@ public class DocumentServiceImpl implements DocumentService {
                 inboundByDoc.getOrDefault(movement.getDocumentId(), List.of()),
                 ownRemarksByDoc.getOrDefault(movement.getDocumentId(), List.of())
             );
+            if (!canViewRemarks(doc, actorUserId)) {
+                ownMinutePreview = null;
+            }
+            boolean autoForwarded = autoForwardLogsByDoc
+                .getOrDefault(movement.getDocumentId(), List.of())
+                .stream()
+                .anyMatch(log -> log.getPerformedAt() != null
+                    && movement.getActionAt() != null
+                    && !log.getPerformedAt().isBefore(movement.getActionAt()));
+            boolean undoNotice = movement.getActionType() == MovementActionType.UNDO_SEND;
+            UndoSendState undoState = undoNotice
+                ? new UndoSendState(false, "UNDONE", null, false, "UNDO_SEND", false, true)
+                : resolveUndoSendState(doc, movement, actorUserId);
+            DocumentMovement undoMovement = undoNotice
+                ? movement
+                : findUndoMovementForSentMovement(
+                    movement,
+                    undoMovementsByDoc.getOrDefault(movement.getDocumentId(), List.of())
+                );
+            User undoActor = undoMovement == null ? null : undoActorsById.get(undoMovement.getActionByUserId());
             return SentMessageResponse.builder()
                 .movementId(movement.getId())
                 .documentId(movement.getDocumentId())
@@ -354,10 +464,36 @@ public class DocumentServiceImpl implements DocumentService {
                 .toUserName(userNamesById.get(movement.getToUserId()))
                 .latestRemarkPreview(ownMinutePreview)
                 .sentAt(movement.getActionAt())
+                .autoForwarded(autoForwarded)
+                .canUndoSend(undoState.canUndo())
+                .undoSendStatus(undoState.status())
+                .undoSendExpiresAt(undoState.expiresAt())
+                .undoSendReceiverOpened(undoState.receiverOpened())
+                .undoSendActionType(undoState.actionType())
+                .undoSendRequiresReason(undoState.requiresReason())
+                .undoSendShowExpiredInfo(undoState.showExpiredInfo())
+                .undoSendByUserId(undoMovement == null ? null : undoMovement.getActionByUserId())
+                .undoSendByName(undoActor == null ? null : undoActor.getFullName())
+                .undoSendByRole(undoActor == null || undoActor.getRole() == null ? null : undoActor.getRole().getRoleName())
                 .build();
             }).toList();
 
             return new PageImpl<>(sentRows, pageable, filteredMovements.size());
+    }
+
+    private DocumentMovement findUndoMovementForSentMovement(DocumentMovement sentMovement, List<DocumentMovement> undoMovements) {
+        if (sentMovement == null || undoMovements == null || undoMovements.isEmpty()) {
+            return null;
+        }
+        return undoMovements.stream()
+            .filter(undo -> java.util.Objects.equals(undo.getActionByUserId(), sentMovement.getActionByUserId()))
+            .filter(undo -> java.util.Objects.equals(undo.getFromUserId(), sentMovement.getToUserId()))
+            .filter(undo -> java.util.Objects.equals(undo.getToUserId(), sentMovement.getFromUserId()))
+            .filter(undo -> undo.getActionAt() != null
+                && sentMovement.getActionAt() != null
+                && !undo.getActionAt().isBefore(sentMovement.getActionAt()))
+            .findFirst()
+            .orElse(null);
     }
 
     @Override
@@ -371,11 +507,24 @@ public class DocumentServiceImpl implements DocumentService {
         String createdByName = userRepository.findById(d.getCreatedByUserId()).map(User::getFullName).orElse(null);
         String ownerName = userRepository.findById(d.getCurrentOwnerUserId()).map(User::getFullName).orElse(null);
         String mainAttachmentType = resolveMainAttachmentType(d.getId());
-        String latestRemarkPreview = remarkRepository.findFirstByDocumentIdOrderByRemarkedAtDesc(d.getId())
-            .map(this::toRemarkPreview)
-            .orElse(null);
+        String latestRemarkPreview = canViewRemarks(d, actorUserId)
+            ? remarkRepository.findFirstByDocumentIdOrderByRemarkedAtDesc(d.getId())
+                .map(this::toRemarkPreview)
+                .orElse(null)
+            : null;
+        UndoSendState undoState = movementRepository.findFirstByDocumentIdOrderByActionAtDescIdDesc(d.getId())
+                .map(movement -> resolveUndoSendState(d, movement, actorUserId))
+                .orElse(resolveUndoSendState(d, null, actorUserId));
 
-        return DocumentResponse.from(d, createdByName, ownerName, mainAttachmentType, latestRemarkPreview, true);
+        return DocumentResponse.from(d, createdByName, ownerName, mainAttachmentType, latestRemarkPreview, true,
+                null, null, null, null, null, null, null, null, null, null,
+                undoState.canUndo(),
+                undoState.status(),
+                undoState.expiresAt(),
+                undoState.receiverOpened(),
+                undoState.actionType(),
+                undoState.requiresReason(),
+                undoState.showExpiredInfo());
     }
 
     @Override
@@ -419,7 +568,9 @@ public class DocumentServiceImpl implements DocumentService {
         d.setRefNo(newRefNo);
         d.setTitle(request.getTitle().trim());
         d.setCompanyName(request.getCompanyName().trim());
+        d.setReceivedDate(request.getReceivedDate());
         d.setPriority(request.getPriority());
+        touchDocument(d);
 
         Document saved = documentRepository.save(d);
 
@@ -495,11 +646,6 @@ public class DocumentServiceImpl implements DocumentService {
             throw new BadRequestException("Only the current owner can forward this document.");
         }
 
-        // PMA restriction
-        if (isRole(actionBy, "PMA") && !isRole(toUser, "DC")) {
-            throw new BadRequestException("PMA can forward ONLY to DC.");
-        }
-
         String forwardVisibility = normalizeForwardVisibility(request.getForwardVisibility());
         if ("PRIVATE".equals(forwardVisibility)) {
             permissionService.ensurePermission(actorUserId, AppPermission.FORWARD_PRIVATE, "You are not allowed to forward as PRIVATE.");
@@ -521,6 +667,7 @@ public class DocumentServiceImpl implements DocumentService {
         d.setVisibility(forwardVisibility);
         applyDcAutoForwardTrackingAfterOwnershipChange(d, toUser);
         d.setStatus(Status.IN_PROGRESS);
+        touchDocument(d);
         documentRepository.save(d);
 
         DocumentMovement mv = DocumentMovement.create(documentId, from, to, actionBy.getId(), MovementActionType.FORWARD, forwardVisibility);
@@ -531,12 +678,14 @@ public class DocumentServiceImpl implements DocumentService {
             to,
             d.getId(),
             d.getRefNo(),
+            d.getTitle(),
             actionBy.getId(),
             actionBy.getFullName()
         );
     }
 
     @Override
+    @Transactional
     public void returns(Long documentId, ForwardReturnRequest request, Long actorUserId) {
         permissionService.ensurePermission(actorUserId, AppPermission.RETURN_DOCUMENT, "You are not allowed to return documents.");
 
@@ -553,11 +702,6 @@ public class DocumentServiceImpl implements DocumentService {
             throw new BadRequestException("Only the current owner can return this document.");
         }
 
-        // PMA restriction
-        if (isRole(actionBy, "PMA") && !isRole(toUser, "DC")) {
-            throw new BadRequestException("PMA can return ONLY to DC.");
-        }
-
         // Save remark BEFORE ownership change
         saveRemarkIfPresent(d, actionBy.getId(), request.getRemarkText(), "Remark added during return");
 
@@ -568,16 +712,99 @@ public class DocumentServiceImpl implements DocumentService {
         documentUserViewRepository.deleteByDocumentIdAndUserId(d.getId(), to);
         applyDcAutoForwardTrackingAfterOwnershipChange(d, toUser);
         d.setStatus(Status.RETURNED);
+        touchDocument(d);
         documentRepository.save(d);
 
         DocumentMovement mv = DocumentMovement.create(documentId, from, to, actionBy.getId(), MovementActionType.RETURN);
         movementRepository.save(mv);
 
         auditLogService.logMovement(documentId, actionBy.getId(), "RETURN", "Returned to userId=" + to);
+        realtimeNotificationService.notifyDocumentReturned(
+            to,
+            d.getId(),
+            d.getRefNo(),
+            d.getTitle(),
+            actionBy.getId(),
+            actionBy.getFullName()
+        );
+    }
+
+    @Override
+    @Transactional
+    public void undoSend(Long documentId, UndoSendRequest request, Long actorUserId) {
+        Document d = requireDocument(documentId);
+        User actor = requireUser(actorUserId);
+        DocumentMovement latestMovement = movementRepository.findFirstByDocumentIdOrderByActionAtDescIdDesc(documentId)
+                .orElseThrow(() -> new BadRequestException("No sent movement found to undo."));
+
+        UndoSendState state = resolveUndoSendState(d, latestMovement, actorUserId);
+        if (!state.canUndo()) {
+            throw new BadRequestException(undoBlockedMessage(state.status()));
+        }
+
+        String reason = request == null || request.getReason() == null ? "" : request.getReason().trim();
+        if (state.requiresReason() && reason.isEmpty()) {
+            throw new BadRequestException("Undo Send requires a reason.");
+        }
+
+        Long receiverUserId = latestMovement.getToUserId();
+        Long senderUserId = latestMovement.getFromUserId();
+        if (senderUserId == null) {
+            throw new BadRequestException("Cannot undo this movement because the sender is unknown.");
+        }
+
+        d.setCurrentOwnerUserId(senderUserId);
+        d.setStatus(Status.IN_PROGRESS);
+        d.setCompletedAt(null);
+        documentUserViewRepository.deleteByDocumentIdAndUserId(d.getId(), senderUserId);
+        applyDcAutoForwardTrackingAfterOwnershipChange(d, actor);
+        touchDocument(d);
+        documentRepository.save(d);
+
+        DocumentMovement undoMovement = DocumentMovement.create(
+                documentId,
+                receiverUserId,
+                senderUserId,
+                actorUserId,
+                MovementActionType.UNDO_SEND,
+                latestMovement.getForwardVisibility()
+        );
+        movementRepository.save(undoMovement);
+
+        auditLogService.logMovement(
+                documentId,
+                actorUserId,
+                "UNDO_SEND",
+                "Undo send from userId=" + receiverUserId + " back to userId=" + senderUserId
+                        + (reason.isBlank() ? "" : ". Reason: " + reason)
+        );
+
+        var config = dcAutoForwardConfigService.getOrCreateEntity();
+        if (config.isUndoSendNotifyReceiver()) {
+            realtimeNotificationService.notifyDocumentUndoSend(
+                    receiverUserId,
+                    d.getId(),
+                    d.getRefNo(),
+                    d.getTitle(),
+                    actor.getId(),
+                    actor.getFullName()
+            );
+        }
+        realtimeNotificationService.notifyDocumentUndoReturnedToSender(
+                senderUserId,
+                d.getId(),
+                d.getRefNo(),
+                d.getTitle(),
+                actor.getId(),
+                actor.getFullName()
+        );
     }
 
     @Override
     public void approve(Long documentId, DecisionRequest request, Long actorUserId) {
+        if (!dcAutoForwardConfigService.isApproveRejectButtonsEnabled()) {
+            throw new BadRequestException("Approve action is disabled by admin workflow settings.");
+        }
         permissionService.ensurePermission(actorUserId, AppPermission.APPROVE_DOCUMENT, "You are not allowed to approve documents.");
 
         Document d = requireDocument(documentId);
@@ -594,6 +821,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         d.setStatus(Status.APPROVED);
         d.setCompletedAt(LocalDateTime.now());
+        touchDocument(d);
         documentRepository.save(d);
 
         DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, actorUserId, MovementActionType.APPROVE);
@@ -604,6 +832,9 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     public void reject(Long documentId, DecisionRequest request, Long actorUserId) {
+        if (!dcAutoForwardConfigService.isApproveRejectButtonsEnabled()) {
+            throw new BadRequestException("Reject action is disabled by admin workflow settings.");
+        }
         permissionService.ensurePermission(actorUserId, AppPermission.REJECT_DOCUMENT, "You are not allowed to reject documents.");
 
         Document d = requireDocument(documentId);
@@ -619,6 +850,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         d.setStatus(Status.REJECTED);
         d.setCompletedAt(LocalDateTime.now());
+        touchDocument(d);
         documentRepository.save(d);
 
         DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, actorUserId, MovementActionType.REJECT);
@@ -644,6 +876,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         d.setStatus(Status.ISSUED);
         d.setIssuedAt(LocalDateTime.now());
+        touchDocument(d);
         documentRepository.save(d);
 
         DocumentMovement mv = DocumentMovement.create(documentId, d.getCurrentOwnerUserId(), null, actorUserId, MovementActionType.ISSUE);
@@ -662,14 +895,20 @@ public class DocumentServiceImpl implements DocumentService {
 
         Document d = requireDocument(documentId);
 
-        // ISSUED is final - cannot reopen
-        if (d.getStatus() == Status.ISSUED) {
-            throw new BadRequestException("Cannot reopen an ISSUED document.");
-        }
+        if (!dcAutoForwardConfigService.isApproveRejectButtonsEnabled()) {
+            if (d.getStatus() != Status.ISSUED && d.getStatus() != Status.APPROVED && d.getStatus() != Status.REJECTED) {
+                throw new BadRequestException("Reopen is allowed only for DONE, APPROVED, or REJECTED documents.");
+            }
+        } else {
+            // ISSUED is final - cannot reopen
+            if (d.getStatus() == Status.ISSUED) {
+                throw new BadRequestException("Cannot reopen an ISSUED document.");
+            }
 
-        // Only APPROVED or REJECTED can be reopened
-        if (d.getStatus() != Status.APPROVED && d.getStatus() != Status.REJECTED) {
-            throw new BadRequestException("Reopen is allowed only for APPROVED or REJECTED documents.");
+            // Only APPROVED or REJECTED can be reopened
+            if (d.getStatus() != Status.APPROVED && d.getStatus() != Status.REJECTED) {
+                throw new BadRequestException("Reopen is allowed only for APPROVED or REJECTED documents.");
+            }
         }
 
         // DC must also be the current owner (strong integrity)
@@ -691,6 +930,7 @@ public class DocumentServiceImpl implements DocumentService {
 
         // Decision is no longer final, so clear completed date
         d.setCompletedAt(null);
+        touchDocument(d);
 
         documentRepository.save(d);
 
@@ -707,14 +947,13 @@ public class DocumentServiceImpl implements DocumentService {
     // ==========================================================
 
     private void ensureCanForwardOrReturn(Document d) {
-        if (d.getStatus() == Status.ISSUED) {
-            throw new BadRequestException("Cannot forward/return an ISSUED document.");
-        }
-        if (d.getStatus() == Status.REJECTED) {
-            throw new BadRequestException("Cannot forward/return a REJECTED document.");
-        }
-        if (d.getStatus() == Status.APPROVED) {
-            throw new BadRequestException("Cannot forward/return an APPROVED document. Only ISSUE is allowed.");
+        if (!dcAutoForwardConfigService.isForwardReturnAllowed(d.getStatus())) {
+            String allowed = dcAutoForwardConfigService.getForwardReturnAllowedStatuses()
+                    .stream()
+                    .map(Status::name)
+                    .collect(Collectors.joining(", "));
+            throw new BadRequestException("Cannot forward/return a " + d.getStatus()
+                    + " document. Allowed statuses: " + allowed + ".");
         }
     }
 
@@ -731,6 +970,12 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     private void ensureCanIssue(Document d) {
+        if (!dcAutoForwardConfigService.isApproveRejectButtonsEnabled()) {
+            if (d.getStatus() == Status.ISSUED) {
+                throw new BadRequestException("Document is already ISSUED.");
+            }
+            return;
+        }
         if (d.getStatus() == Status.ISSUED) {
             throw new BadRequestException("Document is already ISSUED.");
         }
@@ -740,6 +985,82 @@ public class DocumentServiceImpl implements DocumentService {
         if (d.getStatus() != Status.APPROVED) {
             throw new BadRequestException("Cannot issue. Document must be APPROVED first.");
         }
+    }
+
+    private UndoSendState resolveUndoSendState(Document doc, DocumentMovement movement, Long actorUserId) {
+        var config = dcAutoForwardConfigService.getOrCreateEntity();
+        boolean requiresReason = config.isUndoSendRequiresReason();
+        boolean showExpiredInfo = config.isUndoSendShowExpiredInfo();
+
+        if (movement == null) {
+            return new UndoSendState(false, "NO_SENT_MOVEMENT", null, false, null, requiresReason, showExpiredInfo);
+        }
+
+        LocalDateTime sentAt = movement.getActionAt();
+        Integer configuredHours = config.getUndoSendWindowHours();
+        int windowHours = configuredHours == null || configuredHours < 1 ? 24 : configuredHours;
+        LocalDateTime expiresAt = sentAt == null ? null : sentAt.plusHours(windowHours);
+        boolean receiverOpened = isReceiverOpenedAfterMovement(movement);
+        String actionType = movement.getActionType() == null ? null : movement.getActionType().name();
+
+        if (!config.isUndoSendEnabled()) {
+            return new UndoSendState(false, "DISABLED", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        if (doc == null || doc.isDeleted()) {
+            return new UndoSendState(false, "DOCUMENT_UNAVAILABLE", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        if (movement.getActionType() != MovementActionType.FORWARD && movement.getActionType() != MovementActionType.RETURN) {
+            return new UndoSendState(false, "ALREADY_MOVED", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        if (!dcAutoForwardConfigService.getUndoSendAllowedActions().contains(movement.getActionType())) {
+            return new UndoSendState(false, "ACTION_NOT_ALLOWED", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        if (movement.getFromUserId() == null || !movement.getFromUserId().equals(actorUserId)) {
+            return new UndoSendState(false, "NOT_SENDER", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        if (doc.getStatus() == Status.ISSUED || doc.getStatus() == Status.REJECTED || doc.getCompletedAt() != null) {
+            return new UndoSendState(false, "FINALIZED", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        if (doc.getCurrentOwnerUserId() == null || !doc.getCurrentOwnerUserId().equals(movement.getToUserId())) {
+            return new UndoSendState(false, "ALREADY_MOVED", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        boolean latestMovement = movementRepository.findFirstByDocumentIdOrderByActionAtDescIdDesc(doc.getId())
+                .map(latest -> latest.getId() != null && latest.getId().equals(movement.getId()))
+                .orElse(false);
+        if (!latestMovement) {
+            return new UndoSendState(false, "ALREADY_MOVED", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        if (expiresAt != null && LocalDateTime.now().isAfter(expiresAt)) {
+            return new UndoSendState(false, "EXPIRED", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+        }
+        if (config.isUndoSendRequiresUnopened() && receiverOpened) {
+            return new UndoSendState(false, "OPENED", expiresAt, true, actionType, requiresReason, showExpiredInfo);
+        }
+
+        return new UndoSendState(true, "AVAILABLE", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+    }
+
+    private boolean isReceiverOpenedAfterMovement(DocumentMovement movement) {
+        if (movement == null || movement.getDocumentId() == null || movement.getToUserId() == null || movement.getActionAt() == null) {
+            return false;
+        }
+        return documentUserViewRepository.findByDocumentIdAndUserId(movement.getDocumentId(), movement.getToUserId())
+                .map(DocumentUserView::getViewedAt)
+                .map(viewedAt -> !viewedAt.isBefore(movement.getActionAt()))
+                .orElse(false);
+    }
+
+    private String undoBlockedMessage(String status) {
+        return switch (status == null ? "" : status) {
+            case "DISABLED" -> "Undo Send is disabled by admin.";
+            case "ACTION_NOT_ALLOWED" -> "Undo Send is not allowed for this action.";
+            case "NOT_SENDER" -> "Only the sender can undo this sent document.";
+            case "FINALIZED" -> "Cannot undo a finalized document.";
+            case "ALREADY_MOVED" -> "Cannot undo because the document has already moved.";
+            case "EXPIRED" -> "Undo Send has expired.";
+            case "OPENED" -> "Cannot undo because the receiver has already opened the document.";
+            default -> "Undo Send is not available for this document.";
+        };
     }
 
     // ==========================================================
@@ -767,8 +1088,15 @@ public class DocumentServiceImpl implements DocumentService {
                 .build();
 
         DocumentRemark saved = remarkRepository.save(remark);
+        touchDocument(doc);
+        documentRepository.save(doc);
 
         auditLogService.logRemark(doc.getId(), actionByUserId, "REMARK", auditMessage, saved.getId());
+    }
+
+    private void touchDocument(Document doc) {
+        if (doc == null) return;
+        doc.setUpdatedAt(LocalDateTime.now());
     }
 
     // ==========================================================
@@ -901,6 +1229,30 @@ public class DocumentServiceImpl implements DocumentService {
             .orElse(null);
 
         return matched == null ? null : toRemarkPreview(matched);
+    }
+
+    private boolean canViewRemarks(Document document, Long actorUserId) {
+        if (document == null || actorUserId == null) {
+            return false;
+        }
+        if (document.getCurrentOwnerUserId() != null && document.getCurrentOwnerUserId().equals(actorUserId)) {
+            return true;
+        }
+        return permissionService.hasPermission(actorUserId, AppPermission.VIEW_REMARKS_WHEN_NOT_REPORT_AT);
+    }
+
+    private Long resolveInboxSenderUserId(DocumentMovement movement) {
+        if (movement == null) {
+            return null;
+        }
+        if (movement.getFromUserId() != null) {
+            return movement.getFromUserId();
+        }
+        return movement.getActionByUserId();
+    }
+
+    private String roleName(User user) {
+        return user == null || user.getRole() == null ? null : user.getRole().getRoleName();
     }
 
     private String toRemarkPreview(String value) {

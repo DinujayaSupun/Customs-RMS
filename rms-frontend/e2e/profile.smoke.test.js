@@ -7,17 +7,23 @@ test("user can update profile fields and changes persist after reload", async ({
   await expect(page).toHaveURL(/\/inbox$/);
 
   await page.goto("/profile");
-  await expect(page.getByRole("heading", { name: "My Profile" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Basic Details" })).toBeVisible();
 
   const fullNameRow = page.locator(".formRow").filter({ hasText: "Full Name" });
   const emailRow = page.locator(".formRow").filter({ hasText: "Email" });
   const phoneRow = page.locator(".formRow").filter({ hasText: "Phone" });
 
-  const newName = `E2E Updated ${Date.now()}`;
+  const unique = Date.now();
+  const newName = `E2E Updated ${unique}`;
   await fullNameRow.locator("input").fill(newName);
-  await emailRow.locator("input").fill("e2e-updated@example.com");
+  await emailRow.locator("input").fill(`e2e-updated-${unique}@example.com`);
   await phoneRow.locator("input").fill("0771234567");
-  await page.getByRole("button", { name: "Save Profile" }).click();
+  await Promise.all([
+    page.waitForResponse((response) =>
+      response.url().includes("/api/auth/me") && response.request().method() === "PUT" && response.status() === 200
+    ),
+    page.getByRole("button", { name: "Save Profile" }).click(),
+  ]);
 
   await expect(fullNameRow.locator("input")).toHaveValue(newName);
   await page.reload();

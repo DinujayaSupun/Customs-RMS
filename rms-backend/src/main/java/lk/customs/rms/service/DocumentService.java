@@ -7,6 +7,7 @@ import lk.customs.rms.dto.SentMessageResponse;
 import lk.customs.rms.dto.UpdateDocumentRequest;
 import lk.customs.rms.dto.DecisionRequest;
 import lk.customs.rms.dto.ForwardReturnRequest;
+import lk.customs.rms.dto.UndoSendRequest;
 import org.springframework.data.domain.Page;
 
 public interface DocumentService {
@@ -29,6 +30,8 @@ public interface DocumentService {
     void forward(Long documentId, ForwardReturnRequest request, Long actorUserId);
 
     void returns(Long documentId, ForwardReturnRequest request, Long actorUserId);
+
+    void undoSend(Long documentId, UndoSendRequest request, Long actorUserId);
 
     void approve(Long documentId, DecisionRequest request, Long actorUserId);
 

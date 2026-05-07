@@ -11,6 +11,19 @@ Document Records Management System for Sri Lanka Customs.
 
 Customs RMS is an internal workflow system for receiving, routing, reviewing, and completing customs documents. It supports role-based visibility, document movement between officers, remarks/minutes, attachments, audit logs, and admin permission management.
 
+## What This README Covers
+
+This README is written for this specific Customs RMS system and should contain:
+
+- System purpose and main modules
+- Technology stack and repository structure
+- Required local and production environment variables
+- Local development setup
+- Build commands for backend and frontend
+- Testing commands
+- Production hosting guidance
+- Security and release notes for deployment
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -48,6 +61,15 @@ Customs-RMS/
 - Profile management: personal details, password change, profile picture
 - DC auto-forward scheduler for unattended assignments
 
+## System Modules
+
+| Module | Path | Purpose |
+|--------|------|---------|
+| Backend API | `rms-backend/` | Spring Boot REST API, authentication, workflow rules, file upload, audit logging |
+| Frontend UI | `rms-frontend/` | Vue 3 single-page application used by Customs RMS users |
+| Root scripts | `package.json` | One-command local development orchestration |
+| CI | `.github/workflows/ci.yml` | Backend and frontend automated test workflow |
+
 ## Backend API Areas
 
 - `/api/health`
@@ -68,28 +90,57 @@ Customs-RMS/
 - Node.js 18+ (Node 20 recommended for CI alignment)
 - MySQL 8
 
+## Environment Variables
+
+The backend reads these values from `.env` during local development or from server environment variables in production.
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `DB_USERNAME` | Yes | MySQL username |
+| `DB_PASSWORD` | Yes | MySQL password |
+| `JWT_SECRET` | Yes | Base64 encoded secret used to sign JWT tokens |
+| `APP_UPLOAD_DIR` | Recommended | External folder for document/profile uploads. Defaults to `C:/customs_uploads` |
+| `DC_AUTO_FORWARD_POLL_MS` | Optional | DC auto-forward scheduler interval. Defaults to `60000` |
+| `SPRING_PROFILES_ACTIVE` | Optional | Spring profile, for example `dev` locally |
+| `APP_SEED_ENABLED` | Local only | Enables default user seeding. Keep disabled in production |
+| `APP_SEED_DEFAULT_PASSWORD` | Local only | Password for local seeded non-admin users |
+| `APP_SEED_ADMIN_PASSWORD` | Local only | Password for local seeded admin user |
+
+Do not commit `.env`, production passwords, or production JWT secrets.
+
 ## Local Run
 
-### 1) Start backend
+### 1) Create local environment file
 
 ```powershell
-cd rms-backend
-setx DB_USERNAME "root"
-setx DB_PASSWORD "your_password"
-setx JWT_SECRET "PUT_BASE64_SECRET_HERE"
-setx APP_UPLOAD_DIR "C:/customs_uploads"
-mvn spring-boot:run
+Copy-Item .env.example .env
+```
+
+Edit `.env` with your local DB password and a Base64 JWT secret. The `.env` file is ignored by Git.
+
+Generate a local JWT secret:
+
+```powershell
+[Convert]::ToBase64String((1..64 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 } | ForEach-Object { [byte]$_ }))
+```
+
+### 2) Start backend and frontend
+
+```powershell
+npm run dev:all
 ```
 
 Backend default URL: `http://localhost:8080`
+Frontend default URL: `http://localhost:5173`
 
 Notes:
 - DB URL default is `jdbc:mysql://localhost:3306/customs_rms?...` from `application.properties`
+- `DB_USERNAME`, `DB_PASSWORD`, and `JWT_SECRET` are required through `.env` or server environment variables
 - Upload directory default is `C:/customs_uploads`
 - Local template: `rms-backend/src/main/resources/application-local.example.properties`
 - Hibernate SQL console spam is disabled by default (`spring.jpa.show-sql=false`) to keep terminal logs readable
 
-### 2) Start frontend
+### 3) Start frontend only
 
 ```powershell
 cd rms-frontend
@@ -100,7 +151,7 @@ npm run dev
 Frontend default URL: `http://localhost:5173`  
 Frontend calls backend at `http://localhost:8080/api`.
 
-### 3) Start backend + frontend together (single command)
+### 4) Start backend + frontend together (single command)
 
 From repository root:
 
@@ -123,7 +174,7 @@ Stop both with `Ctrl + C`.
 
 If logs scroll too fast, increase terminal history/scrollback size (for example in Windows Terminal profile settings).
 
-## Seeded Roles and Default Users
+## Seeded Roles and Optional Default Users
 
 Roles:
 - `ADMIN`
@@ -134,16 +185,19 @@ Roles:
 - `ASC`
 - `PMA`
 
-Default users:
+Default user seeding is only active for local/dev profile usage when `APP_SEED_ENABLED=true`.
 
-| Username | Password | Role |
-|----------|----------|------|
-| `dc` | `Pass@123` | `DC` |
-| `ddc` | `Pass@123` | `DDC` |
-| `sc` | `Pass@123` | `SC` |
-| `asc` | `Pass@123` | `ASC` |
-| `pma` | `Pass@123` | `PMA` |
-| `admin` | `Admin@123` | `ADMIN` |
+When enabled, these usernames are created if missing:
+- `dc`
+- `ddc`
+- `sc`
+- `asc`
+- `pma`
+- `admin`
+
+Passwords come from local-only env values:
+- `APP_SEED_DEFAULT_PASSWORD`
+- `APP_SEED_ADMIN_PASSWORD`
 
 ## Testing
 
@@ -158,6 +212,10 @@ mvn test
 
 ```powershell
 cd rms-frontend
+setx RMS_E2E_ADMIN_USER "admin"
+setx RMS_E2E_ADMIN_PASS "your_admin_password"
+setx RMS_E2E_DC_USER "dc"
+setx RMS_E2E_DC_PASS "your_dc_password"
 npm run test:e2e
 ```
 
@@ -187,3 +245,91 @@ npm run build
 ```
 
 Frontend output: `rms-frontend/dist/`
+
+## Hosting / Production Deployment
+
+For production, host the system as two applications:
+
+- Backend: Spring Boot API running on port `8080`
+- Frontend: static Vue build from `rms-frontend/dist/`, served by Nginx, Apache, IIS, or another web server
+
+Recommended production layout:
+
+```text
+Internet / Intranet Users
+        |
+        v
+Web Server / Reverse Proxy
+        |
+        |-- /           -> Vue frontend static files
+        |-- /api/       -> Spring Boot backend on localhost:8080
+        |-- /actuator/  -> Optional health endpoints, restrict if exposed
+```
+
+### Production Steps
+
+1. Prepare a server with Java 17+, Node.js, Maven, MySQL 8, and a web server such as Nginx.
+2. Create the production MySQL database/user.
+3. Set production environment variables: `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, and `APP_UPLOAD_DIR`.
+4. Keep `APP_SEED_ENABLED=false` in production.
+5. Build the backend:
+
+```powershell
+cd rms-backend
+mvn clean package -DskipTests
+```
+
+6. Run the backend JAR as a service:
+
+```powershell
+java -jar target/rms-backend-0.0.1-SNAPSHOT.jar
+```
+
+7. Build the frontend:
+
+```powershell
+cd rms-frontend
+npm install
+npm run build
+```
+
+8. Copy `rms-frontend/dist/` to the web server's public directory.
+9. Configure the web server to serve the frontend and proxy `/api/` to `http://127.0.0.1:8080/api/`.
+10. Add HTTPS with a valid certificate before production use.
+
+Example Nginx configuration:
+
+```nginx
+server {
+  listen 80;
+  server_name your-domain.example;
+
+  root /var/www/customs-rms/dist;
+  index index.html;
+
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+
+  location /api/ {
+    proxy_pass http://127.0.0.1:8080/api/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}
+```
+
+## Production Checklist
+
+- Use a strong Base64 `JWT_SECRET`.
+- Use a dedicated MySQL user with only the permissions needed by the app.
+- Store uploads outside the repository using `APP_UPLOAD_DIR`.
+- Back up the database and upload directory regularly.
+- Disable local seed users in production.
+- Serve the frontend over HTTPS.
+- Restrict server access with firewall rules.
+- Keep `.env` and production credentials private.
+- Run backend as a managed service so it restarts automatically after reboot.
+- Test login, document upload, forwarding, audit logs, and admin user management before release.

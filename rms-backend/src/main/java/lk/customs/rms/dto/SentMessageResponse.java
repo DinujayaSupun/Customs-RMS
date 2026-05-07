@@ -23,4 +23,15 @@ public class SentMessageResponse {
     private String toUserName;
     private String latestRemarkPreview;
     private LocalDateTime sentAt;
+    private boolean autoForwarded;
+    private boolean canUndoSend;
+    private String undoSendStatus;
+    private LocalDateTime undoSendExpiresAt;
+    private boolean undoSendReceiverOpened;
+    private String undoSendActionType;
+    private boolean undoSendRequiresReason;
+    private boolean undoSendShowExpiredInfo;
+    private Long undoSendByUserId;
+    private String undoSendByName;
+    private String undoSendByRole;
 }

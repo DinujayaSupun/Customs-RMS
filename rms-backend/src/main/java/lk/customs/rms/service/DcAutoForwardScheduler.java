@@ -77,6 +77,7 @@ public class DcAutoForwardScheduler {
             doc.setStatus(Status.IN_PROGRESS);
             doc.setDcAssignedAt(null);
             doc.setDcViewedAt(null);
+            doc.setUpdatedAt(LocalDateTime.now());
             documentRepository.save(doc);
 
             String forwardVisibility = doc.getVisibility();

@@ -17,4 +17,7 @@ public class RemarkResponse {
     private String remarkedByName;
 
     private LocalDateTime remarkedAt;
+
+    private boolean canEdit;
+    private boolean canDelete;
 }

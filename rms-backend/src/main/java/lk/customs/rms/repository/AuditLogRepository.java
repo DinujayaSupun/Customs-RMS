@@ -12,6 +12,24 @@ import java.util.List;
 
 public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
 
+    List<AuditLog> findByEntityTypeAndEntityIdInAndActionTypeOrderByPerformedAtAsc(String entityType, List<Long> entityIds, String actionType);
+
+    @Query("""
+        select distinct al.actionType
+        from AuditLog al
+        where al.actionType is not null
+        order by al.actionType asc
+        """)
+    List<String> findDistinctActionTypes();
+
+    @Query("""
+        select distinct al.performedByUserId
+        from AuditLog al
+        where al.performedByUserId is not null
+        order by al.performedByUserId asc
+        """)
+    List<Long> findDistinctPerformedByUserIds();
+
     List<AuditLog> findByEntityTypeAndEntityIdOrderByPerformedAtAsc(String entityType, Long entityId);
 
     // ✅ Full document history: document + movements + attachment logs (via details_json containing documentId)

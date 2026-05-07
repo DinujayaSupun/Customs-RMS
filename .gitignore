@@ -10,6 +10,7 @@ Thumbs.db
 # Root-level local envs
 .env
 .env.*
+!.env.example
 
 # Local Spring overrides (secrets stay local)
 rms-backend/src/main/resources/application-local.properties

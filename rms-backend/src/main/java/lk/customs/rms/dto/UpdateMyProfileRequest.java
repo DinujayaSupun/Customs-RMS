@@ -19,7 +19,10 @@ public class UpdateMyProfileRequest {
     @Size(max = 150, message = "Email must be at most 150 characters.")
     private String email;
 
-    @Pattern(regexp = "^(?=(?:\\D*\\d){10,}).*$", message = "Phone must contain at least 10 digits.")
+    @Pattern(
+            regexp = "^(?:$|(?=(?:\\D*\\d){10,})[0-9+()\\-\\s]+)$",
+            message = "Phone can contain only numbers, spaces, +, -, and brackets, and must contain at least 10 digits."
+    )
     @Size(max = 30, message = "Phone must be at most 30 characters.")
     private String phone;
 }

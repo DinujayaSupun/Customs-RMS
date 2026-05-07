@@ -21,7 +21,7 @@ public class CurrentUserService {
         }
 
         String username = authentication.getName();
-        return userRepository.findByUsernameAndIsActiveTrue(username)
+        return userRepository.findByUsernameIgnoreCaseAndIsActiveTrue(username)
                 .orElseThrow(() -> new BadRequestException("Active user not found for authentication principal."));
     }
 

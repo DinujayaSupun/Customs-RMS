@@ -2,8 +2,13 @@
   <div class="app">
     <header class="header">
       <div class="brand">
-        <span class="brand-name">Sri Lanka Customs</span>
-        <span class="brand-sub">Document Workflow Management System</span>
+        <span class="brand-logo">
+          <img src="/sri-lanka-customs-logo.svg" alt="Sri Lanka Customs logo" />
+        </span>
+        <span class="brand-copy">
+          <span class="brand-name">Sri Lanka Customs</span>
+          <span class="brand-sub">Document Workflow Management System</span>
+        </span>
       </div>
 
       <div class="user">
@@ -18,7 +23,7 @@
           <div v-else class="avatar avatarFallback">{{ initials }}</div>
         </div>
         <span class="user-role">
-          {{ currentUser?.fullName || currentUser?.name }} • {{ currentUser?.role }} • ID {{ currentUser?.id }}
+          {{ currentUserLabel }}
         </span>
         <button class="logout" type="button" @click="logout">Logout</button>
       </div>
@@ -26,14 +31,57 @@
 
     <div class="body">
       <aside class="sidebar">
-        <div class="sidebar-title">Navigation</div>
+        <div class="sidebar-top">
+          <div class="sidebar-mark" aria-label="Navigation menu">
+            <svg viewBox="0 0 48 48" class="sidebar-mark-svg" aria-hidden="true">
+              <path d="M14 17h20" />
+              <path d="M14 24h20" />
+              <path d="M14 31h20" />
+            </svg>
+          </div>
+          <div class="sidebar-text sidebar-heading">Navigation</div>
+        </div>
 
-        <router-link to="/inbox" class="nav">My Inbox</router-link>
-        <router-link to="/documents" class="nav">Documents</router-link>
-        <router-link to="/profile" class="nav">My Profile</router-link>
-        <router-link v-if="canViewLogs" to="/logs" class="nav">Logs</router-link>
-        <router-link v-if="currentUser?.role === 'ADMIN'" to="/users" class="nav">Users</router-link>
-        <router-link v-if="currentUser?.role === 'ADMIN'" to="/permissions" class="nav">Permissions</router-link>
+        <nav class="navList">
+          <router-link
+            v-for="item in navItems"
+            :key="item.to"
+            :to="item.to"
+            class="nav"
+            :title="item.label"
+          >
+            <span class="nav-icon" :class="`nav-icon-${item.icon}`" aria-hidden="true">
+              <svg v-if="item.icon === 'inbox'" viewBox="0 0 24 24" class="nav-svg">
+                <path d="M4 7h16v8h-4l-2 3h-4l-2-3H4z" />
+                <path d="M4 7l2-3h12l2 3" />
+              </svg>
+              <svg v-else-if="item.icon === 'documents'" viewBox="0 0 24 24" class="nav-svg">
+                <path d="M7 3h7l5 5v13H7z" />
+                <path d="M14 3v5h5" />
+                <path d="M9 13h6M9 17h6" />
+              </svg>
+              <svg v-else-if="item.icon === 'profile'" viewBox="0 0 24 24" class="nav-svg">
+                <circle cx="12" cy="8" r="3.5" />
+                <path d="M5 19c1.8-3 4.3-4.5 7-4.5s5.2 1.5 7 4.5" />
+              </svg>
+              <svg v-else-if="item.icon === 'logs'" viewBox="0 0 24 24" class="nav-svg">
+                <path d="M6 18V9M12 18V6M18 18v-4" />
+                <path d="M4 20h16" />
+              </svg>
+              <svg v-else-if="item.icon === 'users'" viewBox="0 0 24 24" class="nav-svg">
+                <circle cx="9" cy="9" r="3" />
+                <circle cx="17" cy="10" r="2.5" />
+                <path d="M4.5 19c1.3-2.7 3.4-4 6-4s4.7 1.3 6 4" />
+                <path d="M14.5 18c.8-1.8 2.2-2.8 4-3" />
+              </svg>
+              <svg v-else-if="item.icon === 'permissions'" viewBox="0 0 24 24" class="nav-svg">
+                <circle cx="12" cy="12" r="3.2" />
+                <path d="M12 4.5v2.2M12 17.3v2.2M19.5 12h-2.2M6.7 12H4.5M17.3 6.7l-1.6 1.6M8.3 15.7l-1.6 1.6M17.3 17.3l-1.6-1.6M8.3 8.3L6.7 6.7" />
+              </svg>
+            </span>
+            <span class="sidebar-text nav-label">{{ item.label }}</span>
+          </router-link>
+        </nav>
       </aside>
 
       <main class="content">
@@ -49,6 +97,7 @@ import { useRouter } from "vue-router";
 import { getMyWorkloadStats } from "../api/documents.api";
 import { buildMyProfilePictureUrl } from "../api/auth.api";
 import { clearSession, getCurrentUser, hasPermission } from "../auth/currentUser";
+import { formatUserLabel } from "../auth/userLabel";
 import { useToast } from "../composables/useToast";
 
 const router = useRouter();
@@ -57,7 +106,28 @@ const avatarBroken = ref(false);
 const { success, info } = useToast();
 
 const currentUser = computed(() => userRef.value);
+const currentUserLabel = computed(() => formatUserLabel(currentUser.value));
 const canViewLogs = computed(() => hasPermission(currentUser.value, "VIEW_LOGS"));
+const navItems = computed(() => {
+  const items = [
+    { to: "/inbox", label: "My Inbox", icon: "inbox" },
+    { to: "/documents", label: "Documents", icon: "documents" },
+    { to: "/profile", label: "My Profile", icon: "profile" },
+  ];
+
+  if (canViewLogs.value) {
+    items.push({ to: "/logs", label: "Logs", icon: "logs" });
+  }
+
+  if (currentUser.value?.role === "ADMIN") {
+    items.push(
+      { to: "/users", label: "Users", icon: "users" },
+      { to: "/permissions", label: "Permissions", icon: "permissions" },
+    );
+  }
+
+  return items;
+});
 
 const initials = computed(() => {
   const text = String(currentUser.value?.fullName || currentUser.value?.username || "U").trim();
@@ -134,7 +204,14 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.app { font-family: Arial, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+.app {
+  --sidebar-collapsed-width: 74px;
+  --sidebar-expanded-width: 220px;
+  font-family: Arial, sans-serif;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
 
 .header {
   height: 60px;
@@ -146,7 +223,33 @@ onUnmounted(() => {
   padding: 0 18px;
 }
 
-.brand { display: flex; flex-direction: column; line-height: 1.1; }
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  line-height: 1.1;
+}
+
+.brand-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.28);
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.brand-logo img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  display: block;
+}
+
+.brand-copy { display: flex; flex-direction: column; }
 .brand-name { font-weight: 800; font-size: 14px; }
 .brand-sub { font-size: 12px; opacity: 0.9; }
 
@@ -183,28 +286,191 @@ onUnmounted(() => {
 .body { flex: 1; display: flex; min-height: 0; }
 
 .sidebar {
-  width: 240px;
-  background: #111827;
+  width: var(--sidebar-collapsed-width);
+  flex: 0 0 var(--sidebar-collapsed-width);
+  background: linear-gradient(180deg, #111827 0%, #0f172a 100%);
   color: #fff;
-  padding: 16px;
+  padding: 14px 12px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  align-items: stretch;
+  gap: 10px;
+  overflow: hidden;
+  transition: width .38s ease, padding .38s ease, box-shadow .38s ease, flex-basis .38s ease;
+  border-right: 1px solid rgba(255,255,255,0.06);
+  box-sizing: border-box;
 }
-.sidebar-title { font-weight: 800; margin-bottom: 10px; opacity: 0.95; }
+
+.sidebar:hover {
+  width: var(--sidebar-expanded-width);
+  flex-basis: var(--sidebar-expanded-width);
+  padding-right: 16px;
+  box-shadow: 12px 0 32px rgba(15, 23, 42, 0.14);
+}
+
+.sidebar-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 2px 0 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.sidebar-mark {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.22);
+  overflow: hidden;
+}
+
+.sidebar-mark-svg {
+  width: 28px;
+  height: 28px;
+  display: block;
+  stroke: #eff6ff;
+  fill: none;
+  stroke-width: 3.2;
+  stroke-linecap: round;
+}
+
+.sidebar-heading {
+  font-size: 13px;
+  font-weight: 800;
+  color: #e5e7eb;
+}
+
+.sidebar-text {
+  opacity: 0;
+  transform: translateX(-8px);
+  transition: opacity .24s ease, transform .32s ease;
+  white-space: nowrap;
+}
+
+.sidebar:hover .sidebar-text {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.sidebar:not(:hover) .sidebar-top .sidebar-text {
+  display: none;
+}
+
+.sidebar:not(:hover) .nav .sidebar-text {
+  display: none;
+}
+
+.sidebar:hover .sidebar-top {
+  justify-content: flex-start;
+}
+
+.navList {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+}
+
+.sidebar:not(:hover) .navList {
+  align-items: center;
+}
 
 .nav {
   color: #d1d5db;
   text-decoration: none;
-  padding: 10px 12px;
-  border-radius: 8px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  transition: background .24s ease, transform .24s ease, box-shadow .24s ease;
+  width: 100%;
+  box-sizing: border-box;
 }
-.nav:hover { background: #374151; }
+
+.sidebar:not(:hover) .nav {
+  width: 44px;
+  min-width: 44px;
+  justify-content: center;
+  padding: 4px;
+}
+
+.nav:hover {
+  background: rgba(55, 65, 81, 0.78);
+}
 .nav.router-link-active {
-  background: #2563eb;
+  background: rgba(37, 99, 235, 0.18);
   color: #fff;
   font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.26);
 }
 
 .content { flex: 1; background: #f3f4f6; padding: 20px; overflow-y: auto; }
+
+.nav-icon {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.07);
+  color: #dbeafe;
+  transition: background .24s ease, color .24s ease, transform .24s ease;
+}
+
+.nav-svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.nav.router-link-active .nav-icon {
+  background: rgba(37, 99, 235, 0.5);
+  color: #ffffff;
+}
+
+.sidebar:not(:hover) .nav.router-link-active .nav-icon {
+  background: rgba(37, 99, 235, 0.58);
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.24);
+}
+
+.sidebar:not(:hover) .nav:hover {
+  transform: translateY(-1px);
+}
+
+@media (max-width: 900px) {
+  .sidebar,
+  .sidebar:hover {
+    width: var(--sidebar-expanded-width);
+  }
+
+  .sidebar-text {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  .sidebar {
+    padding: 16px;
+  }
+
+  .nav {
+    justify-content: flex-start;
+    padding: 8px;
+  }
+}
 </style>
