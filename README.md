@@ -11,19 +11,6 @@ Document Records Management System for Sri Lanka Customs.
 
 Customs RMS is an internal workflow system for receiving, routing, reviewing, and completing customs documents. It supports role-based visibility, document movement between officers, remarks/minutes, attachments, audit logs, and admin permission management.
 
-## What This README Covers
-
-This README is written for this specific Customs RMS system and should contain:
-
-- System purpose and main modules
-- Technology stack and repository structure
-- Required local and production environment variables
-- Local development setup
-- Build commands for backend and frontend
-- Testing commands
-- Production hosting guidance
-- Security and release notes for deployment
-
 ## Tech Stack
 
 | Layer | Technology |
