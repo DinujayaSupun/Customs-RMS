@@ -153,7 +153,7 @@
                     <br />
                     <span class="sentMetaLine">
                       <template v-if="undoSendInfo(d).isReceiverUndoNotice">
-                        Document returned to {{ d.toUserName || `User #${d.toUserId ?? 'N/A'}` }}
+                        Document returned to {{ sentToLabel(d) }}
                       </template>
                       <template v-else>
                         Send was undone
@@ -165,7 +165,7 @@
                     Your latest minute: {{ d.latestRemarkPreview }}
                     <br />
                     <span class="sentMetaLine">
-                      Sent to {{ d.toUserName || `User #${d.toUserId ?? 'N/A'}` }}<span v-if="d.autoForwarded"> (auto-forwarded)</span> • {{ String(d.forwardVisibility || 'PRIVATE').toUpperCase() }} • {{ displaySentDate(d) }}
+                      Sent to {{ sentToLabel(d) }}<span v-if="d.autoForwarded"> (auto-forwarded)</span> • {{ String(d.forwardVisibility || 'PRIVATE').toUpperCase() }} • {{ displaySentDate(d) }}
                     </span>
                     <template v-if="undoSendInfo(d).helper">
                       <br />
@@ -176,7 +176,7 @@
                     No minute added by you
                     <br />
                     <span class="sentMetaLine">
-                      Sent to {{ d.toUserName || `User #${d.toUserId ?? 'N/A'}` }}<span v-if="d.autoForwarded"> (auto-forwarded)</span> • {{ String(d.forwardVisibility || 'PRIVATE').toUpperCase() }} • {{ displaySentDate(d) }}
+                      Sent to {{ sentToLabel(d) }}<span v-if="d.autoForwarded"> (auto-forwarded)</span> • {{ String(d.forwardVisibility || 'PRIVATE').toUpperCase() }} • {{ displaySentDate(d) }}
                     </span>
                     <template v-if="undoSendInfo(d).helper">
                       <br />
@@ -479,8 +479,8 @@
                     :class="{ active: Number(u.id) === Number(forwardToUserId) }"
                     @mousedown.prevent="selectForwardUser(u)"
                   >
-                    <span class="forwardUserName">{{ u.fullName || u.name || u.username || `ID ${u.id}` }}</span>
-                    <span class="forwardUserMeta">{{ u.username || '-' }} • {{ u.role || '-' }} • ID {{ u.id }}</span>
+                    <span class="forwardUserName">{{ formatUserLabel(u) }}</span>
+                    <span class="forwardUserMeta">{{ u.username || '-' }}<span v-if="u.department"> • {{ u.department }}</span></span>
                   </button>
                   <div v-if="filteredForwardTargets.length === 0" class="forwardSearchEmpty">No matching users</div>
                 </div>
@@ -818,6 +818,11 @@ function inboxReceivedPreview(doc) {
 
 function undoSendInfo(doc) {
   return getUndoSendInfo(doc);
+}
+
+function sentToLabel(doc) {
+  const name = String(doc?.toUserName || "").trim();
+  return name || "Unknown user";
 }
 
 function displayMovementActionLabel(actionType) {

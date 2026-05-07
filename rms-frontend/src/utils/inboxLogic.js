@@ -59,7 +59,8 @@ function userLabel({ id, name, role }) {
   const cleanRole = String(role || "").trim();
   if (cleanName && cleanRole) return `${cleanName} (${cleanRole})`;
   if (cleanName) return cleanName;
-  return id == null ? "Unknown user" : `User #${id}`;
+  if (cleanRole) return `Unknown user (${cleanRole})`;
+  return "Unknown user";
 }
 
 export function buildInboxReceivedPreview(doc, formatTime = (value) => value || "time unknown", currentUserId = null) {

@@ -66,5 +66,6 @@ function formatUndoActor(row = {}) {
 
   if (name && role) return `${name} (${role})`;
   if (name) return name;
-  return userId == null ? "" : `User #${userId}`;
+  if (role) return `Unknown user (${role})`;
+  return userId == null ? "" : "Unknown user";
 }

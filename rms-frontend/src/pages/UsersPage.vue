@@ -239,8 +239,8 @@
                       <div class="userCell">
                         <div class="userAvatar">{{ userInitials(u) }}</div>
                         <div class="userInfo">
-                          <div class="userName">{{ u.fullName || "-" }}</div>
-                          <div class="userMeta">{{ u.username }} • {{ u.role }} • ID {{ u.id }}</div>
+                          <div class="userName">{{ formatAdminUserLabel(u) }}</div>
+                          <div class="userMeta">{{ u.username }}<span v-if="u.department"> • {{ u.department }}</span></div>
                         </div>
                       </div>
                     </td>
@@ -298,7 +298,7 @@
                 <div class="dupRows">
                   <div v-for="u in group.users" :key="`dup-${u.id}`" class="dupRow">
                     <div>
-                      <div class="dupName">{{ u.fullName }} • ID {{ u.id }}</div>
+                      <div class="dupName" :title="formatAdminUserLabel(u)">{{ formatAdminUserLabel(u) }}</div>
                       <div class="dupMeta">{{ u.username }} • {{ u.active ? "ACTIVE" : "INACTIVE" }}</div>
                     </div>
                     <button
@@ -306,7 +306,7 @@
                       :disabled="!u.active || !mergeTargetId(group.users, u.id)"
                       @click="mergeDuplicate(u.id, mergeTargetId(group.users, u.id))"
                     >
-                      Merge Into {{ mergeTargetId(group.users, u.id) ? `ID ${mergeTargetId(group.users, u.id)}` : "-" }}
+                      Merge Into {{ mergeTargetLabel(group.users, u.id) }}
                     </button>
                   </div>
                 </div>
@@ -409,7 +409,7 @@
                 :key="`fallback-${dc.id}`"
                 :value="dc.id"
               >
-                {{ formatUserLabel(dc) }}
+                {{ formatAdminUserLabel(dc) }}
               </option>
             </select>
           </div>
@@ -516,7 +516,7 @@
                 :key="`bulk-fallback-${dc.id}`"
                 :value="dc.id"
               >
-                {{ formatUserLabel(dc) }}
+                {{ formatAdminUserLabel(dc) }}
               </option>
             </select>
           </div>
@@ -619,10 +619,10 @@ const createForm = ref({
 
 const activeUsersCount = computed(() => summaryRows.value.filter((u) => u.active).length);
 const inactiveUsersCount = computed(() => summaryRows.value.filter((u) => !u.active).length);
-const editingUserLabel = computed(() => formatUserLabel(editingUser.value));
-const resetPasswordUserLabel = computed(() => formatUserLabel(resetPasswordUser.value));
-const deactivateTargetUserLabel = computed(() => formatUserLabel(deactivateTargetUser.value));
-const deleteTargetUserLabel = computed(() => formatUserLabel(deleteTargetUser.value));
+const editingUserLabel = computed(() => formatAdminUserLabel(editingUser.value));
+const resetPasswordUserLabel = computed(() => formatAdminUserLabel(resetPasswordUser.value));
+const deactivateTargetUserLabel = computed(() => formatAdminUserLabel(deactivateTargetUser.value));
+const deleteTargetUserLabel = computed(() => formatAdminUserLabel(deleteTargetUser.value));
 const deleteRequiresTypedConfirmation = computed(() => deleteTargetUser.value?.role === "ADMIN");
 const deleteConfirmationValid = computed(() =>
   !deleteRequiresTypedConfirmation.value
@@ -1038,13 +1038,25 @@ function mergeTargetId(groupUsers, sourceId) {
   return groupUsers.find((u) => Number(u.id) !== Number(sourceId) && u.active)?.id ?? null;
 }
 
+function formatAdminUserLabel(user) {
+  if (!user) return "-";
+  const id = user.id == null ? "ID unknown" : `ID ${user.id}`;
+  return `${formatUserLabel(user)} • ${id}`;
+}
+
+function mergeTargetLabel(groupUsers, sourceId) {
+  const targetId = mergeTargetId(groupUsers, sourceId);
+  const target = groupUsers.find((u) => Number(u.id) === Number(targetId));
+  return target ? formatAdminUserLabel(target) : "-";
+}
+
 async function mergeDuplicate(sourceUserId, targetUserId) {
   if (!sourceUserId || !targetUserId) return;
   error.value = "";
   saving.value = true;
   try {
     await adminMergeUsers(Number(sourceUserId), Number(targetUserId));
-    toast.success(`Merged user ID ${sourceUserId} into ID ${targetUserId}.`);
+    toast.success("Duplicate user merged successfully.");
     await load();
   } catch (e) {
     error.value = e?.message || "Merge failed";

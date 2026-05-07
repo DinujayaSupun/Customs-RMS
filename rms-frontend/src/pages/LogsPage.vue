@@ -151,8 +151,8 @@
                 <td :title="row.entityType || '-'"><span class="truncateText">{{ row.entityType || "-" }}</span></td>
                 <td>{{ row.entityId ?? "-" }}</td>
                 <td :title="row.documentRef || '-'"><span class="truncateText">{{ row.documentRef || "-" }}</span></td>
-                <td :title="row.performedByUserName || `User ID ${row.performedByUserId}`">
-                  <span class="truncateText">{{ row.performedByUserName || `User ID ${row.performedByUserId}` }}</span>
+                <td :title="performerDisplayName(row)">
+                  <span class="truncateText">{{ performerDisplayName(row) }}</span>
                 </td>
                 <td>
                   <div class="truncateText" :title="displayLogMessage(row) || '-'">{{ displayLogMessage(row) || "-" }}</div>
@@ -199,7 +199,7 @@
               <div class="kv"><span class="k">Entity Type</span><span class="v">{{ selectedLog.entityType || "-" }}</span></div>
               <div class="kv"><span class="k">Entity ID</span><span class="v">{{ selectedLog.entityId ?? "-" }}</span></div>
               <div class="kv"><span class="k">Document Ref</span><span class="v">{{ selectedLog.documentRef || "-" }}</span></div>
-              <div class="kv"><span class="k">Performed By</span><span class="v">{{ selectedLog.performedByUserName || `User ID ${selectedLog.performedByUserId}` }}</span></div>
+              <div class="kv"><span class="k">Performed By</span><span class="v">{{ performerDisplayName(selectedLog) }}</span></div>
               <div class="kv kvFull"><span class="k">Message</span><span class="v">{{ displayLogMessage(selectedLog) || "-" }}</span></div>
             </div>
           </div>
@@ -232,8 +232,8 @@
               <div class="kv"><span class="k">Status</span><span class="v">{{ displayStatusLabel(selectedDocument.status) || "-" }}</span></div>
               <div class="kv"><span class="k">Priority</span><span class="v">{{ selectedDocument.priority || "-" }}</span></div>
               <div class="kv"><span class="k">Received Date</span><span class="v">{{ selectedDocument.receivedDate || "-" }}</span></div>
-              <div class="kv"><span class="k">Created By ID</span><span class="v">{{ selectedDocument.createdByUserId ?? "-" }}</span></div>
-                  <div class="kv"><span class="k">Report At ID</span><span class="v">{{ selectedDocument.currentOwnerUserId ?? "-" }}</span></div>
+              <div class="kv"><span class="k">Created By ID</span><span class="v">{{ documentUserLabel(selectedDocument.createdByName, selectedDocument.createdByUserId) }}</span></div>
+                  <div class="kv"><span class="k">Report At ID</span><span class="v">{{ documentUserLabel(selectedDocument.currentOwnerName, selectedDocument.currentOwnerUserId) }}</span></div>
               <div class="kv"><span class="k">Created At</span><span class="v">{{ formatDateTime(selectedDocument.createdAt) }}</span></div>
                   <div class="kv"><span class="k">Approved At</span><span class="v">{{ formatDateTime(selectedDocument.completedAt) }}</span></div>
                   <div class="kv"><span class="k">Done At</span><span class="v">{{ formatDateTime(selectedDocument.issuedAt) }}</span></div>
@@ -394,7 +394,18 @@ async function loadFilterOptions() {
 }
 
 function performerLabel(option) {
-  return `${option?.name || "Unknown"} (ID ${option?.id})`;
+  const name = option?.name || "Unknown user";
+  return option?.id == null ? name : `${name} (ID ${option.id})`;
+}
+
+function performerDisplayName(row) {
+  const name = row?.performedByUserName || "Unknown user";
+  return row?.performedByUserId == null ? name : `${name} (ID ${row.performedByUserId})`;
+}
+
+function documentUserLabel(name, id) {
+  const displayName = name || "Unknown user";
+  return id == null ? displayName : `${displayName} (ID ${id})`;
 }
 
 function syncPerformedBySelection() {

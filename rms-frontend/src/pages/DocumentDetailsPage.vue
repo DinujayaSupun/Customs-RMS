@@ -3,7 +3,7 @@
     <!-- TOP BAR -->
     <div class="topbar">
       <div>
-        <h2 class="title">Document #{{ doc?.refNo || ("ID " + documentId) }}</h2>
+        <h2 class="title">{{ doc?.refNo ? `Document ${doc.refNo}` : "Document" }}</h2>
 
         <div class="meta">
           <span class="pill">Status: {{ displayStatusLabel(doc?.status) || "-" }}</span>
@@ -225,8 +225,8 @@
                   :class="{ active: Number(u.id) === Number(toUserId) }"
                   @mousedown.prevent="selectForwardUser(u)"
                 >
-                  <span class="forwardUserName">{{ u.fullName || u.name || u.username || `ID ${u.id}` }}</span>
-                  <span class="forwardUserMeta">{{ u.username || "-" }} • {{ u.role || "-" }} • ID {{ u.id }}</span>
+                  <span class="forwardUserName">{{ formatUserLabel(u) }}</span>
+                  <span class="forwardUserMeta">{{ u.username || "-" }}<span v-if="u.department"> • {{ u.department }}</span></span>
                 </button>
                 <div v-if="filteredForwardTargets.length === 0" class="forwardSearchEmpty">
                   No matching users

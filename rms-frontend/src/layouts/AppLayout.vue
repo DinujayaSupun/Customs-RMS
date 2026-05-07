@@ -2,8 +2,13 @@
   <div class="app">
     <header class="header">
       <div class="brand">
-        <span class="brand-name">Sri Lanka Customs</span>
-        <span class="brand-sub">Document Workflow Management System</span>
+        <span class="brand-logo">
+          <img src="/sri-lanka-customs-logo.svg" alt="Sri Lanka Customs logo" />
+        </span>
+        <span class="brand-copy">
+          <span class="brand-name">Sri Lanka Customs</span>
+          <span class="brand-sub">Document Workflow Management System</span>
+        </span>
       </div>
 
       <div class="user">
@@ -18,7 +23,7 @@
           <div v-else class="avatar avatarFallback">{{ initials }}</div>
         </div>
         <span class="user-role">
-          {{ currentUser?.fullName || currentUser?.name }} • {{ currentUser?.role }} • ID {{ currentUser?.id }}
+          {{ currentUserLabel }}
         </span>
         <button class="logout" type="button" @click="logout">Logout</button>
       </div>
@@ -92,6 +97,7 @@ import { useRouter } from "vue-router";
 import { getMyWorkloadStats } from "../api/documents.api";
 import { buildMyProfilePictureUrl } from "../api/auth.api";
 import { clearSession, getCurrentUser, hasPermission } from "../auth/currentUser";
+import { formatUserLabel } from "../auth/userLabel";
 import { useToast } from "../composables/useToast";
 
 const router = useRouter();
@@ -100,6 +106,7 @@ const avatarBroken = ref(false);
 const { success, info } = useToast();
 
 const currentUser = computed(() => userRef.value);
+const currentUserLabel = computed(() => formatUserLabel(currentUser.value));
 const canViewLogs = computed(() => hasPermission(currentUser.value, "VIEW_LOGS"));
 const navItems = computed(() => {
   const items = [
@@ -216,7 +223,33 @@ onUnmounted(() => {
   padding: 0 18px;
 }
 
-.brand { display: flex; flex-direction: column; line-height: 1.1; }
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  line-height: 1.1;
+}
+
+.brand-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.28);
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.brand-logo img {
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
+  display: block;
+}
+
+.brand-copy { display: flex; flex-direction: column; }
 .brand-name { font-weight: 800; font-size: 14px; }
 .brand-sub { font-size: 12px; opacity: 0.9; }
 
