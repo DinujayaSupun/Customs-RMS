@@ -320,7 +320,7 @@
                 <div><span class="label">Days Open</span>{{ previewDaysOpen }}</div>
                 <div><span class="label">Viewing File</span>{{ selectedPreviewAttachment?.fileName || selectedPreviewAttachmentType }}</div>
                 <div><span class="label">Attachments</span>{{ previewAttachmentCount }}</div>
-                <div><span class="label">Report At</span>{{ ownerLabel(previewDoc?.currentOwnerUserId) }}</div>
+                <div><span class="label">Report At</span>{{ ownerLabel(previewDoc?.currentOwnerUserId, previewDoc?.currentOwnerName) }}</div>
               </div>
 
               <div v-if="previewExtrasError" class="note noteWarn">{{ previewExtrasError }}</div>
@@ -336,7 +336,7 @@
                 </div>
                 <div class="opsRow">
                   <span class="label">Action By</span>
-                  <span>{{ previewLastMovement ? ownerLabel(previewLastMovement.actionByUserId) : '-' }}</span>
+                  <span>{{ previewLastMovement ? ownerLabel(previewLastMovement.actionByUserId, previewLastMovement.actionByUserName) : '-' }}</span>
                 </div>
                 <div class="opsRow">
                   <span class="label">Latest Minute</span>
@@ -549,7 +549,7 @@ import {
   undoSendDocument,
 } from "../api/documents.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
-import { formatUserLabel, formatUserLabelById } from "../auth/userLabel";
+import { formatUserLabel, formatUserLabelFromParts } from "../auth/userLabel";
 import { buildInboxReceivedPreview, findPreferredReturnTargetId, markInboxDocumentViewed, resolveWorkflowAutoTarget, sortInboxDefaultDisplay, sortInboxDocumentsBy } from "../utils/inboxLogic";
 import { canForwardInboxDocument, canReturnInboxDocument } from "../utils/inboxPermissionLogic";
 import { getWorkflowSenderSuccessMessage } from "../utils/workflowNotificationLogic";
@@ -885,9 +885,8 @@ function openAttachmentInNewTab(attachment) {
   window.open(buildAttachmentUrl(attachment.id), "_blank");
 }
 
-function ownerLabel(userId) {
-  if (userId === null || userId === undefined || userId === "") return "-";
-  return formatUserLabelById(userId, users.value);
+function ownerLabel(userId, name, role) {
+  return formatUserLabelFromParts({ userId, name, role }, users.value);
 }
 
 function sortDocuments(list) {

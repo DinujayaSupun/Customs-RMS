@@ -136,8 +136,8 @@
               <td><span class="pill" :class="'pill-'+d.priority">{{ d.priority }}</span></td>
               <td><span class="pill" :class="'pill-'+d.status">{{ displayStatusLabel(d.status) }}</span></td>
 
-              <td class="ownerCell" :title="ownerLabel(d.currentOwnerUserId)">
-                <span class="truncateText">{{ ownerLabel(d.currentOwnerUserId) }}</span>
+              <td class="ownerCell" :title="ownerLabel(d.currentOwnerUserId, d.currentOwnerName)">
+                <span class="truncateText">{{ ownerLabel(d.currentOwnerUserId, d.currentOwnerName) }}</span>
               </td>
 
               <td>
@@ -179,7 +179,7 @@
           <div class="previewPills">
             <span class="pill" :class="'pill-'+previewDoc?.status">{{ displayStatusLabel(previewDoc?.status) || '-' }}</span>
             <span class="pill" :class="'pill-'+previewDoc?.priority">{{ previewDoc?.priority || '-' }}</span>
-            <span class="pill pill-PENDING">Report At: {{ ownerLabel(previewDoc?.currentOwnerUserId) }}</span>
+            <span class="pill pill-PENDING">Report At: {{ ownerLabel(previewDoc?.currentOwnerUserId, previewDoc?.currentOwnerName) }}</span>
           </div>
 
           <div class="previewContent">
@@ -248,7 +248,7 @@
                 </div>
                 <div class="opsRow">
                   <span class="label">Action By:</span>
-                  <span>{{ previewLastMovement ? ownerLabel(previewLastMovement.actionByUserId) : '-' }}</span>
+                  <span>{{ previewLastMovement ? ownerLabel(previewLastMovement.actionByUserId, previewLastMovement.actionByUserName) : '-' }}</span>
                 </div>
                 <div class="opsRow">
                   <span class="label">Latest Minute:</span>
@@ -281,7 +281,7 @@ import HoverHint from "../components/HoverHint.vue";
 import { listDocuments, listMovements, listRemarks, listAttachments, buildAttachmentUrl } from "../api/documents.api";
 import { listUsers } from "../api/auth.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
-import { formatUserLabelById } from "../auth/userLabel";
+import { formatUserLabelFromParts } from "../auth/userLabel";
 import { getPrimaryAttachment, isImageAttachmentName, isPdfAttachmentName, isPreviewableAttachmentName, resolveAttachmentTypeFromName } from "../utils/attachmentViewerLogic";
 import { formatDateSafe, formatDateTimeSafe } from "../utils/dateFormat";
 import { matchesReceivedDateRange, sortDocumentsBy } from "../utils/documentsLogic";
@@ -465,8 +465,8 @@ function previewAttachmentUrl(attachment) {
   return buildAttachmentUrl(attachment.id, { inline: true });
 }
 
-function ownerLabel(userId) {
-  return formatUserLabelById(userId, users.value);
+function ownerLabel(userId, name, role) {
+  return formatUserLabelFromParts({ userId, name, role }, users.value);
 }
 
 function openDetails(id) {
