@@ -109,6 +109,7 @@ async function submit() {
       role: res.role || "USER",
       at: Date.now(),
     };
+    console.log("welcomePayload", welcomePayload)
     window.sessionStorage.setItem("rms_pending_welcome", JSON.stringify(welcomePayload));
 
     const redirect = route.query.redirect ? String(route.query.redirect) : "/inbox";
