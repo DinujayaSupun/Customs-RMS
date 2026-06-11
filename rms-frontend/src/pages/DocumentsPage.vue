@@ -193,7 +193,7 @@
                   v-if="previewMainAttachment"
                   class="btn btn-sm"
                   type="button"
-                  @click="window.open(previewAttachmentUrl(previewMainAttachment), '_blank')"
+                  @click="openPreviewAttachment(previewMainAttachment)"
                 >
                   Open File
                 </button>
@@ -278,7 +278,7 @@ import { useRouter } from "vue-router";
 import { File, FileText, FileSpreadsheet, Image, Archive, Eye } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
-import { listDocuments, listMovements, listRemarks, listAttachments, buildAttachmentUrl } from "../api/documents.api";
+import { listDocuments, listMovements, listRemarks, listAttachments, createAttachmentDownloadUrl } from "../api/documents.api";
 import { listUsers } from "../api/auth.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabelFromParts } from "../auth/userLabel";
@@ -335,6 +335,7 @@ const previewExtrasError = ref("");
 const previewMovements = ref([]);
 const previewRemarks = ref([]);
 const previewAttachments = ref([]);
+const attachmentUrls = ref({});
 
 const PRIORITY_ORDER = { LOW: 1, MEDIUM: 2, HIGH: 3, URGENT: 4 };
 const STATUS_ORDER = { PENDING: 1, IN_PROGRESS: 2, APPROVED: 3, ISSUED: 4, REJECTED: 5 };
@@ -364,6 +365,7 @@ function resetPreviewExtras() {
   previewMovements.value = [];
   previewRemarks.value = [];
   previewAttachments.value = [];
+  attachmentUrls.value = {};
 }
 
 async function loadPreviewExtras(doc) {
@@ -462,7 +464,39 @@ function daysOpenFor(document) {
 
 function previewAttachmentUrl(attachment) {
   if (!attachment?.id) return "";
-  return buildAttachmentUrl(attachment.id, { inline: true });
+  void ensureAttachmentUrl(attachment.id, { inline: true });
+  return getCachedAttachmentUrl(attachment.id, { inline: true });
+}
+
+function attachmentUrlKey(attachmentId, { inline = false } = {}) {
+  return `${attachmentId}:${inline ? "inline" : "download"}`;
+}
+
+function getCachedAttachmentUrl(attachmentId, options = {}) {
+  return attachmentUrls.value[attachmentUrlKey(attachmentId, options)] || "";
+}
+
+async function ensureAttachmentUrl(attachmentId, options = {}) {
+  if (!attachmentId) return "";
+
+  const key = attachmentUrlKey(attachmentId, options);
+  if (attachmentUrls.value[key]) return attachmentUrls.value[key];
+
+  const url = await createAttachmentDownloadUrl(attachmentId, options);
+  attachmentUrls.value = { ...attachmentUrls.value, [key]: url };
+  return url;
+}
+
+async function openPreviewAttachment(attachment) {
+  if (!attachment?.id) return;
+
+  const win = window.open("", "_blank");
+  const url = await ensureAttachmentUrl(attachment.id);
+  if (win && url) {
+    win.location = url;
+  } else if (url) {
+    window.open(url, "_blank");
+  }
 }
 
 function ownerLabel(userId, name, role) {

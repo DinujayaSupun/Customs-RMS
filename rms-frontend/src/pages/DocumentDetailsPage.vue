@@ -650,7 +650,7 @@ import {
   issueDocument,
   reopenDocument,
   undoSendDocument,
-  buildAttachmentUrl,
+  createAttachmentDownloadUrl,
   getWorkflowRules,
 } from "../api/documents.api";
 
@@ -673,6 +673,7 @@ const doc = ref(null);
 const movements = ref([]);
 const remarks = ref([]);
 const attachments = ref([]);
+const attachmentUrls = ref({});
 const selectedMovementId = ref(null);
 const editingRemarkId = ref(null);
 const editingRemarkText = ref("");
@@ -1048,13 +1049,40 @@ function findLatestMovementTime(actionTypes) {
 }
 
 function previewUrl(attachmentId) {
-  return buildAttachmentUrl(attachmentId, { inline: true });
+  if (!attachmentId) return "";
+  void ensureAttachmentUrl(attachmentId, { inline: true });
+  return getCachedAttachmentUrl(attachmentId, { inline: true });
 }
-function downloadUrl(attachmentId) {
-  return buildAttachmentUrl(attachmentId);
+
+function attachmentUrlKey(attachmentId, { inline = false } = {}) {
+  return `${attachmentId}:${inline ? "inline" : "download"}`;
 }
-function openInNewTab(a) {
-  window.open(downloadUrl(a.id), "_blank");
+
+function getCachedAttachmentUrl(attachmentId, options = {}) {
+  return attachmentUrls.value[attachmentUrlKey(attachmentId, options)] || "";
+}
+
+async function ensureAttachmentUrl(attachmentId, options = {}) {
+  if (!attachmentId) return "";
+
+  const key = attachmentUrlKey(attachmentId, options);
+  if (attachmentUrls.value[key]) return attachmentUrls.value[key];
+
+  const url = await createAttachmentDownloadUrl(attachmentId, options);
+  attachmentUrls.value = { ...attachmentUrls.value, [key]: url };
+  return url;
+}
+
+async function openInNewTab(a) {
+  if (!a?.id) return;
+
+  const win = window.open("", "_blank");
+  const url = await ensureAttachmentUrl(a.id);
+  if (win && url) {
+    win.location = url;
+  } else if (url) {
+    window.open(url, "_blank");
+  }
 }
 
 function selectFile(f) { selectedFile.value = f; }
@@ -1063,6 +1091,7 @@ function openViewer(file) {
   if (!target) return;
   selectedFile.value = target;
   viewerOpen.value = true;
+  void ensureAttachmentUrl(target.id, { inline: true });
 }
 
 function toggleMovement(movementId) {
@@ -1133,6 +1162,7 @@ function toWorkflowGuidance(message, actionLabel) {
 async function reloadAll() {
   error.value = "";
   busy.value = true;
+  attachmentUrls.value = {};
   try {
     doc.value = await getDocument(documentId);
 

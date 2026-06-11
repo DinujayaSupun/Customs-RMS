@@ -1,4 +1,3 @@
-import { getAccessToken } from "../auth/currentUser";
 import { createAuthedHttp, getApiErrorMessage } from "./apiClient";
 
 const http = createAuthedHttp();
@@ -51,12 +50,18 @@ export async function uploadMyProfilePicture(file) {
   }
 }
 
-export function buildMyProfilePictureUrl(version) {
-  const url = new URL("http://localhost:8080/api/auth/me/profile-picture");
-  const token = getAccessToken();
-  if (token) url.searchParams.set("access_token", token);
-  if (version) url.searchParams.set("v", String(version));
-  return url.toString();
+export async function createMyProfilePictureUrl(version) {
+  try {
+    const data = (await http.post("/auth/me/profile-picture-token")).data;
+    const rawUrl = String(data?.url || "");
+    if (!rawUrl) return "";
+
+    const url = new URL(rawUrl);
+    if (version) url.searchParams.set("v", String(version));
+    return url.toString();
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
 }
 
 export async function listUsers() {
@@ -201,16 +206,4 @@ export async function adminSavePermissionsPage(payload) {
   } catch (e) {
     throw new Error(getMsg(e));
   }
-}
-
-export function adminExportUsersUrl({ search = "", role = "", active = "" } = {}) {
-  const url = new URL("http://localhost:8080/api/admin/users/export");
-  if (search) url.searchParams.set("search", search);
-  if (role) url.searchParams.set("role", role);
-  if (active !== "" && active !== null && active !== undefined) {
-    url.searchParams.set("active", String(active));
-  }
-  const token = getAccessToken();
-  if (token) url.searchParams.set("access_token", token);
-  return url.toString();
 }

@@ -4,6 +4,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -12,13 +14,16 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
 
-    private static final Pattern ATTACHMENT_DOWNLOAD_PATH =
-            Pattern.compile("^/api/attachments/[^/]+/download$");
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthFilter.class);
+
+    private static final Pattern ATTACHMENT_DOWNLOAD_PATH_WITH_ID =
+            Pattern.compile("^/api/attachments/(\\d+)/download$");
 
     private final JwtService jwtService;
     private final CustomUserDetailsService userDetailsService;
@@ -52,7 +57,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
             }
-        } catch (Exception ignored) {
+        } catch (Exception ex) {
+            log.debug("JWT authentication failed for {} {}: {}",
+                    request.getMethod(),
+                    request.getRequestURI(),
+                    ex.getMessage());
         }
 
         filterChain.doFilter(request, response);
@@ -64,15 +73,15 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return authHeader.substring(7);
         }
 
-        String queryToken = request.getParameter("access_token");
-        if (queryToken != null && !queryToken.isBlank() && isAllowedQueryTokenRequest(request)) {
-            return queryToken.trim();
+        String downloadToken = request.getParameter("download_token");
+        if (downloadToken != null && !downloadToken.isBlank() && isAllowedDownloadTokenRequest(request, downloadToken.trim())) {
+            return downloadToken.trim();
         }
 
         return null;
     }
 
-    private boolean isAllowedQueryTokenRequest(HttpServletRequest request) {
+    private boolean isAllowedDownloadTokenRequest(HttpServletRequest request, String token) {
         if (!"GET".equalsIgnoreCase(request.getMethod())) {
             return false;
         }
@@ -84,7 +93,22 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             path = requestUri.substring(contextPath.length());
         }
 
-        return "/api/auth/me/profile-picture".equals(path)
-                || ATTACHMENT_DOWNLOAD_PATH.matcher(path).matches();
+        try {
+            if ("/api/auth/me/profile-picture".equals(path)) {
+                return jwtService.isDownloadTokenFor(token, "PROFILE_PICTURE", null);
+            }
+
+            Matcher attachmentMatcher = ATTACHMENT_DOWNLOAD_PATH_WITH_ID.matcher(path);
+            if (attachmentMatcher.matches()) {
+                return jwtService.isDownloadTokenFor(token, "ATTACHMENT", Long.parseLong(attachmentMatcher.group(1)));
+            }
+        } catch (Exception ex) {
+            log.debug("Download token validation failed for {} {}: {}",
+                    request.getMethod(),
+                    request.getRequestURI(),
+                    ex.getMessage());
+        }
+
+        return false;
     }
 }

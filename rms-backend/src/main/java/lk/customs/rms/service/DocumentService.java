@@ -16,6 +16,8 @@ public interface DocumentService {
 
     Page<DocumentResponse> getDocuments(int page, int size, String search, Long actorUserId);
 
+    Page<DocumentResponse> getMyInboxDocuments(int page, int size, Long actorUserId);
+
     Page<SentMessageResponse> getSentMessages(int page, int size, String search, Long actorUserId);
 
     DocumentResponse getDocumentById(Long id, Long actorUserId);

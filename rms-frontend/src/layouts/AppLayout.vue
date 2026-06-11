@@ -92,10 +92,10 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { getMyWorkloadStats } from "../api/documents.api";
-import { buildMyProfilePictureUrl } from "../api/auth.api";
+import { createMyProfilePictureUrl } from "../api/auth.api";
 import { clearSession, getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabel } from "../auth/userLabel";
 import { useToast } from "../composables/useToast";
@@ -103,6 +103,7 @@ import { useToast } from "../composables/useToast";
 const router = useRouter();
 const userRef = ref(getCurrentUser());
 const avatarBroken = ref(false);
+const avatarUrl = ref("");
 const { success, info } = useToast();
 
 const currentUser = computed(() => userRef.value);
@@ -136,10 +137,32 @@ const initials = computed(() => {
   return parts.map((p) => p[0]?.toUpperCase() || "").join("") || "U";
 });
 
-const avatarUrl = computed(() => {
-  if (!currentUser.value?.hasProfilePicture) return "";
-  return buildMyProfilePictureUrl(currentUser.value?.profilePictureUpdatedAt || Date.now());
-});
+let avatarRequestId = 0;
+
+async function refreshAvatarUrl() {
+  const requestId = ++avatarRequestId;
+  avatarBroken.value = false;
+
+  if (!currentUser.value?.hasProfilePicture) {
+    avatarUrl.value = "";
+    return;
+  }
+
+  try {
+    const url = await createMyProfilePictureUrl(currentUser.value?.profilePictureUpdatedAt || Date.now());
+    if (requestId === avatarRequestId) avatarUrl.value = url;
+  } catch {
+    if (requestId === avatarRequestId) avatarUrl.value = "";
+  }
+}
+
+watch(
+  () => `${currentUser.value?.hasProfilePicture || false}:${currentUser.value?.profilePictureUpdatedAt || ""}`,
+  () => {
+    void refreshAvatarUrl();
+  },
+  { immediate: true }
+);
 
 function onAuthChanged() {
   userRef.value = getCurrentUser();

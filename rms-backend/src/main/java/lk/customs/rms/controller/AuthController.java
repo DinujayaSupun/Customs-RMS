@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import lk.customs.rms.dto.ChangeMyPasswordRequest;
 import lk.customs.rms.dto.LoginRequest;
 import lk.customs.rms.dto.LoginResponse;
+import lk.customs.rms.dto.DownloadUrlResponse;
 import lk.customs.rms.dto.UpdateMyProfileRequest;
 import lk.customs.rms.dto.UserSummaryResponse;
 import lk.customs.rms.entity.User;
@@ -25,6 +26,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -259,6 +261,25 @@ public class AuthController {
                 .contentType(mediaType)
                 .header(HttpHeaders.CACHE_CONTROL, "no-cache")
                 .body(resource);
+    }
+
+    @PostMapping("/me/profile-picture-token")
+    public DownloadUrlResponse createProfilePictureToken(Authentication authentication) {
+        User user = currentUserService.requireUser(authentication);
+        if (!hasProfilePicture(user)) {
+            throw new BadRequestException("Profile picture not found.");
+        }
+        String role = user.getRole() == null ? null : user.getRole().getRoleName();
+        String token = jwtService.generateDownloadToken(user.getId(), user.getUsername(), role, "PROFILE_PICTURE", user.getId());
+        String url = ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/auth/me/profile-picture")
+                .queryParam("download_token", token)
+                .build()
+                .toUriString();
+        return DownloadUrlResponse.builder()
+                .url(url)
+                .expiresInSeconds(120)
+                .build();
     }
 
     @GetMapping("/users")

@@ -217,6 +217,22 @@ public class DocumentServiceImpl implements DocumentService {
             }
         }
 
+        return toDocumentResponsePage(docs, actorUserId);
+    }
+
+    @Override
+    public Page<DocumentResponse> getMyInboxDocuments(int page, int size, Long actorUserId) {
+        var pageable = PageRequest.of(
+            page,
+            size,
+            Sort.by(Sort.Order.desc("updatedAt"), Sort.Order.desc("createdAt"), Sort.Order.desc("id"))
+        );
+
+        Page<Document> docs = documentRepository.findAssignedActiveByOwner(actorUserId, Status.ISSUED, pageable);
+        return toDocumentResponsePage(docs, actorUserId);
+    }
+
+    private Page<DocumentResponse> toDocumentResponsePage(Page<Document> docs, Long actorUserId) {
         List<Long> docIds = docs.getContent().stream().map(Document::getId).toList();
         Set<Long> viewedDocIds = docIds.isEmpty()
             ? Set.of()

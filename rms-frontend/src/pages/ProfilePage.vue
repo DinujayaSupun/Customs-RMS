@@ -214,7 +214,7 @@ import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
 import { useToast } from "../composables/useToast";
 import {
-  buildMyProfilePictureUrl,
+  createMyProfilePictureUrl,
   changeMyPassword,
   getMe,
   updateMe,
@@ -231,6 +231,7 @@ const savingProfile = ref(false);
 const savingPassword = ref(false);
 const avatarBroken = ref(false);
 const avatarVersion = ref("");
+const avatarUrl = ref("");
 
 const profile = ref({
   id: null,
@@ -277,10 +278,24 @@ const roleDisplayName = computed(() => {
 });
 const selectedFileName = computed(() => selectedPic.value?.name || "");
 
-const avatarUrl = computed(() => {
-  if (!profile.value.hasProfilePicture) return "";
-  return buildMyProfilePictureUrl(avatarVersion.value || profile.value.profilePictureUpdatedAt || Date.now());
-});
+let avatarRequestId = 0;
+
+async function refreshAvatarUrl() {
+  const requestId = ++avatarRequestId;
+  avatarBroken.value = false;
+
+  if (!profile.value.hasProfilePicture) {
+    avatarUrl.value = "";
+    return;
+  }
+
+  try {
+    const url = await createMyProfilePictureUrl(avatarVersion.value || profile.value.profilePictureUpdatedAt || Date.now());
+    if (requestId === avatarRequestId) avatarUrl.value = url;
+  } catch {
+    if (requestId === avatarRequestId) avatarUrl.value = "";
+  }
+}
 
 function resetPasswordForm() {
   password.value = {
@@ -324,6 +339,7 @@ async function load() {
     avatarVersion.value = String(me.profilePictureUpdatedAt || Date.now());
 
     applySessionUser(me);
+    await refreshAvatarUrl();
   } catch (e) {
     error(e?.message || "Failed to load profile.");
   }
@@ -406,6 +422,7 @@ async function uploadPicture() {
     avatarVersion.value = String(Date.now());
 
     applySessionUser(me);
+    await refreshAvatarUrl();
     success("Profile picture updated.");
   } catch (e) {
     error(e?.message || "Failed to upload profile picture.");
