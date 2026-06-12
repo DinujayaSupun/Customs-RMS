@@ -3,11 +3,13 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "dev:free-ports": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$ports=@(8080,5173); foreach($p in $ports){ $conns=Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue; foreach($c in $conns){ try { Stop-Process -Id $c.OwningProcess -Force -ErrorAction Stop } catch {} } }; Write-Host 'Cleared dev ports if occupied.'\"",
+    "dev:check-ports": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-dev-ports.ps1",
+    "dev:free-ports": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/free-dev-ports.ps1",
+    "dev:free-ports:force": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/free-dev-ports.ps1 -Force",
     "dev:banner": "node -e \"console.log('========================================'); console.log('Customs RMS Dev URLs'); console.log('Frontend: http://localhost:5173'); console.log('Backend : http://localhost:8080'); console.log('========================================');\"",
     "dev:backend": "set MAVEN_USER_HOME=%CD%\\.m2&& rms-backend\\mvnw.cmd -f rms-backend/pom.xml spring-boot:run",
     "dev:frontend": "npm --prefix rms-frontend run dev",
-    "dev:all": "npm run dev:free-ports && npm run dev:banner && node scripts/dev-with-env.js"
+    "dev:all": "npm run dev:check-ports && npm run dev:banner && node scripts/dev-with-env.js"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
