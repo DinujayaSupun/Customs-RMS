@@ -320,7 +320,7 @@
                 <div><span class="label">Days Open</span>{{ previewDaysOpen }}</div>
                 <div><span class="label">Viewing File</span>{{ selectedPreviewAttachment?.fileName || selectedPreviewAttachmentType }}</div>
                 <div><span class="label">Attachments</span>{{ previewAttachmentCount }}</div>
-                <div><span class="label">Report At</span>{{ ownerLabel(previewDoc?.currentOwnerUserId) }}</div>
+                <div><span class="label">Report At</span>{{ ownerLabel(previewDoc?.currentOwnerUserId, previewDoc?.currentOwnerName) }}</div>
               </div>
 
               <div v-if="previewExtrasError" class="note noteWarn">{{ previewExtrasError }}</div>
@@ -336,7 +336,7 @@
                 </div>
                 <div class="opsRow">
                   <span class="label">Action By</span>
-                  <span>{{ previewLastMovement ? ownerLabel(previewLastMovement.actionByUserId) : '-' }}</span>
+                  <span>{{ previewLastMovement ? ownerLabel(previewLastMovement.actionByUserId, previewLastMovement.actionByUserName) : '-' }}</span>
                 </div>
                 <div class="opsRow">
                   <span class="label">Latest Minute</span>
@@ -539,9 +539,9 @@ import {
   forwardDocument,
   getDocument,
   getWorkflowRules,
-  buildAttachmentUrl,
+  createAttachmentDownloadUrl,
   listAttachments,
-  listDocuments,
+  listMyInboxDocuments,
   listMovements,
   listRemarks,
   listSentMessages,
@@ -549,7 +549,7 @@ import {
   undoSendDocument,
 } from "../api/documents.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
-import { formatUserLabel, formatUserLabelById } from "../auth/userLabel";
+import { formatUserLabel, formatUserLabelFromParts } from "../auth/userLabel";
 import { buildInboxReceivedPreview, findPreferredReturnTargetId, markInboxDocumentViewed, resolveWorkflowAutoTarget, sortInboxDefaultDisplay, sortInboxDocumentsBy } from "../utils/inboxLogic";
 import { canForwardInboxDocument, canReturnInboxDocument } from "../utils/inboxPermissionLogic";
 import { getWorkflowSenderSuccessMessage } from "../utils/workflowNotificationLogic";
@@ -581,6 +581,7 @@ const previewMovements = ref([]);
 const previewRemarks = ref([]);
 const previewAttachments = ref([]);
 const selectedPreviewAttachmentId = ref(null);
+const attachmentUrls = ref({});
 
 const forwardOpen = ref(false);
 const forwardDoc = ref(null);
@@ -872,22 +873,49 @@ function isImageFileName(fileName) {
 
 function forwardAttachmentPreviewUrl(attachment) {
   if (!attachment?.id) return "";
-  return buildAttachmentUrl(attachment.id, { inline: true });
+  void ensureAttachmentUrl(attachment.id, { inline: true });
+  return getCachedAttachmentUrl(attachment.id, { inline: true });
 }
 
 function previewAttachmentPreviewUrl(attachment) {
   if (!attachment?.id) return "";
-  return buildAttachmentUrl(attachment.id, { inline: true });
+  void ensureAttachmentUrl(attachment.id, { inline: true });
+  return getCachedAttachmentUrl(attachment.id, { inline: true });
 }
 
-function openAttachmentInNewTab(attachment) {
+function attachmentUrlKey(attachmentId, { inline = false } = {}) {
+  return `${attachmentId}:${inline ? "inline" : "download"}`;
+}
+
+function getCachedAttachmentUrl(attachmentId, options = {}) {
+  return attachmentUrls.value[attachmentUrlKey(attachmentId, options)] || "";
+}
+
+async function ensureAttachmentUrl(attachmentId, options = {}) {
+  if (!attachmentId) return "";
+
+  const key = attachmentUrlKey(attachmentId, options);
+  if (attachmentUrls.value[key]) return attachmentUrls.value[key];
+
+  const url = await createAttachmentDownloadUrl(attachmentId, options);
+  attachmentUrls.value = { ...attachmentUrls.value, [key]: url };
+  return url;
+}
+
+async function openAttachmentInNewTab(attachment) {
   if (!attachment?.id) return;
-  window.open(buildAttachmentUrl(attachment.id), "_blank");
+
+  const win = window.open("", "_blank");
+  const url = await ensureAttachmentUrl(attachment.id);
+  if (win && url) {
+    win.location = url;
+  } else if (url) {
+    window.open(url, "_blank");
+  }
 }
 
-function ownerLabel(userId) {
-  if (userId === null || userId === undefined || userId === "") return "-";
-  return formatUserLabelById(userId, users.value);
+function ownerLabel(userId, name, role) {
+  return formatUserLabelFromParts({ userId, name, role }, users.value);
 }
 
 function sortDocuments(list) {
@@ -986,12 +1014,11 @@ async function loadReceived() {
   loading.value = true;
   error.value = "";
   try {
-    const user = getCurrentUser();
     const pageSize = 200;
     const maxPages = 20;
     const all = [];
     for (let page = 0; page < maxPages; page += 1) {
-      const data = await listDocuments({ page, size: pageSize });
+      const data = await listMyInboxDocuments({ page, size: pageSize });
       const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
       all.push(...list);
 
@@ -1000,12 +1027,7 @@ async function loadReceived() {
       }
     }
 
-    const myUserId = Number(user?.id);
-    allRows.value = all.filter((d) => {
-      const ownerId = Number(d?.currentOwnerUserId ?? d?.currentOwnerId ?? d?.ownerUserId);
-      const status = String(d?.status || "").toUpperCase();
-      return Number.isFinite(myUserId) && ownerId === myUserId && status !== "ISSUED";
-    });
+    allRows.value = all;
     applyNow();
   } catch (e) {
     error.value = e?.message ?? "Failed to load inbox";
@@ -1150,6 +1172,7 @@ function resetPreviewExtras() {
   previewRemarks.value = [];
   previewAttachments.value = [];
   selectedPreviewAttachmentId.value = null;
+  attachmentUrls.value = {};
 }
 
 async function openPreview(row) {
@@ -1227,6 +1250,7 @@ function resetForwardForm() {
   forwardAttachmentsLoading.value = false;
   forwardAttachmentsError.value = "";
   selectedForwardAttachmentId.value = null;
+  attachmentUrls.value = {};
 }
 
 async function openForwardDialog(row) {

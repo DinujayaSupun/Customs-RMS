@@ -321,7 +321,7 @@
             <div v-for="r in remarks" :key="r.id" class="item">
               <div class="itemTop">
                 <span class="who">
-                  By <b>{{ formatUserLabelById(r.remarkedByUserId, users) }}</b>
+                  By <b>{{ remarkUserLabel(r) }}</b>
                 </span>
                 <span class="minuteTopRight">
                   <span class="when mono">{{ formatDateTime(r.remarkedAt) }}</span>
@@ -494,12 +494,12 @@
                 <div class="itemTop">
                   <span class="who">
                     <b>{{ displayMovementActionLabel(m.actionType) }}</b>
-                    <span v-if="m.fromUserId"> | from {{ formatUserLabelById(m.fromUserId, users) }}</span>
-                    <span v-if="m.toUserId"> → to {{ formatUserLabelById(m.toUserId, users) }}</span>
+                    <span v-if="m.fromUserId"> | from {{ movementUserLabel(m, "from") }}</span>
+                    <span v-if="m.toUserId"> → to {{ movementUserLabel(m, "to") }}</span>
                   </span>
                   <span class="when mono">{{ formatDateTime(m.actionAt) }}</span>
                 </div>
-                <div class="smallHint">Action by: {{ formatUserLabelById(m.actionByUserId, users) }}</div>
+                <div class="smallHint">Action by: {{ movementUserLabel(m, "actionBy") }}</div>
                 <div v-if="String(m.actionType).toUpperCase() === 'FORWARD'" class="smallHint">
                   Visibility: <b>{{ m.forwardVisibility || "PUBLIC" }}</b>
                 </div>
@@ -518,7 +518,7 @@
                   <div v-else class="list timelineRemarksList">
                     <div v-for="r in getRemarksForMovement(m.id)" :key="r.id" class="item timelineRemarkItem">
                       <div class="itemTop">
-                        <span class="who">By <b>{{ formatUserLabelById(r.remarkedByUserId, users) }}</b></span>
+                        <span class="who">By <b>{{ remarkUserLabel(r) }}</b></span>
                         <span class="when mono">{{ formatDateTime(r.remarkedAt) }}</span>
                       </div>
                       <div class="text">{{ r.remarkText }}</div>
@@ -620,7 +620,7 @@ import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
 import { useToast } from "../composables/useToast";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
-import { formatUserLabel, formatUserLabelById } from "../auth/userLabel";
+import { formatUserLabel, formatUserLabelFromParts } from "../auth/userLabel";
 import {
   getAttachmentViewerState,
   isImageAttachmentName,
@@ -650,7 +650,7 @@ import {
   issueDocument,
   reopenDocument,
   undoSendDocument,
-  buildAttachmentUrl,
+  createAttachmentDownloadUrl,
   getWorkflowRules,
 } from "../api/documents.api";
 
@@ -673,6 +673,7 @@ const doc = ref(null);
 const movements = ref([]);
 const remarks = ref([]);
 const attachments = ref([]);
+const attachmentUrls = ref({});
 const selectedMovementId = ref(null);
 const editingRemarkId = ref(null);
 const editingRemarkText = ref("");
@@ -899,13 +900,34 @@ const filteredViewerFiles = computed(() => {
 
 const createdByLabel = computed(() => {
   if (!doc.value) return "-";
-  return formatUserLabelById(doc.value.createdByUserId, users.value);
+  return formatUserLabelFromParts({
+    userId: doc.value.createdByUserId,
+    name: doc.value.createdByName,
+  }, users.value);
 });
 
 const ownerLabel = computed(() => {
   if (!doc.value) return "-";
-  return formatUserLabelById(doc.value.currentOwnerUserId, users.value);
+  return formatUserLabelFromParts({
+    userId: doc.value.currentOwnerUserId,
+    name: doc.value.currentOwnerName,
+  }, users.value);
 });
+
+function remarkUserLabel(remark) {
+  return formatUserLabelFromParts({
+    userId: remark?.remarkedByUserId,
+    name: remark?.remarkedByName,
+  }, users.value);
+}
+
+function movementUserLabel(movement, kind) {
+  const prefix = kind === "from" ? "from" : kind === "to" ? "to" : "actionBy";
+  return formatUserLabelFromParts({
+    userId: movement?.[`${prefix}UserId`],
+    name: movement?.[`${prefix}UserName`],
+  }, users.value);
+}
 
 const movementRemarksById = computed(() => {
   const result = new Map();
@@ -1027,13 +1049,40 @@ function findLatestMovementTime(actionTypes) {
 }
 
 function previewUrl(attachmentId) {
-  return buildAttachmentUrl(attachmentId, { inline: true });
+  if (!attachmentId) return "";
+  void ensureAttachmentUrl(attachmentId, { inline: true });
+  return getCachedAttachmentUrl(attachmentId, { inline: true });
 }
-function downloadUrl(attachmentId) {
-  return buildAttachmentUrl(attachmentId);
+
+function attachmentUrlKey(attachmentId, { inline = false } = {}) {
+  return `${attachmentId}:${inline ? "inline" : "download"}`;
 }
-function openInNewTab(a) {
-  window.open(downloadUrl(a.id), "_blank");
+
+function getCachedAttachmentUrl(attachmentId, options = {}) {
+  return attachmentUrls.value[attachmentUrlKey(attachmentId, options)] || "";
+}
+
+async function ensureAttachmentUrl(attachmentId, options = {}) {
+  if (!attachmentId) return "";
+
+  const key = attachmentUrlKey(attachmentId, options);
+  if (attachmentUrls.value[key]) return attachmentUrls.value[key];
+
+  const url = await createAttachmentDownloadUrl(attachmentId, options);
+  attachmentUrls.value = { ...attachmentUrls.value, [key]: url };
+  return url;
+}
+
+async function openInNewTab(a) {
+  if (!a?.id) return;
+
+  const win = window.open("", "_blank");
+  const url = await ensureAttachmentUrl(a.id);
+  if (win && url) {
+    win.location = url;
+  } else if (url) {
+    window.open(url, "_blank");
+  }
 }
 
 function selectFile(f) { selectedFile.value = f; }
@@ -1042,6 +1091,7 @@ function openViewer(file) {
   if (!target) return;
   selectedFile.value = target;
   viewerOpen.value = true;
+  void ensureAttachmentUrl(target.id, { inline: true });
 }
 
 function toggleMovement(movementId) {
@@ -1112,6 +1162,7 @@ function toWorkflowGuidance(message, actionLabel) {
 async function reloadAll() {
   error.value = "";
   busy.value = true;
+  attachmentUrls.value = {};
   try {
     doc.value = await getDocument(documentId);
 

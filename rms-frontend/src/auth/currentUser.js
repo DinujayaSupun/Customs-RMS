@@ -12,6 +12,7 @@ export function getAccessToken() {
 
 export function getCurrentUser() {
   const raw = localStorage.getItem(USER_KEY);
+  //console.log(raw)
   if (!raw) return null;
 
   try {

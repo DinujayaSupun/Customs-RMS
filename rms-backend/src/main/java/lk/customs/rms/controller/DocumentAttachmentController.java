@@ -1,7 +1,10 @@
 package lk.customs.rms.controller;
 
 import lk.customs.rms.dto.AttachmentResponse;
+import lk.customs.rms.dto.DownloadUrlResponse;
+import lk.customs.rms.entity.User;
 import lk.customs.rms.security.CurrentUserService;
+import lk.customs.rms.security.JwtService;
 import lk.customs.rms.service.AttachmentService;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
@@ -10,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -22,10 +26,12 @@ public class DocumentAttachmentController {
 
     private final AttachmentService attachmentService;
     private final CurrentUserService currentUserService;
+    private final JwtService jwtService;
 
-    public DocumentAttachmentController(AttachmentService attachmentService, CurrentUserService currentUserService) {
+    public DocumentAttachmentController(AttachmentService attachmentService, CurrentUserService currentUserService, JwtService jwtService) {
         this.attachmentService = attachmentService;
         this.currentUserService = currentUserService;
+        this.jwtService = jwtService;
     }
 
     // ✅ Upload attachment (versioned)
@@ -96,6 +102,27 @@ public class DocumentAttachmentController {
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         dispositionType + "; filename=\"" + safeFileName + "\"; filename*=UTF-8''" + encoded)
                 .body(result.resource());
+    }
+
+    @PostMapping("/api/attachments/{attachmentId}/download-token")
+    public DownloadUrlResponse createDownloadToken(
+            @PathVariable Long attachmentId,
+            @RequestParam(defaultValue = "false") boolean inline,
+            Authentication authentication
+    ) {
+        User user = currentUserService.requireUser(authentication);
+        String role = user.getRole() == null ? null : user.getRole().getRoleName();
+        String token = jwtService.generateDownloadToken(user.getId(), user.getUsername(), role, "ATTACHMENT", attachmentId);
+        String url = ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/api/attachments/{attachmentId}/download")
+                .queryParam("download_token", token)
+                .queryParam("inline", inline)
+                .buildAndExpand(attachmentId)
+                .toUriString();
+        return DownloadUrlResponse.builder()
+                .url(url)
+                .expiresInSeconds(120)
+                .build();
     }
 
     // ✅ Soft delete attachment version

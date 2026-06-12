@@ -40,6 +40,28 @@ public class JwtService {
                 .compact();
     }
 
+    public String generateDownloadToken(Long userId, String username, String role, String resourceType, Long resourceId) {
+        Map<String, Object> extraClaims = new HashMap<>();
+        extraClaims.put("uid", userId);
+        extraClaims.put("role", role);
+        extraClaims.put("token_type", "download");
+        extraClaims.put("resource_type", resourceType);
+        if (resourceId != null) {
+            extraClaims.put("resource_id", resourceId);
+        }
+
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + 120_000);
+
+        return Jwts.builder()
+                .claims(extraClaims)
+                .subject(username)
+                .issuedAt(now)
+                .expiration(expiry)
+                .signWith(getSignInKey())
+                .compact();
+    }
+
     public String extractUsername(String token) {
         return extractClaim(token, Claims::getSubject);
     }
@@ -60,6 +82,17 @@ public class JwtService {
         return username != null
                 && username.equals(userDetails.getUsername())
                 && !isTokenExpired(token);
+    }
+
+    public boolean isDownloadTokenFor(String token, String resourceType, Long resourceId) {
+        Claims claims = extractAllClaims(token);
+        if (!"download".equals(claims.get("token_type", String.class))) return false;
+        if (!resourceType.equals(claims.get("resource_type", String.class))) return false;
+        if (resourceId != null) {
+            Number raw = claims.get("resource_id", Number.class);
+            if (raw == null || raw.longValue() != resourceId) return false;
+        }
+        return !isTokenExpired(token);
     }
 
     private boolean isTokenExpired(String token) {

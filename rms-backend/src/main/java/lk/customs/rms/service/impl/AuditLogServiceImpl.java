@@ -4,16 +4,21 @@ import lk.customs.rms.entity.AuditLog;
 import lk.customs.rms.repository.AuditLogRepository;
 import lk.customs.rms.service.AuditLogService;
 import org.springframework.stereotype.Service;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Service
 public class AuditLogServiceImpl implements AuditLogService {
 
     private final AuditLogRepository auditLogRepository;
+    private final ObjectMapper objectMapper;
 
-    public AuditLogServiceImpl(AuditLogRepository auditLogRepository) {
+    public AuditLogServiceImpl(AuditLogRepository auditLogRepository, ObjectMapper objectMapper) {
         this.auditLogRepository = auditLogRepository;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -24,6 +29,16 @@ public class AuditLogServiceImpl implements AuditLogService {
                          String message,
                          String detailsJson) {
         save(entityType, entityId, actionType, userId, message, detailsJson);
+    }
+
+    @Override
+    public void logEventWithDetails(String entityType,
+                                    Long entityId,
+                                    String actionType,
+                                    Long userId,
+                                    String message,
+                                    Map<String, Object> details) {
+        save(entityType, entityId, actionType, userId, message, toDetailsJson(details));
     }
 
     @Override
@@ -48,15 +63,31 @@ public class AuditLogServiceImpl implements AuditLogService {
 
     @Override
     public void logAttachment(Long documentId, Long attachmentId, Long userId, String actionType, String message) {
-        String details = "{\"documentId\":" + documentId + ",\"attachmentId\":" + attachmentId + "}";
+        String details = toDetailsJson(Map.of(
+                "documentId", documentId,
+                "attachmentId", attachmentId
+        ));
         save("ATTACHMENT", attachmentId, actionType, userId, message, details);
     }
 
     @Override
     public void logRemark(Long documentId, Long userId, String actionType, String message, Long remarkId) {
         // ✅ Log as DOCUMENT so it is included when querying document history
-        String details = remarkId == null ? null : ("{\"documentId\":" + documentId + ",\"remarkId\":" + remarkId + "}");
+        String details = remarkId == null ? null : toDetailsJson(Map.of(
+                "documentId", documentId,
+                "remarkId", remarkId
+        ));
         save("DOCUMENT", documentId, actionType, userId, message, details);
+    }
+
+    private String toDetailsJson(Map<String, Object> details) {
+        if (details == null || details.isEmpty()) return null;
+
+        try {
+            return objectMapper.writeValueAsString(details);
+        } catch (JacksonException ex) {
+            throw new IllegalArgumentException("Could not serialize audit details.", ex);
+        }
     }
 
     private void save(String entityType, Long entityId, String actionType, Long userId, String message, String detailsJson) {

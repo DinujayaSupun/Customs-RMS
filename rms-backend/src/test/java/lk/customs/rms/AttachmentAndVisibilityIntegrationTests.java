@@ -27,6 +27,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import java.nio.charset.StandardCharsets;
+import java.net.URI;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
@@ -259,6 +260,34 @@ class AttachmentAndVisibilityIntegrationTests {
         mockMvc.perform(get("/api/attachments/{attachmentId}/download", attachmentId)
                         .header("Authorization", bearer(historyViewerToken)))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void attachmentDownloadUsesScopedDownloadTokenAndRejectsAccessTokenQuery() throws Exception {
+        String password = "AttachToken123";
+        User owner = createUser("ADMIN", "attach-token-owner-", password);
+        String ownerToken = loginAndGetToken(owner.getUsername(), password);
+        long documentId = createDocument(ownerToken, "attach-token-doc");
+        long attachmentId = uploadAttachment(documentId, ownerToken, "token-download.txt", "download body").get("id").asLong();
+
+        mockMvc.perform(get("/api/attachments/{attachmentId}/download", attachmentId)
+                        .param("access_token", ownerToken))
+                .andExpect(status().isForbidden());
+
+        MvcResult tokenResult = mockMvc.perform(post("/api/attachments/{attachmentId}/download-token", attachmentId)
+                        .header("Authorization", bearer(ownerToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.url").value(org.hamcrest.Matchers.containsString("download_token=")))
+                .andExpect(jsonPath("$.expiresInSeconds").value(120))
+                .andReturn();
+
+        String downloadToken = queryParam(readJson(tokenResult).get("url").asText(), "download_token");
+        assertThat(downloadToken).isNotBlank();
+
+        mockMvc.perform(get("/api/attachments/{attachmentId}/download", attachmentId)
+                        .param("download_token", downloadToken))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString()).isEqualTo("download body"));
     }
 
     @Test
@@ -504,5 +533,19 @@ class AttachmentAndVisibilityIntegrationTests {
 
     private String bearer(String token) {
         return "Bearer " + token;
+    }
+
+    private String queryParam(String url, String name) throws Exception {
+        String query = new URI(url).getRawQuery();
+        assertThat(query).isNotBlank();
+
+        for (String pair : query.split("&")) {
+            String[] parts = pair.split("=", 2);
+            if (parts.length == 2 && name.equals(parts[0])) {
+                return parts[1];
+            }
+        }
+
+        throw new IllegalStateException("Query parameter not found: " + name);
     }
 }

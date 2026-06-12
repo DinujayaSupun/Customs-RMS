@@ -38,6 +38,15 @@ public class DocumentController {
         return documentService.getDocuments(page, size, search, currentUserService.requireUserId(authentication));
     }
 
+    @GetMapping("/my-inbox")
+    public Page<DocumentResponse> myInbox(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "200") int size,
+            Authentication authentication
+    ) {
+        return documentService.getMyInboxDocuments(page, size, currentUserService.requireUserId(authentication));
+    }
+
     @GetMapping("/sent-messages")
     public Page<SentMessageResponse> sentMessages(
             @RequestParam(defaultValue = "0") int page,

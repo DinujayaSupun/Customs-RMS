@@ -274,8 +274,66 @@ class AdminManagementAndPermissionIntegrationTests {
                                     }
                                   ]
                                 }
-                                """))
+                """))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminCanSavePermissionPageMatrixAndWorkflowConfigTogether() throws Exception {
+        String password = "Admin1234";
+        User admin = createUser("ADMIN", "perm-page-admin-", password);
+        User receiver = createUser("DDC", "perm-page-receiver-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+
+        Role scRole = requireRole("SC");
+        RolePermission createPermission = rolePermissionRepository
+                .findByRole_IdAndPermissionNameIgnoreCase(scRole.getId(), AppPermission.CREATE_DOCUMENT.name())
+                .orElseThrow(() -> new IllegalStateException("Permission not found for SC CREATE_DOCUMENT"));
+        boolean originalEnabled = Boolean.TRUE.equals(createPermission.getEnabled());
+
+        try {
+            mockMvc.perform(put("/api/admin/permissions/page")
+                            .header("Authorization", bearer(adminToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "permissionMatrix": {
+                                        "entries": [
+                                          {
+                                            "roleName": "SC",
+                                            "permission": "CREATE_DOCUMENT",
+                                            "enabled": false
+                                          }
+                                        ]
+                                      },
+                                      "dcAutoForwardConfig": {
+                                        "enabled": true,
+                                        "timeoutMinutes": 15,
+                                        "receiverUserId": %d,
+                                        "forwardReturnAllowedStatuses": ["PENDING", "RETURNED"],
+                                        "approveRejectButtonsEnabled": false,
+                                        "undoSendEnabled": true,
+                                        "undoSendWindowHours": 12,
+                                        "undoSendRequiresUnopened": true,
+                                        "undoSendAllowedActions": ["FORWARD"],
+                                        "undoSendRequiresReason": true,
+                                        "undoSendNotifyReceiver": false,
+                                        "undoSendShowExpiredInfo": true
+                                      }
+                                    }
+                                    """.formatted(receiver.getId())))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.permissionMatrix.entries[?(@.roleName == 'SC' && @.permission == 'CREATE_DOCUMENT')].enabled").value(hasItem(false)))
+                    .andExpect(jsonPath("$.dcAutoForwardConfig.enabled").value(true))
+                    .andExpect(jsonPath("$.dcAutoForwardConfig.timeoutMinutes").value(15))
+                    .andExpect(jsonPath("$.dcAutoForwardConfig.receiverUserId").value(receiver.getId()))
+                    .andExpect(jsonPath("$.dcAutoForwardConfig.forwardReturnAllowedStatuses").value(hasItem("PENDING")))
+                    .andExpect(jsonPath("$.dcAutoForwardConfig.forwardReturnAllowedStatuses").value(hasItem("RETURNED")))
+                    .andExpect(jsonPath("$.dcAutoForwardConfig.approveRejectButtonsEnabled").value(false))
+                    .andExpect(jsonPath("$.dcAutoForwardConfig.undoSendAllowedActions").value(hasItem("FORWARD")));
+        } finally {
+            restorePermission(scRole, AppPermission.CREATE_DOCUMENT, originalEnabled);
+        }
     }
 
     @Test

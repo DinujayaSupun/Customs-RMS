@@ -17,6 +17,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 @RestController
 @CrossOrigin
 @RequestMapping("/api/admin/permissions")
@@ -52,13 +55,13 @@ public class AdminPermissionController {
         PermissionMatrixResponse updated = permissionService.updatePermissionMatrix(request);
 
         Long actorId = currentUserService.requireUser(authentication).getId();
-        auditLogService.logEvent(
+        auditLogService.logEventWithDetails(
                 "ROLE_PERMISSION",
                 0L,
                 "PERMISSION_UPDATE",
                 actorId,
                 "Admin updated permission matrix",
-                "{\"entryCount\":" + request.getEntries().size() + "}"
+                Map.of("entryCount", request.getEntries().size())
         );
 
         realtimeNotificationService.notifyPermissionsUpdated();
@@ -77,17 +80,13 @@ public class AdminPermissionController {
         DcAutoForwardConfigResponse updated = dcAutoForwardConfigService.updateConfig(request);
 
         Long actorId = currentUserService.requireUser(authentication).getId();
-        auditLogService.logEvent(
+        auditLogService.logEventWithDetails(
                 "ROLE_PERMISSION",
                 0L,
                 "DC_AUTO_FORWARD_CONFIG_UPDATE",
                 actorId,
                 "Admin updated permission workflow configuration",
-                "{\"enabled\":" + updated.getEnabled()
-                        + ",\"timeoutMinutes\":" + updated.getTimeoutMinutes()
-                        + ",\"receiverUserId\":" + updated.getReceiverUserId()
-                        + ",\"forwardReturnAllowedStatuses\":\"" + String.join(",", updated.getForwardReturnAllowedStatuses()) + "\""
-                        + ",\"approveRejectButtonsEnabled\":" + updated.getApproveRejectButtonsEnabled() + "}"
+                dcAutoForwardConfigDetails(updated)
         );
 
         return updated;
@@ -101,18 +100,13 @@ public class AdminPermissionController {
         DcAutoForwardConfigResponse updatedConfig = dcAutoForwardConfigService.updateConfig(request.getDcAutoForwardConfig());
 
         Long actorId = currentUserService.requireUser(authentication).getId();
-        auditLogService.logEvent(
+        auditLogService.logEventWithDetails(
                 "ROLE_PERMISSION",
                 0L,
                 "PERMISSION_PAGE_UPDATE",
                 actorId,
                 "Admin updated permission page settings",
-                "{\"entryCount\":" + request.getPermissionMatrix().getEntries().size()
-                        + ",\"enabled\":" + updatedConfig.getEnabled()
-                        + ",\"timeoutMinutes\":" + updatedConfig.getTimeoutMinutes()
-                        + ",\"receiverUserId\":" + updatedConfig.getReceiverUserId()
-                        + ",\"forwardReturnAllowedStatuses\":\"" + String.join(",", updatedConfig.getForwardReturnAllowedStatuses()) + "\""
-                        + ",\"approveRejectButtonsEnabled\":" + updatedConfig.getApproveRejectButtonsEnabled() + "}"
+                dcAutoForwardConfigDetails(updatedConfig, request.getPermissionMatrix().getEntries().size())
         );
 
         realtimeNotificationService.notifyPermissionsUpdated();
@@ -121,5 +115,20 @@ public class AdminPermissionController {
                 .permissionMatrix(updatedMatrix)
                 .dcAutoForwardConfig(updatedConfig)
                 .build();
+    }
+
+    private Map<String, Object> dcAutoForwardConfigDetails(DcAutoForwardConfigResponse config) {
+        return dcAutoForwardConfigDetails(config, null);
+    }
+
+    private Map<String, Object> dcAutoForwardConfigDetails(DcAutoForwardConfigResponse config, Integer entryCount) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        if (entryCount != null) details.put("entryCount", entryCount);
+        details.put("enabled", config.getEnabled());
+        details.put("timeoutMinutes", config.getTimeoutMinutes());
+        details.put("receiverUserId", config.getReceiverUserId());
+        details.put("forwardReturnAllowedStatuses", config.getForwardReturnAllowedStatuses());
+        details.put("approveRejectButtonsEnabled", config.getApproveRejectButtonsEnabled());
+        return details;
     }
 }

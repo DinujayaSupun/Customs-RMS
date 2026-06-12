@@ -124,6 +124,17 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     Optional<Document> findByIdAndDeletedFalse(Long id);
 
     @Query("""
+           select d
+           from Document d
+           where d.deleted = false
+             and d.currentOwnerUserId = :userId
+             and d.status <> :excludedStatus
+           """)
+    Page<Document> findAssignedActiveByOwner(@Param("userId") Long userId,
+                                             @Param("excludedStatus") Status excludedStatus,
+                                             Pageable pageable);
+
+    @Query("""
            select count(d)
            from Document d
            where d.deleted = false

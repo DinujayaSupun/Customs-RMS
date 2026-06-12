@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { assertUserHasPermissions, createTempUserByAdmin, loginFromUI } from "./helpers/auth";
+import {
+  adminCreds,
+  assertUserHasPermissions,
+  createDocumentByApi,
+  createTempUserByAdmin,
+  loginFromUI,
+} from "./helpers/auth";
 
 test("non-admin user can open create page and create a document", async ({ page, request }) => {
   const user = await createTempUserByAdmin(request, "PMA");
@@ -56,4 +62,28 @@ test("non-admin user can open create page and create a document", async ({ page,
   await expect(page.locator(".item", { hasText: mainFileName })).toContainText("MAIN");
   await expect(page.locator(".item", { hasText: attachmentFileName })).toContainText("v2");
   await expect(page.getByText(removedFileName)).toHaveCount(0);
+});
+
+test("admin-created document displays backend owner names even when admin is not in workflow user list", async ({ page, request }) => {
+  const document = await createDocumentByApi(request, adminCreds, {
+    title: `E2E-AUTO Admin Owner Display ${Date.now()}`,
+    priority: "MEDIUM",
+  });
+  const ownerName = document.currentOwnerName || document.createdByName;
+  expect(ownerName).toBeTruthy();
+
+  await loginFromUI(page, adminCreds);
+  await expect(page).toHaveURL(/\/inbox$/);
+
+  await page.goto("/documents");
+  const row = page.locator("tr", { hasText: document.refNo }).first();
+  await expect(row).toBeVisible();
+  await expect(row.locator(".ownerCell")).toContainText(ownerName);
+  await expect(row.locator(".ownerCell")).not.toContainText("Unknown user");
+
+  await page.goto(`/documents/${document.id}`);
+  await expect(page).toHaveURL(new RegExp(`/documents/${document.id}$`));
+  await expect(page.locator(".pill", { hasText: "Report At:" })).toContainText(ownerName);
+  await expect(page.locator(".subMeta")).toContainText(ownerName);
+  await expect(page.getByText("Unknown user")).toHaveCount(0);
 });

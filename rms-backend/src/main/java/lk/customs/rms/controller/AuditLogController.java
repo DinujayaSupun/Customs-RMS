@@ -1,6 +1,8 @@
 package lk.customs.rms.controller;
 
 import lk.customs.rms.dto.AuditLogResponse;
+import lk.customs.rms.entity.AuditLog;
+import lk.customs.rms.entity.User;
 import lk.customs.rms.enums.AppPermission;
 import lk.customs.rms.exception.BadRequestException;
 import lk.customs.rms.repository.AuditLogRepository;
@@ -11,7 +13,12 @@ import lk.customs.rms.service.PermissionService;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @RestController
 @CrossOrigin
@@ -44,7 +51,10 @@ public class AuditLogController {
                 }
 
         String documentRef = documentRepository.findByIdAndDeletedFalse(documentId).map(d -> d.getRefNo()).orElse(null);
-        return auditLogRepository.findHistoryForDocument(documentId)
+        List<AuditLog> logs = auditLogRepository.findHistoryForDocument(documentId);
+        Map<Long, User> usersById = usersByIdForLogs(logs);
+
+        return logs
                 .stream()
                 .map(l -> AuditLogResponse.builder()
                         .id(l.getId())
@@ -53,11 +63,31 @@ public class AuditLogController {
                 .documentRef(documentRef)
                         .actionType(l.getActionType())
                         .performedByUserId(l.getPerformedByUserId())
-                        .performedByUserName(userRepository.findById(l.getPerformedByUserId()).map(u -> u.getFullName()).orElse(null))
+                        .performedByUserName(userName(usersById, l.getPerformedByUserId()))
                         .performedAt(l.getPerformedAt())
                         .message(l.getMessage())
                         .detailsJson(l.getDetailsJson())
                         .build())
                 .toList();
+    }
+
+    private Map<Long, User> usersByIdForLogs(List<AuditLog> logs) {
+        Set<Long> userIds = new HashSet<>();
+        for (AuditLog log : logs) {
+            if (log.getPerformedByUserId() != null) {
+                userIds.add(log.getPerformedByUserId());
+            }
+        }
+
+        if (userIds.isEmpty()) return Map.of();
+
+        return userRepository.findAllById(userIds)
+                .stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+    }
+
+    private String userName(Map<Long, User> usersById, Long userId) {
+        User user = userId == null ? null : usersById.get(userId);
+        return user == null ? null : user.getFullName();
     }
 }

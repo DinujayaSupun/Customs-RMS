@@ -22,6 +22,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import java.nio.charset.StandardCharsets;
+import java.net.URI;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -117,10 +118,10 @@ class SecurityAndWorkflowIntegrationTests {
     }
 
     @Test
-    void queryTokenIsAllowedForProfilePictureAndAttachmentDownload() throws Exception {
+    void profilePictureDownloadUsesScopedDownloadTokenAndRejectsAccessTokenQuery() throws Exception {
         String password = "Query1234";
-        User admin = createUser("ADMIN", "query-allow-", password);
-        String token = loginAndGetToken(admin.getUsername(), password);
+        User user = createUser("ADMIN", "query-profile-", password);
+        String token = loginAndGetToken(user.getUsername(), password);
 
         MockMultipartFile profilePicture = new MockMultipartFile(
                 "file",
@@ -135,30 +136,34 @@ class SecurityAndWorkflowIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.hasProfilePicture").value(true));
 
-        mockMvc.perform(get("/api/auth/me/profile-picture")
-                        .param("access_token", token))
-                .andExpect(status().isOk());
-
-        long documentId = createDocument(admin, token, "query-allow-doc");
-
-        MockMultipartFile attachment = new MockMultipartFile(
-                "file",
-                "sample.txt",
-                MediaType.TEXT_PLAIN_VALUE,
-                "attachment-body".getBytes(StandardCharsets.UTF_8)
-        );
-
-        MvcResult uploadResult = mockMvc.perform(multipart("/api/documents/{documentId}/attachments", documentId)
-                        .file(attachment)
+        mockMvc.perform(get("/api/auth/me")
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hasProfilePicture").value(true));
+
+        mockMvc.perform(get("/api/auth/me/profile-picture")
+                        .param("access_token", token))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/auth/me/profile-picture")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentType()).isEqualTo(MediaType.IMAGE_PNG_VALUE));
+
+        MvcResult tokenResult = mockMvc.perform(post("/api/auth/me/profile-picture-token")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.url").value(org.hamcrest.Matchers.containsString("download_token=")))
+                .andExpect(jsonPath("$.expiresInSeconds").value(120))
                 .andReturn();
 
-        long attachmentId = readJson(uploadResult).get("id").asLong();
+        String downloadToken = queryParam(readJson(tokenResult).get("url").asText(), "download_token");
+        assertThat(downloadToken).isNotBlank();
 
-        mockMvc.perform(get("/api/attachments/{attachmentId}/download", attachmentId)
-                        .param("access_token", token))
-                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/auth/me/profile-picture")
+                        .param("download_token", downloadToken))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentType()).isEqualTo(MediaType.IMAGE_PNG_VALUE));
     }
 
     @Test
@@ -501,6 +506,20 @@ class SecurityAndWorkflowIntegrationTests {
 
     private String bearer(String token) {
         return "Bearer " + token;
+    }
+
+    private String queryParam(String url, String name) throws Exception {
+        String query = new URI(url).getRawQuery();
+        assertThat(query).isNotBlank();
+
+        for (String pair : query.split("&")) {
+            String[] parts = pair.split("=", 2);
+            if (parts.length == 2 && name.equals(parts[0])) {
+                return parts[1];
+            }
+        }
+
+        throw new IllegalStateException("Query parameter not found: " + name);
     }
 
     private void ensureApproveRejectButtonsEnabled() {

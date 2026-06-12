@@ -13,3 +13,13 @@ export function formatUserLabelById(userId, users = []) {
   if (!match) return "Unknown user";
   return formatUserLabel(match);
 }
+
+export function formatUserLabelFromParts({ userId, name, role } = {}, users = []) {
+  const fullName = String(name || "").trim();
+  const roleName = String(role || "").trim();
+  if (fullName || roleName) {
+    return formatUserLabel({ fullName, role: roleName });
+  }
+  if (userId === null || userId === undefined || userId === "") return "-";
+  return formatUserLabelById(userId, users);
+}

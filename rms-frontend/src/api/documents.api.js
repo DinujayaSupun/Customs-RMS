@@ -1,4 +1,3 @@
-import { getAccessToken } from "../auth/currentUser";
 import { createAuthedHttp, getApiErrorMessage } from "./apiClient";
 
 const http = createAuthedHttp();
@@ -22,6 +21,16 @@ export async function listDocuments({ page = 0, size = 100, search } = {}) {
         size,
         ...(search ? { search } : {}),
       },
+    })).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
+export async function listMyInboxDocuments({ page = 0, size = 200 } = {}) {
+  try {
+    return (await http.get(`${BASE}/my-inbox`, {
+      params: { page, size },
     })).data;
   } catch (e) {
     throw new Error(getMsg(e));
@@ -212,10 +221,13 @@ export async function deleteAttachment(attachmentId) {
   }
 }
 
-export function buildAttachmentUrl(attachmentId, { inline = false } = {}) {
-  const url = new URL(`http://localhost:8080/api/attachments/${attachmentId}/download`);
-  const token = getAccessToken();
-  if (token) url.searchParams.set("access_token", token);
-  if (inline) url.searchParams.set("inline", "true");
-  return url.toString();
+export async function createAttachmentDownloadUrl(attachmentId, { inline = false } = {}) {
+  try {
+    const data = (await http.post(`/attachments/${attachmentId}/download-token`, null, {
+      params: { inline },
+    })).data;
+    return String(data?.url || "");
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
 }
