@@ -32,8 +32,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -83,7 +85,7 @@ public class LogsController {
         String documentFilter = normalize(document);
         Long documentId = parseLongOrNull(documentFilter);
 
-        return auditLogRepository.searchLogs(
+        Page<AuditLog> logs = auditLogRepository.searchLogs(
                 fromAt,
                 toAtExclusive,
                 normalize(actionType),
@@ -91,7 +93,10 @@ public class LogsController {
                 documentFilter,
                 documentId,
                 pageable
-        ).map(this::toResponse);
+        );
+        Map<Long, User> usersById = usersByIdForLogs(logs.getContent());
+
+        return logs.map(log -> toResponse(log, usersById));
     }
 
     @GetMapping("/filter-options")
@@ -150,13 +155,14 @@ public class LogsController {
                 documentFilter,
                 documentId
         );
+        Map<Long, User> usersById = usersByIdForLogs(logs);
 
         StringBuilder csv = new StringBuilder();
         csv.append("id,performedAt,actionType,entityType,entityId,performedByUserId,performedByUserName,message\n");
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
         for (AuditLog log : logs) {
-            String userName = userRepository.findById(log.getPerformedByUserId()).map(u -> u.getFullName()).orElse("");
+            String userName = userName(usersById, log.getPerformedByUserId());
             csv.append(log.getId()).append(',')
                     .append(csvCell(log.getPerformedAt() == null ? "" : formatter.format(log.getPerformedAt()))).append(',')
                     .append(csvCell(log.getActionType())).append(',')
@@ -184,7 +190,7 @@ public class LogsController {
         }
     }
 
-    private AuditLogResponse toResponse(AuditLog log) {
+    private AuditLogResponse toResponse(AuditLog log, Map<Long, User> usersById) {
         return AuditLogResponse.builder()
                 .id(log.getId())
                 .entityType(log.getEntityType())
@@ -192,11 +198,31 @@ public class LogsController {
                 .documentRef(resolveDocumentRef(log))
                 .actionType(log.getActionType())
                 .performedByUserId(log.getPerformedByUserId())
-                .performedByUserName(userRepository.findById(log.getPerformedByUserId()).map(u -> u.getFullName()).orElse(null))
+                .performedByUserName(userName(usersById, log.getPerformedByUserId()))
                 .performedAt(log.getPerformedAt())
                 .message(log.getMessage())
                 .detailsJson(log.getDetailsJson())
                 .build();
+    }
+
+    private Map<Long, User> usersByIdForLogs(List<AuditLog> logs) {
+        Set<Long> userIds = new HashSet<>();
+        for (AuditLog log : logs) {
+            if (log.getPerformedByUserId() != null) {
+                userIds.add(log.getPerformedByUserId());
+            }
+        }
+
+        if (userIds.isEmpty()) return Map.of();
+
+        return userRepository.findAllById(userIds)
+                .stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+    }
+
+    private String userName(Map<Long, User> usersById, Long userId) {
+        User user = userId == null ? null : usersById.get(userId);
+        return user == null ? null : user.getFullName();
     }
 
     private String normalize(String value) {

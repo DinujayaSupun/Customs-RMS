@@ -2,6 +2,8 @@ package lk.customs.rms.controller;
 
 import lk.customs.rms.dto.MovementResponse;
 import lk.customs.rms.entity.Document;
+import lk.customs.rms.entity.DocumentMovement;
+import lk.customs.rms.entity.User;
 import lk.customs.rms.enums.AppPermission;
 import lk.customs.rms.exception.BadRequestException;
 import lk.customs.rms.exception.ResourceNotFoundException;
@@ -13,7 +15,12 @@ import lk.customs.rms.service.PermissionService;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @RestController
 @CrossOrigin
@@ -49,23 +56,48 @@ public class DocumentMovementController {
                         throw new BadRequestException("You are not allowed to view movement history for this document.");
                 }
 
-        return movementRepository.findByDocumentIdOrderByActionAtAsc(documentId)
+        List<DocumentMovement> movements = movementRepository.findByDocumentIdOrderByActionAtAsc(documentId);
+        Map<Long, User> usersById = usersByIdForMovements(movements);
+
+        return movements
                 .stream()
                 .map(m -> MovementResponse.builder()
                         .id(m.getId())
                         .documentId(m.getDocumentId())
                         .actionType(m.getActionType())
                         .fromUserId(m.getFromUserId())
-                        .fromUserName(m.getFromUserId() == null ? null :
-                                userRepository.findById(m.getFromUserId()).map(u -> u.getFullName()).orElse(null))
+                        .fromUserName(userName(usersById, m.getFromUserId()))
                         .toUserId(m.getToUserId())
-                        .toUserName(m.getToUserId() == null ? null :
-                                userRepository.findById(m.getToUserId()).map(u -> u.getFullName()).orElse(null))
+                        .toUserName(userName(usersById, m.getToUserId()))
                         .forwardVisibility(m.getForwardVisibility())
                         .actionByUserId(m.getActionByUserId())
-                        .actionByUserName(userRepository.findById(m.getActionByUserId()).map(u -> u.getFullName()).orElse(null))
+                        .actionByUserName(userName(usersById, m.getActionByUserId()))
                         .actionAt(m.getActionAt())
                         .build())
                 .toList();
+    }
+
+    private Map<Long, User> usersByIdForMovements(List<DocumentMovement> movements) {
+        Set<Long> userIds = new HashSet<>();
+        for (DocumentMovement movement : movements) {
+            addIfPresent(userIds, movement.getFromUserId());
+            addIfPresent(userIds, movement.getToUserId());
+            addIfPresent(userIds, movement.getActionByUserId());
+        }
+
+        if (userIds.isEmpty()) return Map.of();
+
+        return userRepository.findAllById(userIds)
+                .stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+    }
+
+    private void addIfPresent(Set<Long> userIds, Long userId) {
+        if (userId != null) userIds.add(userId);
+    }
+
+    private String userName(Map<Long, User> usersById, Long userId) {
+        User user = userId == null ? null : usersById.get(userId);
+        return user == null ? null : user.getFullName();
     }
 }
