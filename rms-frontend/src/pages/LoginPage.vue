@@ -57,7 +57,26 @@
 
             <div class="row">
               <label>Password</label>
-              <input id="password" v-model="password" class="input" type="password" placeholder="Enter password" autocomplete="current-password" />
+              <div class="passwordField">
+                <input
+                  id="password"
+                  v-model="password"
+                  class="input passwordInput"
+                  :type="showPassword ? 'text' : 'password'"
+                  placeholder="Enter password"
+                  autocomplete="current-password"
+                />
+                <button
+                  type="button"
+                  class="passwordToggle"
+                  :aria-label="showPassword ? 'Hide password' : 'Show password'"
+                  :aria-pressed="showPassword"
+                  @click="showPassword = !showPassword"
+                >
+                  <EyeOff v-if="showPassword" class="passwordIcon" aria-hidden="true" />
+                  <Eye v-else class="passwordIcon" aria-hidden="true" />
+                </button>
+              </div>
             </div>
 
             <button class="btn btn-primary" type="submit" :disabled="busy">
@@ -75,6 +94,7 @@
 <script setup>
 import { ref } from "vue";
 import { useRouter, useRoute } from "vue-router";
+import { Eye, EyeOff } from "lucide-vue-next";
 import { login } from "../api/auth.api";
 import { setSession } from "../auth/currentUser";
 
@@ -83,6 +103,7 @@ const route = useRoute();
 
 const username = ref("");
 const password = ref("");
+const showPassword = ref(false);
 const busy = ref(false);
 const error = ref("");
 
@@ -370,6 +391,46 @@ label {
   border-color: #2563eb;
   background: #ffffff;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+
+.passwordField {
+  position: relative;
+}
+
+.passwordInput {
+  padding-right: 46px;
+}
+
+.passwordToggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.passwordToggle:hover {
+  background: #eaf1fb;
+  color: #1d4ed8;
+}
+
+.passwordToggle:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.passwordIcon {
+  width: 18px;
+  height: 18px;
 }
 
 .btn {

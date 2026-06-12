@@ -125,7 +125,25 @@
               </div>
               <div class="field">
                 <label>Password</label>
-                <input v-model="createForm.password" class="input" type="password" placeholder="Temporary password" />
+                <div class="passwordField">
+                  <input
+                    v-model="createForm.password"
+                    class="input passwordInput"
+                    :type="showCreatePassword ? 'text' : 'password'"
+                    placeholder="Temporary password"
+                    autocomplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    class="passwordToggle"
+                    :aria-label="showCreatePassword ? 'Hide temporary password' : 'Show temporary password'"
+                    :aria-pressed="showCreatePassword"
+                    @click="showCreatePassword = !showCreatePassword"
+                  >
+                    <EyeOff v-if="showCreatePassword" class="passwordIcon" aria-hidden="true" />
+                    <Eye v-else class="passwordIcon" aria-hidden="true" />
+                  </button>
+                </div>
               </div>
               <div class="createActions">
                 <button class="btn" @click="resetCreateForm" :disabled="saving">Clear</button>
@@ -370,7 +388,25 @@
         <div class="modalBody formStack">
           <div class="field">
             <label>New Password</label>
-            <input v-model="resetPasswordValue" class="input" type="password" placeholder="Enter new password" />
+            <div class="passwordField">
+              <input
+                v-model="resetPasswordValue"
+                class="input passwordInput"
+                :type="showResetPassword ? 'text' : 'password'"
+                placeholder="Enter new password"
+                autocomplete="new-password"
+              />
+              <button
+                type="button"
+                class="passwordToggle"
+                :aria-label="showResetPassword ? 'Hide new password' : 'Show new password'"
+                :aria-pressed="showResetPassword"
+                @click="showResetPassword = !showResetPassword"
+              >
+                <EyeOff v-if="showResetPassword" class="passwordIcon" aria-hidden="true" />
+                <Eye v-else class="passwordIcon" aria-hidden="true" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -538,6 +574,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
+import { Eye, EyeOff } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
 import { getCurrentUser } from "../auth/currentUser";
 import { formatUserLabel } from "../auth/userLabel";
@@ -606,6 +643,8 @@ const editForm = ref({
 const resetPasswordModalOpen = ref(false);
 const resetPasswordUser = ref(null);
 const resetPasswordValue = ref("");
+const showResetPassword = ref(false);
+const showCreatePassword = ref(false);
 
 const createForm = ref({
   fullName: "",
@@ -697,6 +736,7 @@ function resetCreateForm() {
     role: "",
     password: "",
   };
+  showCreatePassword.value = false;
 }
 
 function toggleCreatePanel() {
@@ -871,6 +911,7 @@ async function saveEditUser() {
 function openResetPasswordModal(u) {
   resetPasswordUser.value = u;
   resetPasswordValue.value = "";
+  showResetPassword.value = false;
   resetPasswordModalOpen.value = true;
 }
 
@@ -878,6 +919,7 @@ function closeResetPasswordModal() {
   resetPasswordModalOpen.value = false;
   resetPasswordUser.value = null;
   resetPasswordValue.value = "";
+  showResetPassword.value = false;
 }
 
 async function confirmResetPassword() {
@@ -1623,6 +1665,46 @@ h2 {
 .input:focus {
   border-color:#2563eb;
   box-shadow:0 0 0 3px rgba(37, 99, 235, 0.14);
+}
+
+.passwordField {
+  position:relative;
+}
+
+.passwordInput {
+  padding-right:44px;
+}
+
+.passwordToggle {
+  position:absolute;
+  top:50%;
+  right:6px;
+  width:32px;
+  height:32px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  transform:translateY(-50%);
+  border:0;
+  border-radius:8px;
+  background:transparent;
+  color:#64748b;
+  cursor:pointer;
+}
+
+.passwordToggle:hover {
+  background:#eff6ff;
+  color:#1d4ed8;
+}
+
+.passwordToggle:focus-visible {
+  outline:2px solid #2563eb;
+  outline-offset:2px;
+}
+
+.passwordIcon {
+  width:18px;
+  height:18px;
 }
 
 .btn {
