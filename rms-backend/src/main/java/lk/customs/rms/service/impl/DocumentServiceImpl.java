@@ -171,7 +171,10 @@ public class DocumentServiceImpl implements DocumentService {
 
         auditLogService.logDocumentCreate(saved.getId(), createdBy.getId(), "Document created");
 
-        return DocumentResponse.from(saved, createdBy.getFullName(), owner.getFullName(), null, null, false);
+        return DocumentResponse.from(DocumentResponse.mapping(saved)
+                .createdByName(createdBy.getFullName())
+                .ownerName(owner.getFullName())
+                .build());
     }
 
     @Override
@@ -286,37 +289,35 @@ public class DocumentServiceImpl implements DocumentService {
             User undoFrom = undoInboxMovement && latestInbound.getFromUserId() != null
                 ? userRepository.findById(latestInbound.getFromUserId()).orElse(null)
                 : null;
-            return DocumentResponse.from(
-                d,
-                createdByName,
-                ownerName,
-                mainAttachmentTypes.get(d.getId()),
-                latestRemarkPreview,
-                viewedByMe,
-                latestInbound == null ? null : latestInbound.getActionAt(),
-                inboxSenderUserId,
-                inboxSender == null ? null : inboxSender.getFullName(),
-                roleName(inboxSender),
-                latestRemark == null ? null : latestRemark.getRemarkedByUserId(),
-                latestRemark == null || latestRemark.getRemarkedBy() == null ? null : latestRemark.getRemarkedBy().getFullName(),
-                latestRemark == null ? null : roleName(latestRemark.getRemarkedBy()),
-                latestRemark == null ? null : toRemarkPreview(latestRemark.getRemarkText()),
-                latestRemark == null ? null : latestRemark.getRemarkText(),
-                latestRemark == null ? null : latestRemark.getRemarkedAt(),
-                false,
-                undoInboxMovement ? "UNDONE" : null,
-                null,
-                false,
-                undoInboxMovement ? "UNDO_SEND" : null,
-                false,
-                false,
-                undoInboxMovement ? latestInbound.getActionByUserId() : null,
-                undoActor == null ? null : undoActor.getFullName(),
-                roleName(undoActor),
-                undoInboxMovement ? latestInbound.getFromUserId() : null,
-                undoFrom == null ? null : undoFrom.getFullName(),
-                roleName(undoFrom)
-            );
+            return DocumentResponse.from(DocumentResponse.mapping(d)
+                .createdByName(createdByName)
+                .ownerName(ownerName)
+                .mainAttachmentType(mainAttachmentTypes.get(d.getId()))
+                .latestRemarkPreview(latestRemarkPreview)
+                .viewedByMe(viewedByMe)
+                .inboxReceivedAt(latestInbound == null ? null : latestInbound.getActionAt())
+                .inboxSenderUserId(inboxSenderUserId)
+                .inboxSenderName(inboxSender == null ? null : inboxSender.getFullName())
+                .inboxSenderRole(roleName(inboxSender))
+                .latestRemarkByUserId(latestRemark == null ? null : latestRemark.getRemarkedByUserId())
+                .latestRemarkByName(latestRemark == null || latestRemark.getRemarkedBy() == null ? null : latestRemark.getRemarkedBy().getFullName())
+                .latestRemarkByRole(latestRemark == null ? null : roleName(latestRemark.getRemarkedBy()))
+                .latestRemarkTextPreview(latestRemark == null ? null : toRemarkPreview(latestRemark.getRemarkText()))
+                .latestRemarkText(latestRemark == null ? null : latestRemark.getRemarkText())
+                .latestRemarkAt(latestRemark == null ? null : latestRemark.getRemarkedAt())
+                .canUndoSend(false)
+                .undoSendStatus(undoInboxMovement ? "UNDONE" : null)
+                .undoSendReceiverOpened(false)
+                .undoSendActionType(undoInboxMovement ? "UNDO_SEND" : null)
+                .undoSendRequiresReason(false)
+                .undoSendShowExpiredInfo(false)
+                .undoSendByUserId(undoInboxMovement ? latestInbound.getActionByUserId() : null)
+                .undoSendByName(undoActor == null ? null : undoActor.getFullName())
+                .undoSendByRole(roleName(undoActor))
+                .undoSendFromUserId(undoInboxMovement ? latestInbound.getFromUserId() : null)
+                .undoSendFromName(undoFrom == null ? null : undoFrom.getFullName())
+                .undoSendFromRole(roleName(undoFrom))
+                .build());
         });
     }
 
@@ -532,15 +533,20 @@ public class DocumentServiceImpl implements DocumentService {
                 .map(movement -> resolveUndoSendState(d, movement, actorUserId))
                 .orElse(resolveUndoSendState(d, null, actorUserId));
 
-        return DocumentResponse.from(d, createdByName, ownerName, mainAttachmentType, latestRemarkPreview, true,
-                null, null, null, null, null, null, null, null, null, null,
-                undoState.canUndo(),
-                undoState.status(),
-                undoState.expiresAt(),
-                undoState.receiverOpened(),
-                undoState.actionType(),
-                undoState.requiresReason(),
-                undoState.showExpiredInfo());
+        return DocumentResponse.from(DocumentResponse.mapping(d)
+                .createdByName(createdByName)
+                .ownerName(ownerName)
+                .mainAttachmentType(mainAttachmentType)
+                .latestRemarkPreview(latestRemarkPreview)
+                .viewedByMe(true)
+                .canUndoSend(undoState.canUndo())
+                .undoSendStatus(undoState.status())
+                .undoSendExpiresAt(undoState.expiresAt())
+                .undoSendReceiverOpened(undoState.receiverOpened())
+                .undoSendActionType(undoState.actionType())
+                .undoSendRequiresReason(undoState.requiresReason())
+                .undoSendShowExpiredInfo(undoState.showExpiredInfo())
+                .build());
     }
 
     @Override
@@ -600,7 +606,13 @@ public class DocumentServiceImpl implements DocumentService {
             .map(this::toRemarkPreview)
             .orElse(null);
 
-        return DocumentResponse.from(saved, createdByName, ownerName, mainAttachmentType, latestRemarkPreview, true);
+        return DocumentResponse.from(DocumentResponse.mapping(saved)
+                .createdByName(createdByName)
+                .ownerName(ownerName)
+                .mainAttachmentType(mainAttachmentType)
+                .latestRemarkPreview(latestRemarkPreview)
+                .viewedByMe(true)
+                .build());
     }
 
     private String resolveMainAttachmentType(Long documentId) {
