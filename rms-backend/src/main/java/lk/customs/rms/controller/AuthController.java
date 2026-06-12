@@ -31,6 +31,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 @RestController
 @CrossOrigin
@@ -74,13 +75,13 @@ public class AuthController {
             Long actorId = userRepository.findByUsernameIgnoreCase(request.getUsername())
                 .map(u -> u.getId())
                 .orElse(0L);
-            auditLogService.logEvent(
+            auditLogService.logEventWithDetails(
                 "AUTH",
                 actorId,
                 "LOGIN_FAILED",
                 actorId,
                 "Login failed",
-                "{\"username\":\"" + request.getUsername() + "\"}"
+                Map.of("username", request.getUsername())
             );
             throw new BadRequestException("Invalid username or password.");
         }
@@ -91,13 +92,16 @@ public class AuthController {
         String role = user.getRole() == null ? "USER" : user.getRole().getRoleName();
         String token = jwtService.generateToken(user.getId(), user.getUsername(), role);
 
-        auditLogService.logEvent(
+        auditLogService.logEventWithDetails(
             "AUTH",
             user.getId(),
             "LOGIN_SUCCESS",
             user.getId(),
             "User logged in",
-            "{\"username\":\"" + user.getUsername() + "\",\"role\":\"" + role + "\"}"
+            Map.of(
+                    "username", user.getUsername(),
+                    "role", role
+            )
         );
 
         return LoginResponse.builder()

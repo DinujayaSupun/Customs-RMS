@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @CrossOrigin
@@ -108,13 +109,13 @@ public class AdminUserController {
                                         Authentication authentication) {
         Long actorId = currentUserService.requireUser(authentication).getId();
         AdminUserResponse deactivated = adminUserService.deactivate(userId, request.getFallbackDcUserId(), actorId);
-        auditLogService.logEvent(
+        auditLogService.logEventWithDetails(
                 "USER",
                 deactivated.getId(),
                 "USER_DEACTIVATE",
                 actorId,
                 "Admin deactivated user and transferred active ownership",
-                "{\"fallbackDcUserId\":" + request.getFallbackDcUserId() + "}"
+                Map.of("fallbackDcUserId", request.getFallbackDcUserId())
         );
         return deactivated;
     }
@@ -126,13 +127,16 @@ public class AdminUserController {
         adminUserService.deactivateMany(request.getUserIds(), request.getFallbackDcUserId(), actorId);
         for (Long userId : request.getUserIds()) {
             if (userId == null) continue;
-            auditLogService.logEvent(
+            auditLogService.logEventWithDetails(
                     "USER",
                     userId,
                     "USER_DEACTIVATE",
                     actorId,
                     "Admin bulk deactivated user and transferred active ownership",
-                    "{\"fallbackDcUserId\":" + request.getFallbackDcUserId() + ",\"mode\":\"bulk\"}"
+                    Map.of(
+                            "fallbackDcUserId", request.getFallbackDcUserId(),
+                            "mode", "bulk"
+                    )
             );
         }
     }
@@ -175,13 +179,13 @@ public class AdminUserController {
         adminUserService.deleteMany(request.getUserIds(), actorId);
         for (Long userId : request.getUserIds()) {
             if (userId == null) continue;
-            auditLogService.logEvent(
+            auditLogService.logEventWithDetails(
                     "USER",
                     userId,
                     "USER_DELETE",
                     actorId,
                     "Admin deleted inactive user account while preserving history",
-                    "{\"mode\":\"bulk\"}"
+                    Map.of("mode", "bulk")
             );
         }
     }
@@ -191,13 +195,16 @@ public class AdminUserController {
                       Authentication authentication) {
         adminUserService.mergeUsers(request.getSourceUserId(), request.getTargetUserId());
         Long actorId = currentUserService.requireUser(authentication).getId();
-        auditLogService.logEvent(
+        auditLogService.logEventWithDetails(
                 "USER",
                 request.getTargetUserId(),
                 "USER_MERGE",
                 actorId,
                 "Admin merged source user into target user",
-                "{\"sourceUserId\":" + request.getSourceUserId() + ",\"targetUserId\":" + request.getTargetUserId() + "}"
+                Map.of(
+                        "sourceUserId", request.getSourceUserId(),
+                        "targetUserId", request.getTargetUserId()
+                )
         );
     }
 
