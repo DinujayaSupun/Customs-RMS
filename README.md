@@ -288,7 +288,7 @@ cd rms-backend
 .\mvnw.cmd test
 ```
 
-Integration tests use the `test` Spring profile and require a reachable MySQL test database with the configured credentials. If MySQL credentials are wrong, tests fail during application startup before assertions run.
+Integration tests use the `test` Spring profile with an in-memory H2 database in MySQL compatibility mode. They do not require a local MySQL username or password. E2E runs still use MySQL because they start the application closer to production.
 
 ### Frontend unit tests
 
@@ -311,10 +311,10 @@ npm run test:e2e
 
 GitHub Actions workflow is at `.github/workflows/ci.yml` and runs:
 
-- backend tests
+- backend tests with the in-memory test database
 - frontend Playwright smoke tests
 
-CI uses an ephemeral MySQL service container, so temporary E2E data created during a run does not persist after the job ends.
+CI uses an ephemeral MySQL service container only for the frontend E2E smoke job, so temporary E2E data created during a run does not persist after the job ends.
 
 ## Build For Production
 
