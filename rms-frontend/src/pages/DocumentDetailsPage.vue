@@ -2,7 +2,7 @@
   <AppLayout>
     <!-- TOP BAR -->
     <div class="topbar">
-      <div>
+      <div class="topbarMain">
         <h2 class="title">{{ doc?.refNo ? `Document ${doc.refNo}` : "Document" }}</h2>
 
         <div class="meta">
@@ -25,6 +25,9 @@
       <div class="rightBtns">
         <button class="btn btn-primary" @click="openViewer(mainFile)" :disabled="!mainFile">
           Open Viewer
+        </button>
+        <button v-if="canDeleteDocument" class="btn danger" @click="deleteCurrentDocument" :disabled="busy">
+          Delete
         </button>
         <button class="btn" @click="reloadAll" :disabled="busy">Refresh</button>
         <button class="btn" @click="goBack">Back</button>
@@ -635,6 +638,7 @@ import { listUsers } from "../api/auth.api";
 import {
   getDocument,
   updateDocument,
+  deleteDocument,
   listMovements,
   listRemarks,
   addRemark,
@@ -731,6 +735,7 @@ const canApprove = computed(() => detailCapabilities.value.canApprove);
 const canReject  = computed(() => detailCapabilities.value.canReject);
 const canIssue   = computed(() => detailCapabilities.value.canIssue);
 const canReopen  = computed(() => detailCapabilities.value.canReopen);
+const canDeleteDocument = computed(() => hasPermission(currentUser.value, "DELETE_DOCUMENT"));
 const availableWorkflowActionNames = computed(() => {
   const names = ["Forward", "Return"];
   if (approveRejectButtonsEnabled.value) {
@@ -1228,6 +1233,32 @@ function goBack() {
   router.push("/documents");
 }
 
+async function deleteCurrentDocument() {
+  error.value = "";
+  successMessage.value = "";
+
+  if (!canDeleteDocument.value) {
+    error.value = "You are not allowed to delete documents.";
+    toast.error(error.value);
+    return;
+  }
+
+  const label = doc.value?.refNo ? ` ${doc.value.refNo}` : "";
+  if (!window.confirm(`Delete document${label}? This will hide it from normal document lists but keep history.`)) return;
+
+  busy.value = true;
+  try {
+    await deleteDocument(documentId);
+    toast.success("Document deleted successfully.");
+    router.push("/documents");
+  } catch (e) {
+    error.value = e?.message || "Failed to delete document.";
+    toast.error(error.value);
+  } finally {
+    busy.value = false;
+  }
+}
+
 function startEditDetails() {
   if (!doc.value) return;
   successMessage.value = "";
@@ -1612,25 +1643,26 @@ async function removeAttachment(a) {
 
 <style scoped>
 /* Base */
-.topbar { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:12px; }
-.title { margin:0; font-size:22px; font-weight:800; }
+.topbar { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:12px; min-width:0; max-width:100%; }
+.topbarMain { flex:1 1 auto; min-width:0; max-width:100%; }
+.title { margin:0; font-size:22px; font-weight:800; max-width:100%; overflow-wrap:anywhere; word-break:break-word; line-height:1.35; }
 .meta { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
-.pill { font-size:12px; padding:6px 10px; border-radius:999px; background:#eef2ff; border:1px solid #e5e7eb; }
+.pill { font-size:12px; padding:6px 10px; border-radius:999px; background:#eef2ff; border:1px solid #e5e7eb; max-width:100%; overflow-wrap:anywhere; }
 .rightBtns { display:flex; gap:10px; flex-wrap:wrap; }
 
 .subMeta { display:flex; align-items:center; gap:10px; margin-top:8px; }
 .dot { color:#9ca3af; }
 
-.grid { display:grid; grid-template-columns: 1.15fr 0.85fr; gap:14px; }
-.col { display:flex; flex-direction:column; gap:14px; }
+.grid { display:grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); gap:14px; min-width:0; }
+.col { display:flex; flex-direction:column; gap:14px; min-width:0; }
 
-.card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:14px; }
+.card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:14px; min-width:0; max-width:100%; box-sizing:border-box; }
 .cardTitle { font-weight:800; margin-bottom:10px; }
 .cardHead { display:flex; justify-content:space-between; align-items:center; gap:10px; }
 
 .kv { display:grid; grid-template-columns: 150px 1fr; gap:8px 12px; }
 .k { font-size:12px; color:#6b7280; font-weight:700; }
-.v { font-size:14px; color:#111827; }
+.v { font-size:14px; color:#111827; min-width:0; max-width:100%; overflow-wrap:anywhere; word-break:break-word; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size:12px; }
 .typeLabel { margin-left:8px; font-weight:700; font-size:12px; color:#374151; }
 
@@ -1977,11 +2009,15 @@ async function removeAttachment(a) {
   border-radius:14px;
   padding:16px;
   box-shadow:0 8px 24px rgba(17, 24, 39, 0.06);
+  overflow:hidden;
 }
 
 .title {
   color:#0f172a;
   letter-spacing:-0.02em;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .meta .pill {
@@ -2003,12 +2039,14 @@ async function removeAttachment(a) {
 
 .grid {
   align-items:start;
+  min-width:0;
 }
 
 .card {
   border-radius:14px;
   border-color:#e2e8f0;
   box-shadow:0 8px 22px rgba(17, 24, 39, 0.045);
+  min-width:0;
 }
 
 .cardTitle {

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const http = vi.hoisted(() => ({
   post: vi.fn(),
+  delete: vi.fn(),
 }));
 
 vi.mock("./apiClient", () => ({
@@ -9,7 +10,7 @@ vi.mock("./apiClient", () => ({
   getApiErrorMessage: (error) => error?.message || "Request failed",
 }));
 
-import { createAttachmentDownloadUrl } from "./documents.api";
+import { createAttachmentDownloadUrl, deleteDocument } from "./documents.api";
 
 describe("documents api", () => {
   beforeEach(() => {
@@ -33,5 +34,13 @@ describe("documents api", () => {
     expect(parsed.searchParams.get("download_token")).toBe("attachment-token");
     expect(parsed.searchParams.get("access_token")).toBeNull();
     expect(parsed.searchParams.get("inline")).toBe("true");
+  });
+
+  it("deletes documents through the document delete endpoint", async () => {
+    http.delete.mockResolvedValue({ data: undefined });
+
+    await deleteDocument(77);
+
+    expect(http.delete).toHaveBeenCalledWith("/documents/77");
   });
 });

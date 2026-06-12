@@ -10,6 +10,7 @@ import lk.customs.rms.entity.User;
 import lk.customs.rms.enums.AppPermission;
 import lk.customs.rms.repository.DcAutoForwardConfigRepository;
 import lk.customs.rms.repository.DocumentRepository;
+import lk.customs.rms.repository.AuditLogRepository;
 import lk.customs.rms.repository.RolePermissionRepository;
 import lk.customs.rms.repository.RoleRepository;
 import lk.customs.rms.repository.UserRepository;
@@ -58,6 +59,9 @@ class AttachmentAndVisibilityIntegrationTests {
 
     @Autowired
     private DocumentRepository documentRepository;
+
+    @Autowired
+    private AuditLogRepository auditLogRepository;
 
     @Autowired
     private PasswordEncoder passwordEncoder;
@@ -260,6 +264,63 @@ class AttachmentAndVisibilityIntegrationTests {
         mockMvc.perform(get("/api/attachments/{attachmentId}/download", attachmentId)
                         .header("Authorization", bearer(historyViewerToken)))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void documentDeleteRequiresDeleteDocumentPermission() throws Exception {
+        String password = "DocDelete123";
+        User owner = createUser("PMA", "doc-delete-denied-", password);
+        String ownerToken = loginAndGetToken(owner.getUsername(), password);
+        long documentId = createDocument(ownerToken, "doc-delete-denied");
+
+        Map<Long, Boolean> originalPmaPermissions = snapshotRolePermissions("PMA", AppPermission.DELETE_DOCUMENT);
+
+        try {
+            setRolePermission("PMA", AppPermission.DELETE_DOCUMENT, false);
+
+            mockMvc.perform(delete("/api/documents/{documentId}", documentId)
+                            .header("Authorization", bearer(ownerToken)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("You are not allowed to delete documents."));
+
+            assertThat(documentRepository.findByIdAndDeletedFalse(documentId)).isPresent();
+        } finally {
+            restoreRolePermissions(originalPmaPermissions);
+        }
+    }
+
+    @Test
+    void documentDeleteSoftDeletesDocumentAndRecordsAuditLog() throws Exception {
+        String password = "DocDelete123";
+        User admin = createUser("ADMIN", "doc-delete-admin-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+        long documentId = createDocument(adminToken, "doc-delete-soft");
+
+        mockMvc.perform(delete("/api/documents/{documentId}", documentId)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isNoContent());
+
+        Document deleted = documentRepository.findById(documentId)
+                .orElseThrow(() -> new IllegalStateException("Document not found: " + documentId));
+        assertThat(deleted.isDeleted()).isTrue();
+        assertThat(deleted.getDeletedAt()).isNotNull();
+        assertThat(deleted.getDeletedByUserId()).isEqualTo(admin.getId());
+        assertThat(documentRepository.findByIdAndDeletedFalse(documentId)).isEmpty();
+
+        mockMvc.perform(get("/api/documents/{documentId}", documentId)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(delete("/api/documents/{documentId}", documentId)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isNotFound());
+
+        assertThat(auditLogRepository.findByEntityTypeAndEntityIdOrderByPerformedAtAsc("DOCUMENT", documentId))
+                .anySatisfy(log -> {
+                    assertThat(log.getActionType()).isEqualTo("DELETE");
+                    assertThat(log.getPerformedByUserId()).isEqualTo(admin.getId());
+                    assertThat(log.getMessage()).isEqualTo("Document deleted (soft)");
+                });
     }
 
     @Test

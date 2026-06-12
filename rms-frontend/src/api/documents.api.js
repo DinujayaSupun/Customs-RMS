@@ -91,6 +91,14 @@ export async function createDocument(payload) {
   }
 }
 
+export async function deleteDocument(id) {
+  try {
+    return (await http.delete(`${BASE}/${id}`)).data;
+  } catch (e) {
+    throw new Error(getMsg(e));
+  }
+}
+
 // ===================== MOVEMENTS =====================
 export async function listMovements(documentId) {
   try {

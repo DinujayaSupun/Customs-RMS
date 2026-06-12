@@ -111,7 +111,7 @@
     <div v-if="previewOpen" class="overlay" @click.self="previewOpen=false">
       <div class="modal">
         <div class="modalHead">
-          <div>
+          <div class="modalTitleBlock">
             <div class="modalTitle">Preview</div>
             <div class="modalSub">{{ previewFile?.name }}</div>
           </div>
@@ -375,17 +375,33 @@ h2 { margin:0; }
 .modal {
   width:100%;
   max-width:900px;
+  min-width:0;
+  box-sizing:border-box;
   background:#fff;
   border-radius:10px;
   overflow:hidden;
 }
 .modalHead {
   display:flex; align-items:flex-start; justify-content:space-between;
+  gap:12px;
+  min-width:0;
   padding:14px 16px;
   border-bottom:1px solid #eee;
 }
+.modalTitleBlock {
+  flex:1 1 auto;
+  min-width:0;
+  max-width:100%;
+}
 .modalTitle { font-weight:800; font-size:14px; }
-.modalSub { font-size:12px; color:#6b7280; margin-top:2px; }
+.modalSub {
+  max-width:100%;
+  font-size:12px;
+  color:#6b7280;
+  margin-top:2px;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
 .modalBody { padding:16px; }
 .modalFoot {
   display:flex; justify-content:flex-end; gap:10px;

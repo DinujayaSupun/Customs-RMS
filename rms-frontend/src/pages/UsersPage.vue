@@ -1782,6 +1782,8 @@ h2 {
 .modal {
   width:100%;
   max-width:620px;
+  min-width:0;
+  box-sizing:border-box;
   background:#fff;
   border-radius:14px;
   overflow:hidden;
@@ -1793,21 +1795,35 @@ h2 {
   display:flex;
   align-items:flex-start;
   justify-content:space-between;
+  gap:12px;
+  min-width:0;
   padding:14px 16px;
   border-bottom:1px solid #eee;
   background:linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.modalHead > div:first-child {
+  flex:1 1 auto;
+  min-width:0;
+  max-width:100%;
 }
 
 .modalTitle {
   font-size:15px;
   font-weight:800;
   color:#0f172a;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .modalSub {
   font-size:12px;
   color:#6b7280;
   margin-top:2px;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .modalBody {
@@ -1836,6 +1852,8 @@ h2 {
 .noticeLine {
   color:#334155;
   font-size:13px;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .deleteNotice {
@@ -1846,6 +1864,8 @@ h2 {
   border-radius:12px;
   font-size:13px;
   line-height:1.5;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .adminWarning {
@@ -1856,6 +1876,8 @@ h2 {
   border-radius:12px;
   font-size:13px;
   line-height:1.5;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .modalFoot {

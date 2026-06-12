@@ -30,7 +30,14 @@
     </header>
 
     <div class="body">
-      <aside class="sidebar">
+      <aside
+        class="sidebar"
+        :class="{ 'sidebar-expanded': isSidebarExpanded }"
+        @mouseenter="expandSidebar"
+        @mouseleave="scheduleSidebarCollapse"
+        @focusin="expandSidebar"
+        @focusout="scheduleSidebarCollapse"
+      >
         <div class="sidebar-top">
           <div class="sidebar-mark" aria-label="Navigation menu">
             <svg viewBox="0 0 48 48" class="sidebar-mark-svg" aria-hidden="true">
@@ -104,6 +111,7 @@ const router = useRouter();
 const userRef = ref(getCurrentUser());
 const avatarBroken = ref(false);
 const avatarUrl = ref("");
+const isSidebarExpanded = ref(false);
 const { success, info } = useToast();
 
 const currentUser = computed(() => userRef.value);
@@ -138,6 +146,27 @@ const initials = computed(() => {
 });
 
 let avatarRequestId = 0;
+let sidebarCollapseTimer = null;
+
+function clearSidebarCollapseTimer() {
+  if (sidebarCollapseTimer !== null) {
+    window.clearTimeout(sidebarCollapseTimer);
+    sidebarCollapseTimer = null;
+  }
+}
+
+function expandSidebar() {
+  clearSidebarCollapseTimer();
+  isSidebarExpanded.value = true;
+}
+
+function scheduleSidebarCollapse() {
+  clearSidebarCollapseTimer();
+  sidebarCollapseTimer = window.setTimeout(() => {
+    isSidebarExpanded.value = false;
+    sidebarCollapseTimer = null;
+  }, 550);
+}
 
 async function refreshAvatarUrl() {
   const requestId = ++avatarRequestId;
@@ -223,6 +252,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener("rms_auth_changed", onAuthChanged);
+  clearSidebarCollapseTimer();
 });
 </script>
 
@@ -324,7 +354,7 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 
-.sidebar:hover {
+.sidebar-expanded {
   width: var(--sidebar-expanded-width);
   flex-basis: var(--sidebar-expanded-width);
   padding-right: 16px;
@@ -377,20 +407,20 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.sidebar:hover .sidebar-text {
+.sidebar-expanded .sidebar-text {
   opacity: 1;
   transform: translateX(0);
 }
 
-.sidebar:not(:hover) .sidebar-top .sidebar-text {
+.sidebar:not(.sidebar-expanded) .sidebar-top .sidebar-text {
   display: none;
 }
 
-.sidebar:not(:hover) .nav .sidebar-text {
+.sidebar:not(.sidebar-expanded) .nav .sidebar-text {
   display: none;
 }
 
-.sidebar:hover .sidebar-top {
+.sidebar-expanded .sidebar-top {
   justify-content: flex-start;
 }
 
@@ -402,7 +432,7 @@ onUnmounted(() => {
   width: 100%;
 }
 
-.sidebar:not(:hover) .navList {
+.sidebar:not(.sidebar-expanded) .navList {
   align-items: center;
 }
 
@@ -420,7 +450,7 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 
-.sidebar:not(:hover) .nav {
+.sidebar:not(.sidebar-expanded) .nav {
   width: 44px;
   min-width: 44px;
   justify-content: center;
@@ -467,24 +497,26 @@ onUnmounted(() => {
   color: #ffffff;
 }
 
-.sidebar:not(:hover) .nav.router-link-active .nav-icon {
+.sidebar:not(.sidebar-expanded) .nav.router-link-active .nav-icon {
   background: rgba(37, 99, 235, 0.58);
   box-shadow: 0 8px 20px rgba(37, 99, 235, 0.24);
 }
 
-.sidebar:not(:hover) .nav:hover {
+.sidebar:not(.sidebar-expanded) .nav:hover {
   transform: translateY(-1px);
 }
 
 @media (max-width: 900px) {
   .sidebar,
-  .sidebar:hover {
+  .sidebar-expanded {
     width: var(--sidebar-expanded-width);
+    flex-basis: var(--sidebar-expanded-width);
   }
 
   .sidebar-text {
     opacity: 1;
     transform: translateX(0);
+    display: inline;
   }
 
   .sidebar {

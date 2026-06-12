@@ -243,10 +243,9 @@
       <div v-if="previewOpen" class="overlay" @click.self="closePreview">
         <div class="modal previewModal fullPreviewModal">
           <div class="modalHead">
-            <div>
+            <div class="modalTitleBlock">
               <div class="modalEyebrow">Full Screen Preview</div>
               <div class="modalTitle">{{ previewDoc?.refNo || '-' }} - {{ previewDoc?.title || 'Untitled document' }}</div>
-              <div class="modalSub">{{ previewDoc?.refNo || '-' }} - {{ previewDoc?.title || 'Untitled document' }}</div>
             </div>
             <div class="previewHeaderActions">
               <div v-if="previewAttachmentsSorted.length > 1" class="fullPreviewToolbar">
@@ -351,7 +350,7 @@
       <div v-if="forwardOpen" class="overlay">
         <div class="modal forwardModal">
           <div class="modalHead">
-            <div>
+            <div class="modalTitleBlock">
               <div class="modalEyebrow">Workflow Shortcut</div>
               <div class="modalTitle">Forward Document</div>
               <div class="modalSub">{{ forwardDoc?.refNo || '-' }} - {{ forwardDoc?.title || 'Untitled document' }}</div>
@@ -1884,8 +1883,11 @@ h2 { margin:0; line-height:1.15; }
 
 .modal {
   width:min(760px, 100%);
+  max-width:calc(100vw - 32px);
+  min-width:0;
   max-height:calc(100vh - 32px);
   overflow:auto;
+  box-sizing:border-box;
   border-radius:18px;
   background:#ffffff;
   border:1px solid #e5e7eb;
@@ -1893,13 +1895,16 @@ h2 { margin:0; line-height:1.15; }
 }
 
 .forwardModal {
-  width:min(900px, 100%);
+  width:min(900px, calc(100vw - 32px));
 }
 
 .fullPreviewModal {
   width:calc(100vw - 28px);
+  max-width:calc(100vw - 28px);
+  min-width:0;
   height:calc(100vh - 28px);
   max-height:calc(100vh - 28px);
+  overflow:hidden;
   display:flex;
   flex-direction:column;
   border-radius:16px;
@@ -1910,11 +1915,18 @@ h2 { margin:0; line-height:1.15; }
   align-items:center;
   justify-content:space-between;
   gap:16px;
+  min-width:0;
   padding:18px 20px;
   border-bottom:1px solid #eef2f7;
   background:
     radial-gradient(80% 110% at 100% 0%, rgba(37, 99, 235, 0.1), transparent 55%),
     linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.modalTitleBlock {
+  flex:1 1 auto;
+  min-width:0;
+  max-width:100%;
 }
 
 .modalEyebrow {
@@ -1931,12 +1943,18 @@ h2 { margin:0; line-height:1.15; }
   font-size:19px;
   font-weight:900;
   letter-spacing:-0.02em;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .modalSub {
   color:#64748b;
   font-size:13px;
   margin-top:4px;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .modalClose {
@@ -1950,6 +1968,9 @@ h2 { margin:0; line-height:1.15; }
   gap:10px;
   flex-wrap:wrap;
   justify-content:flex-end;
+  flex:0 1 auto;
+  min-width:0;
+  max-width:100%;
 }
 
 .modalBody {
@@ -1981,6 +2002,8 @@ h2 { margin:0; line-height:1.15; }
   grid-template-columns:34px minmax(0, 360px) 34px;
   gap:8px;
   width:min(520px, 45vw);
+  max-width:100%;
+  min-width:0;
   padding:7px;
   border:1px solid rgba(191, 219, 254, 0.88);
   border-radius:13px;
@@ -1991,6 +2014,7 @@ h2 { margin:0; line-height:1.15; }
 
 .fullPreviewSelect {
   min-width:0;
+  max-width:100%;
   height:34px;
   border:1px solid #dbe3ef;
   border-radius:10px;
@@ -2032,6 +2056,12 @@ h2 { margin:0; line-height:1.15; }
   color:#cbd5e1;
 }
 
+.fullPreviewEmpty span {
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+
 .fullPreviewEmpty b {
   color:#ffffff;
   font-size:18px;
@@ -2039,6 +2069,7 @@ h2 { margin:0; line-height:1.15; }
 
 .fullPreviewSide {
   min-width:0;
+  box-sizing:border-box;
   overflow:auto;
   border:1px solid #e2e8f0;
   border-radius:16px;
@@ -2065,7 +2096,7 @@ h2 { margin:0; line-height:1.15; }
 
 .previewGrid {
   display:grid;
-  grid-template-columns:1fr 1fr;
+  grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
   gap:0;
   overflow:hidden;
   border:1px solid #e5e7eb;
@@ -2074,11 +2105,14 @@ h2 { margin:0; line-height:1.15; }
 }
 
 .previewGrid > div {
+  min-width:0;
   padding:12px 14px;
   border-right:1px solid #eef2f7;
   border-bottom:1px solid #eef2f7;
   color:#111827;
   font-size:13px;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .previewGrid > div:nth-child(2n) {
@@ -2134,12 +2168,18 @@ h2 { margin:0; line-height:1.15; }
 
 .opsRow {
   display:grid;
-  grid-template-columns:130px 1fr;
+  grid-template-columns:minmax(0, 130px) minmax(0, 1fr);
   align-items:start;
   padding:7px 0;
   border-bottom:1px solid #e5edf8;
   color:#111827;
   font-size:13px;
+}
+
+.opsRow > span {
+  min-width:0;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .opsRow:last-child {
@@ -2152,8 +2192,9 @@ h2 { margin:0; line-height:1.15; }
 
 .forwardDocPreview {
   display:grid;
-  grid-template-columns:250px 1fr;
+  grid-template-columns:minmax(0, 250px) minmax(0, 1fr);
   gap:16px;
+  min-width:0;
   align-items:stretch;
   margin-bottom:16px;
   padding:12px;
@@ -2166,6 +2207,7 @@ h2 { margin:0; line-height:1.15; }
 
 .forwardFileBox {
   position:relative;
+  min-width:0;
   min-height:260px;
   overflow:hidden;
   border:1px solid #e2e8f0;
@@ -2183,6 +2225,7 @@ h2 { margin:0; line-height:1.15; }
   display:grid;
   grid-template-columns:30px 1fr 30px;
   gap:6px;
+  min-width:0;
   padding:6px;
   border:1px solid rgba(191, 219, 254, 0.9);
   border-radius:12px;
@@ -2193,6 +2236,7 @@ h2 { margin:0; line-height:1.15; }
 
 .forwardAttachmentSelect {
   min-width:0;
+  max-width:100%;
   height:30px;
   border:1px solid #dbe3ef;
   border-radius:9px;
@@ -2249,6 +2293,12 @@ h2 { margin:0; line-height:1.15; }
   font-size:12px;
 }
 
+.forwardFileEmpty span {
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+
 .forwardFileSwitcher + .forwardFileEmpty {
   padding-bottom:58px;
 }
@@ -2260,6 +2310,7 @@ h2 { margin:0; line-height:1.15; }
 
 .forwardDocSummary {
   min-width:0;
+  max-width:100%;
   display:flex;
   flex-direction:column;
   gap:12px;
@@ -2272,12 +2323,20 @@ h2 { margin:0; line-height:1.15; }
   align-items:flex-start;
 }
 
+.summaryTop > div:first-child {
+  min-width:0;
+  max-width:100%;
+}
+
 .summaryRef {
   color:#1d4ed8;
   font-size:12px;
   font-weight:900;
   letter-spacing:0.06em;
   text-transform:uppercase;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .summaryTitle {
@@ -2286,6 +2345,9 @@ h2 { margin:0; line-height:1.15; }
   font-size:18px;
   font-weight:900;
   line-height:1.2;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .summaryPills {
@@ -2297,7 +2359,7 @@ h2 { margin:0; line-height:1.15; }
 
 .summaryGrid {
   display:grid;
-  grid-template-columns:1fr 1fr;
+  grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
   gap:0;
   overflow:hidden;
   border:1px solid #e5e7eb;
@@ -2313,7 +2375,9 @@ h2 { margin:0; line-height:1.15; }
   color:#111827;
   font-size:13px;
   overflow:hidden;
-  text-overflow:ellipsis;
+  text-overflow:clip;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .summaryGrid > div:nth-child(2n) {
@@ -2349,6 +2413,8 @@ h2 { margin:0; line-height:1.15; }
 
 .forwardSearchWrap {
   position:relative;
+  min-width:0;
+  max-width:100%;
 }
 
 .forwardSearchDropdown {
@@ -2357,7 +2423,9 @@ h2 { margin:0; line-height:1.15; }
   left:0;
   right:0;
   z-index:10;
+  max-width:100%;
   max-height:240px;
+  box-sizing:border-box;
   overflow:auto;
   border:1px solid #dbe3ef;
   border-radius:14px;
@@ -2367,6 +2435,8 @@ h2 { margin:0; line-height:1.15; }
 
 .forwardSearchOption {
   width:100%;
+  max-width:100%;
+  min-width:0;
   display:flex;
   flex-direction:column;
   align-items:flex-start;
@@ -2377,6 +2447,8 @@ h2 { margin:0; line-height:1.15; }
   padding:10px 12px;
   text-align:left;
   cursor:pointer;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .forwardSearchOption:hover,
@@ -2388,6 +2460,9 @@ h2 { margin:0; line-height:1.15; }
   color:#0f172a;
   font-size:13px;
   font-weight:800;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .forwardUserMeta,
@@ -2395,6 +2470,9 @@ h2 { margin:0; line-height:1.15; }
 .forwardSelected span {
   color:#64748b;
   font-size:12px;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .forwardSearchEmpty {
@@ -2414,6 +2492,10 @@ h2 { margin:0; line-height:1.15; }
   background:#f8fbff;
   color:#0f172a;
   font-size:13px;
+  min-width:0;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .forwardSelected.muted {

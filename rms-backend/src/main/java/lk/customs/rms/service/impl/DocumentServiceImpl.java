@@ -642,6 +642,8 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     public void deleteDocument(Long id, Long actorUserId) {
+        permissionService.ensurePermission(actorUserId, AppPermission.DELETE_DOCUMENT, "You are not allowed to delete documents.");
+
         Document d = requireDocument(id);
 
         d.setDeleted(true);

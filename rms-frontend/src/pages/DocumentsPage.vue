@@ -153,6 +153,14 @@
                 </button>
 
                 <button class="btn btn-sm" @click="openDetails(d.id)">Open</button>
+                <button
+                  v-if="canDelete"
+                  class="btn btn-sm danger"
+                  :disabled="deletingId === d.id"
+                  @click="deleteRow(d)"
+                >
+                  Delete
+                </button>
                 </div>
               </td>
             </tr>
@@ -278,7 +286,8 @@ import { useRouter } from "vue-router";
 import { File, FileText, FileSpreadsheet, Image, Archive, Eye } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
-import { listDocuments, listMovements, listRemarks, listAttachments, createAttachmentDownloadUrl } from "../api/documents.api";
+import { useToast } from "../composables/useToast";
+import { listDocuments, listMovements, listRemarks, listAttachments, createAttachmentDownloadUrl, deleteDocument } from "../api/documents.api";
 import { listUsers } from "../api/auth.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabelFromParts } from "../auth/userLabel";
@@ -288,9 +297,11 @@ import { matchesReceivedDateRange, sortDocumentsBy } from "../utils/documentsLog
 import { canPreviewDocument, canSeePreviewOperational, canSeePreviewRemarks, getDocumentsPageDaysOpenDisplay } from "../utils/documentsPageLogic";
 
 const router = useRouter();
+const toast = useToast();
 
 const currentUser = ref(getCurrentUser());
 const canCreate = computed(() => hasPermission(currentUser.value, "CREATE_DOCUMENT"));
+const canDelete = computed(() => hasPermission(currentUser.value, "DELETE_DOCUMENT"));
 const canViewRemarksWhenNotReportAt = computed(() => hasPermission(currentUser.value, "VIEW_REMARKS_WHEN_NOT_REPORT_AT"));
 
 const q = ref("");
@@ -327,6 +338,7 @@ const error = ref("");
 const all = ref([]);
 const rows = ref([]);
 const users = ref([]);
+const deletingId = ref(null);
 
 const previewOpen = ref(false);
 const previewDoc = ref(null);
@@ -510,6 +522,27 @@ function openDetails(id) {
 
 function goCreate() {
   router.push("/documents/new");
+}
+
+async function deleteRow(document) {
+  error.value = "";
+  if (!document?.id || deletingId.value) return;
+
+  const label = document.refNo ? ` ${document.refNo}` : "";
+  if (!window.confirm(`Delete document${label}? This will hide it from normal document lists but keep history.`)) return;
+
+  deletingId.value = document.id;
+  try {
+    await deleteDocument(document.id);
+    all.value = all.value.filter((item) => Number(item.id) !== Number(document.id));
+    applyNow();
+    toast.success("Document deleted successfully.");
+  } catch (e) {
+    error.value = e?.message ?? "Failed to delete document";
+    toast.error(error.value);
+  } finally {
+    deletingId.value = null;
+  }
 }
 
 function applyFilters(list) {
@@ -723,7 +756,7 @@ h2 { margin:0; line-height:1.15; }
 .col-priority { width:120px; }
 .col-status { width:140px; }
 .col-owner { width:180px; }
-.col-actions { width:130px; }
+.col-actions { width:190px; }
 .truncateText {
   display:block;
   overflow:hidden;
@@ -803,6 +836,8 @@ h2 { margin:0; line-height:1.15; }
 .btn-primary { background:#2563eb; border-color:#2563eb; color:#fff; }
 .btn-primary:hover { background:#1d4ed8; }
 .btn-sm { padding:8px 12px; font-size:12px; font-weight:700; }
+.danger { border-color:#fecaca; background:#fff; color:#991b1b; }
+.danger:hover { background:#fef2f2; }
 
 .actions {
   display:flex;
@@ -875,18 +910,34 @@ h2 { margin:0; line-height:1.15; }
   position:relative;
   z-index:3001;
   width:100%;
-  max-width:700px;
+  max-width:min(700px, calc(100vw - 28px));
+  min-width:0;
+  box-sizing:border-box;
   background:#fff;
   border-radius:10px;
   overflow:hidden;
 }
 .modalHead {
   display:flex; align-items:flex-start; justify-content:space-between;
+  gap:12px;
+  min-width:0;
   padding:14px 16px;
   border-bottom:1px solid #eee;
 }
+.modalHead > div:first-child {
+  flex:1 1 auto;
+  min-width:0;
+  max-width:100%;
+}
 .modalTitle { font-weight:800; font-size:14px; }
-.modalSub { font-size:12px; color:#6b7280; margin-top:2px; }
+.modalSub {
+  max-width:100%;
+  font-size:12px;
+  color:#6b7280;
+  margin-top:2px;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
 .modalBody { padding:16px; }
 .modalFoot {
   display:flex; justify-content:flex-end; gap:10px;
@@ -901,7 +952,7 @@ h2 { margin:0; line-height:1.15; }
 }
 .previewGrid {
   display:grid;
-  grid-template-columns:1fr 1fr;
+  grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
   gap:10px;
   font-size:13px;
 }
@@ -937,10 +988,15 @@ h2 { margin:0; line-height:1.15; }
 }
 .opsRow {
   display:grid;
-  grid-template-columns:120px 1fr;
+  grid-template-columns:minmax(0, 120px) minmax(0, 1fr);
   gap:10px;
   font-size:13px;
   margin-bottom:6px;
+}
+.opsRow > span {
+  min-width:0;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 .opsRow:last-child { margin-bottom:0; }
 .remarkPreview {
@@ -957,7 +1013,8 @@ h2 { margin:0; line-height:1.15; }
 }
 
 .previewModal {
-  max-width:920px;
+  max-width:min(920px, calc(100vw - 28px));
+  min-width:0;
   max-height:min(86vh, 860px);
   border-radius:18px;
   box-shadow:0 24px 64px rgba(15, 23, 42, 0.22);
@@ -988,6 +1045,9 @@ h2 { margin:0; line-height:1.15; }
   color:#0f172a;
   font-size:19px;
   letter-spacing:-0.02em;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .previewModal .modalSub {
@@ -1016,9 +1076,11 @@ h2 { margin:0; line-height:1.15; }
   grid-template-columns:minmax(0, 1.55fr) minmax(280px, 0.95fr);
   gap:16px;
   align-items:start;
+  min-width:0;
 }
 
 .viewerCard {
+  min-width:0;
   border:1px solid #dbeafe;
   border-radius:14px;
   background:#f8fbff;
@@ -1033,11 +1095,16 @@ h2 { margin:0; line-height:1.15; }
   padding:14px;
   border-bottom:1px solid #e5edf8;
 }
+.viewerHead > div:first-child {
+  min-width:0;
+}
 
 .viewerSub {
+  max-width:100%;
   color:#64748b;
   font-size:12px;
   margin-top:4px;
+  overflow-wrap:anywhere;
   word-break:break-word;
 }
 
@@ -1085,6 +1152,7 @@ h2 { margin:0; line-height:1.15; }
 }
 
 .previewModal .previewGrid {
+  grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
   gap:0;
   overflow:hidden;
   border:1px solid #e5e7eb;
@@ -1094,11 +1162,14 @@ h2 { margin:0; line-height:1.15; }
 }
 
 .previewModal .previewGrid > div {
+  min-width:0;
   padding:12px 14px;
   border-right:1px solid #eef2f7;
   border-bottom:1px solid #eef2f7;
   color:#111827;
   font-size:13px;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .previewModal .previewGrid > div:nth-child(2n) {
@@ -1131,7 +1202,7 @@ h2 { margin:0; line-height:1.15; }
 }
 
 .previewModal .opsRow {
-  grid-template-columns:130px 1fr;
+  grid-template-columns:minmax(0, 130px) minmax(0, 1fr);
   align-items:start;
   padding:7px 0;
   border-bottom:1px solid #e5edf8;
