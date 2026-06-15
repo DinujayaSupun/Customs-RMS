@@ -70,7 +70,7 @@
       <div class="tableHead">
         <div class="tableTitleWrap">
           <span class="tableTitle">Document List</span>
-          <span class="tableMeta">{{ rows.length }} result{{ rows.length === 1 ? '' : 's' }}</span>
+          <span class="tableMeta">{{ totalElements }} result{{ totalElements === 1 ? '' : 's' }}</span>
         </div>
         <div class="tableHintWrap">
           <span class="tableHintLabel">Sort Info</span>
@@ -99,7 +99,7 @@
               <th>Priority</th>
               <th>Status</th>
               <th>Report At</th>
-              <th>Actions</th>
+              <th class="actionsHeader">Actions</th>
             </tr>
           </thead>
 
@@ -140,27 +140,36 @@
                 <span class="truncateText">{{ ownerLabel(d.currentOwnerUserId, d.currentOwnerName) }}</span>
               </td>
 
-              <td>
+              <td class="actionsCell">
                 <div class="actions">
-                <button
-                  class="iconBtn"
-                  :disabled="!canPreview(d)"
-                  :title="canPreview(d) ? 'Preview' : 'Preview allowed only for DC or the user shown in Report At'"
-                  :aria-label="canPreview(d) ? 'Preview document' : 'Preview not allowed'"
-                  @click="openPreview(d)"
-                >
-                  <Eye class="actionIcon" aria-hidden="true" />
-                </button>
+                  <button
+                    class="iconBtn"
+                    :disabled="!canPreview(d)"
+                    :title="canPreview(d) ? 'Preview' : 'Preview allowed only for DC or the user shown in Report At'"
+                    :aria-label="canPreview(d) ? 'Preview document' : 'Preview not allowed'"
+                    @click="openPreview(d)"
+                  >
+                    <Eye class="actionIcon" aria-hidden="true" />
+                  </button>
 
-                <button class="btn btn-sm" @click="openDetails(d.id)">Open</button>
-                <button
-                  v-if="canDelete"
-                  class="btn btn-sm danger"
-                  :disabled="deletingId === d.id"
-                  @click="deleteRow(d)"
-                >
-                  Delete
-                </button>
+                  <button
+                    class="iconBtn"
+                    title="Open document"
+                    aria-label="Open document"
+                    @click="openDetails(d.id)"
+                  >
+                    <ExternalLink class="actionIcon" aria-hidden="true" />
+                  </button>
+                  <button
+                    v-if="canDelete"
+                    class="iconBtn dangerIcon"
+                    :disabled="deletingId === d.id"
+                    title="Delete document"
+                    aria-label="Delete document"
+                    @click="deleteRow(d)"
+                  >
+                    <Trash2 class="actionIcon" aria-hidden="true" />
+                  </button>
                 </div>
               </td>
             </tr>
@@ -169,6 +178,12 @@
       </div>
 
       <div v-if="error" class="errorBox">{{ error }}</div>
+
+      <div class="pager">
+        <button class="btn btn-sm" :disabled="loading || page === 0" @click="goPrevPage">Previous</button>
+        <span>Page {{ page + 1 }} of {{ totalPagesDisplay }}</span>
+        <button class="btn btn-sm" :disabled="loading || last" @click="goNextPage">Next</button>
+      </div>
     </div>
 
     <!-- Preview Modal -->
@@ -283,7 +298,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRouter } from "vue-router";
-import { File, FileText, FileSpreadsheet, Image, Archive, Eye } from "lucide-vue-next";
+import { File, FileText, FileSpreadsheet, Image, Archive, Eye, ExternalLink, Trash2 } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
 import { useToast } from "../composables/useToast";
@@ -339,6 +354,12 @@ const all = ref([]);
 const rows = ref([]);
 const users = ref([]);
 const deletingId = ref(null);
+const page = ref(0);
+const pageSize = ref(25);
+const last = ref(true);
+const totalElements = ref(0);
+const totalPages = ref(1);
+const totalPagesDisplay = computed(() => Math.max(totalPages.value || 1, 1));
 
 const previewOpen = ref(false);
 const previewDoc = ref(null);
@@ -535,7 +556,8 @@ async function deleteRow(document) {
   try {
     await deleteDocument(document.id);
     all.value = all.value.filter((item) => Number(item.id) !== Number(document.id));
-    applyNow();
+    rows.value = rows.value.filter((item) => Number(item.id) !== Number(document.id));
+    totalElements.value = Math.max(0, totalElements.value - 1);
     toast.success("Document deleted successfully.");
   } catch (e) {
     error.value = e?.message ?? "Failed to delete document";
@@ -617,29 +639,30 @@ function toDaysOpenScore(doc) {
 }
 
 watch([q, status, priority, receivedFrom, receivedTo, sortBy], () => {
-  applyNow();
+  page.value = 0;
+  load();
 });
 
 async function load() {
   loading.value = true;
   error.value = "";
   try {
-    const pageSize = 200;
-    const maxPages = 25;
-    const allDocs = [];
-
-    for (let page = 0; page < maxPages; page += 1) {
-      const data = await listDocuments({ page, size: pageSize, search: q.value || undefined });
-      const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
-      allDocs.push(...list);
-
-      if (Array.isArray(data) || list.length < pageSize || page >= ((data?.totalPages ?? 1) - 1)) {
-        break;
-      }
-    }
-
-    all.value = allDocs;
-    applyNow();
+    const data = await listDocuments({
+      page: page.value,
+      size: pageSize.value,
+      search: q.value || undefined,
+      status: status.value || undefined,
+      priority: priority.value || undefined,
+      receivedFrom: receivedFrom.value || undefined,
+      receivedTo: receivedTo.value || undefined,
+      sort: sortBy.value,
+    });
+    const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
+    all.value = list;
+    rows.value = list;
+    last.value = Array.isArray(data) ? true : !!data?.last;
+    totalElements.value = Array.isArray(data) ? list.length : Number(data?.totalElements ?? list.length);
+    totalPages.value = Array.isArray(data) ? 1 : Number(data?.totalPages ?? 1);
   } catch (e) {
     error.value = e?.message ?? "Failed to load documents";
     all.value = [];
@@ -647,6 +670,18 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+
+function goPrevPage() {
+  if (page.value === 0 || loading.value) return;
+  page.value -= 1;
+  load();
+}
+
+function goNextPage() {
+  if (last.value || loading.value) return;
+  page.value += 1;
+  load();
 }
 
 function onUserChanged() {
@@ -738,7 +773,8 @@ h2 { margin:0; line-height:1.15; }
 }
 
 .tableWrap {
-  overflow:auto;
+  overflow-x:hidden;
+  overflow-y:auto;
   position:relative;
   z-index:0;
 }
@@ -749,14 +785,14 @@ h2 { margin:0; line-height:1.15; }
   border-spacing:0;
   table-layout:fixed;
 }
-.col-ref { width:170px; }
-.col-title { width:240px; }
-.col-company { width:220px; }
-.col-days { width:110px; }
-.col-priority { width:120px; }
-.col-status { width:140px; }
-.col-owner { width:180px; }
-.col-actions { width:190px; }
+.col-ref { width:14%; }
+.col-title { width:21%; }
+.col-company { width:18%; }
+.col-days { width:8%; }
+.col-priority { width:9%; }
+.col-status { width:10%; }
+.col-owner { width:9%; }
+.col-actions { width:11%; }
 .truncateText {
   display:block;
   overflow:hidden;
@@ -765,11 +801,11 @@ h2 { margin:0; line-height:1.15; }
 }
 .table th,
 .table td {
-  padding:14px 14px;
+  padding:13px 10px;
   border-bottom:1px solid #eef2f7;
   text-align:left;
   white-space:nowrap;
-  font-size:14px;
+  font-size:13px;
 }
 .table th {
   position:sticky;
@@ -787,7 +823,7 @@ h2 { margin:0; line-height:1.15; }
 }
 .table tbody tr:hover { background:#f8fafc; }
 .refCell {
-  font-size:16px;
+  font-size:14px;
   font-weight:800;
   color:#111827;
   font-variant-numeric:tabular-nums;
@@ -802,8 +838,8 @@ h2 { margin:0; line-height:1.15; }
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  width:28px;
-  height:24px;
+  width:24px;
+  height:22px;
   padding:0;
   border-radius:999px;
   border:1px solid #d1d5db;
@@ -814,8 +850,8 @@ h2 { margin:0; line-height:1.15; }
   letter-spacing:0.03em;
 }
 .docIcon {
-  width:14px;
-  height:14px;
+  width:13px;
+  height:13px;
   stroke-width:2.1;
 }
 .docType-PDF { background:#fef2f2; border-color:#fecaca; color:#b91c1c; }
@@ -842,12 +878,91 @@ h2 { margin:0; line-height:1.15; }
 .actions {
   display:flex;
   align-items:center;
-  justify-content:flex-end;
-  gap:8px;
+  justify-content:flex-start;
+  gap:6px;
+  min-width:0;
+  white-space:nowrap;
+}
+.actions .btn,
+.actions .iconBtn {
+  flex:0 0 auto;
+}
+.actionsHeader,
+.actionsCell {
+  text-align:left;
+  position:sticky;
+  right:0;
+  z-index:2;
+  background:#fff;
+  box-shadow:-10px 0 18px rgba(15, 23, 42, 0.06);
+}
+.actionsCell {
+  overflow:visible;
+}
+.actionsHeader {
+  z-index:3;
+  background:#f9fafb;
+}
+.table tbody tr:hover .actionsCell {
+  background:#f8fafc;
 }
 
 @media (max-width: 1200px) {
-  .table { min-width:980px; }
+  .table th,
+  .table td {
+    padding-inline:8px;
+    font-size:12px;
+  }
+
+  .table { min-width:0; }
+
+  .col-ref { width:12%; }
+  .col-title { width:18%; }
+  .col-company { width:16%; }
+  .col-days { width:8%; }
+  .col-priority { width:9%; }
+  .col-status { width:10%; }
+  .col-owner { width:12%; }
+  .col-actions { width:15%; }
+
+  .actions .btn-sm {
+    padding-inline:10px;
+  }
+}
+
+@media (max-width: 960px) {
+  .tableWrap {
+    overflow-x:auto;
+    overflow-y:auto;
+  }
+
+  .table { min-width:1040px; }
+
+  .col-ref { width:132px; }
+  .col-title { width:200px; }
+  .col-company { width:180px; }
+  .col-days { width:86px; }
+  .col-priority { width:104px; }
+  .col-status { width:128px; }
+  .col-owner { width:136px; }
+  .col-actions { width:132px; }
+
+  .table th:nth-child(7),
+  .ownerCell {
+    padding-right:44px;
+  }
+
+  .actions {
+    gap:6px;
+  }
+
+  .actions .btn-sm {
+    padding-inline:10px;
+  }
+}
+
+@media (max-width: 520px) {
+  .table { min-width:1040px; }
 }
 
 .iconBtn {
@@ -864,6 +979,13 @@ h2 { margin:0; line-height:1.15; }
 }
 .iconBtn:hover { background:#f9fafb; }
 .iconBtn:disabled { opacity:0.45; cursor:not-allowed; }
+.dangerIcon {
+  border-color:#fecaca;
+  color:#b91c1c;
+}
+.dangerIcon:hover:not(:disabled) {
+  background:#fef2f2;
+}
 .actionIcon {
   width:14px;
   height:14px;

@@ -14,11 +14,13 @@ public interface DocumentService {
 
     DocumentResponse createDocument(CreateDocumentRequest request, Long actorUserId);
 
-    Page<DocumentResponse> getDocuments(int page, int size, String search, Long actorUserId);
+    Page<DocumentResponse> getDocuments(int page, int size, String search, String status, String priority,
+                                        String receivedFrom, String receivedTo, String sort, Long actorUserId);
 
-    Page<DocumentResponse> getMyInboxDocuments(int page, int size, Long actorUserId);
+    Page<DocumentResponse> getMyInboxDocuments(int page, int size, String search, String status, String priority,
+                                               String sort, Long actorUserId);
 
-    Page<SentMessageResponse> getSentMessages(int page, int size, String search, Long actorUserId);
+    Page<SentMessageResponse> getSentMessages(int page, int size, String search, String status, String priority, Long actorUserId);
 
     DocumentResponse getDocumentById(Long id, Long actorUserId);
 

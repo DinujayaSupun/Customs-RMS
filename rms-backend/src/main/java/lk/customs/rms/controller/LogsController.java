@@ -43,6 +43,7 @@ import java.util.stream.Collectors;
 @CrossOrigin
 @RequestMapping("/api/audit-logs")
 public class LogsController {
+    private static final int MAX_EXPORT_ROWS = 10_000;
 
     private final AuditLogRepository auditLogRepository;
     private final UserRepository userRepository;
@@ -148,14 +149,19 @@ public class LogsController {
         String documentFilter = normalize(document);
         Long documentId = parseLongOrNull(documentFilter);
 
-        List<AuditLog> logs = auditLogRepository.exportLogs(
+        Page<AuditLog> exportPage = auditLogRepository.searchLogs(
                 fromAt,
                 toAtExclusive,
                 normalize(actionType),
                 performedByUserId,
                 documentFilter,
-                documentId
+                documentId,
+                PageRequest.of(0, MAX_EXPORT_ROWS + 1)
         );
+        if (exportPage.getTotalElements() > MAX_EXPORT_ROWS) {
+            throw new BadRequestException("Export is too large. Narrow the date range or filters and try again.");
+        }
+        List<AuditLog> logs = exportPage.getContent();
         Map<Long, User> usersById = usersByIdForLogs(logs);
 
         StringBuilder csv = new StringBuilder();

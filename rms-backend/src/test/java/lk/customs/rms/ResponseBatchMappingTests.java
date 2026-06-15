@@ -142,10 +142,10 @@ class ResponseBatchMappingTests {
 
         when(currentUserService.requireUserId(authentication)).thenReturn(7L);
         when(permissionService.hasPermission(7L, AppPermission.VIEW_LOGS)).thenReturn(true);
-        when(auditLogRepository.exportLogs(any(), any(), any(), any(), any(), any())).thenReturn(List.of(
+        when(auditLogRepository.searchLogs(any(), any(), any(), any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of(
                 auditLog(1L, 10L),
                 auditLog(2L, 20L)
-        ));
+        )));
         when(userRepository.findAllById(any())).thenReturn(List.of(
                 user(10L, "First Performer"),
                 user(20L, "Second Performer")

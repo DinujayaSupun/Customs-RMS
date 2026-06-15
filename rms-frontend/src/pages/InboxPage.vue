@@ -98,7 +98,7 @@
         <div class="inboxHead">
           <div class="inboxTitleWrap">
             <span class="inboxTitle">{{ inboxMode === 'received' ? 'Received Messages' : 'Sent Messages' }}</span>
-            <span class="inboxMeta">{{ rows.length }} item{{ rows.length === 1 ? '' : 's' }}</span>
+            <span class="inboxMeta">{{ totalElements }} item{{ totalElements === 1 ? '' : 's' }}</span>
           </div>
           <div class="tableHintWrap">
             <span class="tableHintLabel">Inbox Info</span>
@@ -237,6 +237,11 @@
               </div>
             </div>
           </article>
+        </div>
+        <div class="pager">
+          <button class="btn btn-sm" :disabled="loading || page === 0" @click="goPrevPage">Previous</button>
+          <span>Page {{ page + 1 }} of {{ totalPagesDisplay }}</span>
+          <button class="btn btn-sm" :disabled="loading || last" @click="goNextPage">Next</button>
         </div>
       </div>
 
@@ -571,6 +576,12 @@ const inboxMode = ref("received");
 const authTick = ref(0);
 const users = ref([]);
 const forwardReturnAllowedStatuses = ref(["PENDING", "IN_PROGRESS", "RETURNED"]);
+const page = ref(0);
+const pageSize = ref(25);
+const last = ref(true);
+const totalElements = ref(0);
+const totalPages = ref(1);
+const totalPagesDisplay = computed(() => Math.max(totalPages.value || 1, 1));
 
 const previewOpen = ref(false);
 const previewDoc = ref(null);
@@ -922,17 +933,7 @@ function sortDocuments(list) {
 }
 
 function applyFilters(list) {
-  const qq = q.value.trim().toLowerCase();
   return list.filter((d) => {
-    const matchQ =
-      !qq ||
-      String(d.refNo ?? "").toLowerCase().includes(qq) ||
-      String(d.title ?? "").toLowerCase().includes(qq) ||
-      String(d.companyName ?? "").toLowerCase().includes(qq) ||
-      String(d.toUserName ?? "").toLowerCase().includes(qq);
-
-    const matchStatus = !status.value || d.status === status.value;
-    const matchPriority = !priority.value || d.priority === priority.value;
     const matchView = (() => {
       if (inboxMode.value === "received" && viewFilter.value === "unopened") return !isViewedByMe(d);
       if (inboxMode.value === "received" && viewFilter.value === "opened") return isViewedByMe(d);
@@ -940,7 +941,7 @@ function applyFilters(list) {
       return true;
     })();
 
-    return matchQ && matchStatus && matchPriority && matchView;
+    return matchView;
   });
 }
 
@@ -954,7 +955,8 @@ function applyNow() {
 }
 
 watch([q, status, priority, sortBy, viewFilter], () => {
-  applyNow();
+  page.value = 0;
+  load();
 });
 
 watch(sortBy, (value, previous) => {
@@ -1013,20 +1015,19 @@ async function loadReceived() {
   loading.value = true;
   error.value = "";
   try {
-    const pageSize = 200;
-    const maxPages = 20;
-    const all = [];
-    for (let page = 0; page < maxPages; page += 1) {
-      const data = await listMyInboxDocuments({ page, size: pageSize });
-      const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
-      all.push(...list);
-
-      if (Array.isArray(data) || list.length < pageSize || page >= ((data?.totalPages ?? 1) - 1)) {
-        break;
-      }
-    }
-
-    allRows.value = all;
+    const data = await listMyInboxDocuments({
+      page: page.value,
+      size: pageSize.value,
+      search: q.value || undefined,
+      status: status.value || undefined,
+      priority: viewFilter.value === "urgent" ? "URGENT" : (priority.value || undefined),
+      sort: sortBy.value,
+    });
+    const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
+    allRows.value = list;
+    last.value = Array.isArray(data) ? true : !!data?.last;
+    totalElements.value = Array.isArray(data) ? list.length : Number(data?.totalElements ?? list.length);
+    totalPages.value = Array.isArray(data) ? 1 : Number(data?.totalPages ?? 1);
     applyNow();
   } catch (e) {
     error.value = e?.message ?? "Failed to load inbox";
@@ -1048,21 +1049,18 @@ async function loadSent() {
       return;
     }
 
-    const pageSize = 300;
-    const maxPages = 20;
-    const all = [];
-
-    for (let page = 0; page < maxPages; page += 1) {
-      const data = await listSentMessages({ page, size: pageSize });
-      const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
-      all.push(...list);
-
-      if (Array.isArray(data) || list.length < pageSize || page >= ((data?.totalPages ?? 1) - 1)) {
-        break;
-      }
-    }
-
-    allRows.value = all;
+    const data = await listSentMessages({
+      page: page.value,
+      size: pageSize.value,
+      search: q.value || undefined,
+      status: status.value || undefined,
+      priority: viewFilter.value === "urgent" ? "URGENT" : (priority.value || undefined),
+    });
+    const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
+    allRows.value = list;
+    last.value = Array.isArray(data) ? true : !!data?.last;
+    totalElements.value = Array.isArray(data) ? list.length : Number(data?.totalElements ?? list.length);
+    totalPages.value = Array.isArray(data) ? 1 : Number(data?.totalPages ?? 1);
     applyNow();
   } catch (e) {
     error.value = e?.message ?? "Failed to load sent messages";
@@ -1071,6 +1069,18 @@ async function loadSent() {
   } finally {
     loading.value = false;
   }
+}
+
+function goPrevPage() {
+  if (page.value === 0 || loading.value) return;
+  page.value -= 1;
+  load();
+}
+
+function goNextPage() {
+  if (last.value || loading.value) return;
+  page.value += 1;
+  load();
 }
 
 async function loadUsers() {
@@ -1139,6 +1149,7 @@ function setMode(mode) {
 
   inboxMode.value = mode;
   viewFilter.value = "all";
+  page.value = 0;
   sortTouched.value = false;
   error.value = "";
   load();

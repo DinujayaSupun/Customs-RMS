@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import { getCurrentUser, hasPermission, clearSession, getAccessToken } from "../auth/currentUser";
 import { getMe } from "../api/auth.api";
 import { shouldClearSessionForAuthCheckError } from "./authGuardLogic";
+import { markAuthValidated, resetAuthValidation, shouldValidateAuth } from "./authValidationCache";
 import DocumentsPage from "../pages/DocumentsPage.vue";
 import DocumentDetailsPage from "../pages/DocumentDetailsPage.vue";
 import CreateDocumentPage from "../pages/CreateDocumentPage.vue";
@@ -56,8 +57,13 @@ router.beforeEach(async (to) => {
     };
   }
 
+  if (!shouldValidateAuth()) {
+    return true;
+  }
+
   try {
     await getMe();
+    markAuthValidated();
     return true;
   } catch (error) {
     if (!shouldClearSessionForAuthCheckError(error)) {
@@ -65,6 +71,7 @@ router.beforeEach(async (to) => {
     }
 
     clearSession();
+    resetAuthValidation();
     return {
       path: "/login",
       query: { redirect: to.fullPath },

@@ -787,17 +787,14 @@ async function load() {
       active: active.value === "" ? undefined : active.value,
     };
 
-    const [data, summaryData] = await Promise.all([
-      adminListUsers({
-        page: page.value,
-        size: size.value,
-        ...params,
-      }),
-      loadSummaryUsers(params),
-    ]);
+    const data = await adminListUsers({
+      page: page.value,
+      size: size.value,
+      ...params,
+    });
 
     rows.value = data?.content ?? [];
-    summaryRows.value = summaryData;
+    summaryRows.value = rows.value;
     last.value = !!data?.last;
     selectedUserIds.value = selectedUserIds.value.filter((id) =>
       summaryRows.value.some((u) => Number(u.id) === Number(id) && isSelectableUser(u))
@@ -811,28 +808,6 @@ async function load() {
   } finally {
     loading.value = false;
   }
-}
-
-async function loadSummaryUsers(baseParams) {
-  const pageSize = 200;
-  const maxPages = 100;
-  const all = [];
-
-  for (let currentPage = 0; currentPage < maxPages; currentPage += 1) {
-    const data = await adminListUsers({
-      page: currentPage,
-      size: pageSize,
-      ...baseParams,
-    });
-    const list = Array.isArray(data?.content) ? data.content : [];
-    all.push(...list);
-
-    if (data?.last || list.length < pageSize) {
-      break;
-    }
-  }
-
-  return all;
 }
 
 async function loadDuplicates() {

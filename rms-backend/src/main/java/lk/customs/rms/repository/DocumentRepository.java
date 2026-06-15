@@ -2,6 +2,7 @@ package lk.customs.rms.repository;
 
 import lk.customs.rms.entity.Document;
 import lk.customs.rms.enums.MovementActionType;
+import lk.customs.rms.enums.Priority;
 import lk.customs.rms.enums.Status;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -10,6 +11,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -110,6 +112,89 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
                                               @Param("canViewOwnCreated") boolean canViewOwnCreated,
                                               @Param("forwardAction") MovementActionType forwardAction,
                                               Pageable pageable);
+
+    @Query("""
+           select d from Document d
+           where d.deleted = false
+             and (:search is null or :search = ''
+               or lower(d.refNo) like lower(concat('%', :search, '%'))
+               or lower(d.title) like lower(concat('%', :search, '%'))
+               or lower(d.companyName) like lower(concat('%', :search, '%')))
+             and (:status is null or d.status = :status)
+             and (:priority is null or d.priority = :priority)
+             and (:receivedFrom is null or d.receivedDate >= :receivedFrom)
+             and (:receivedTo is null or d.receivedDate <= :receivedTo)
+           """)
+    Page<Document> searchAllNotDeletedFiltered(@Param("search") String search,
+                                               @Param("status") Status status,
+                                               @Param("priority") Priority priority,
+                                               @Param("receivedFrom") LocalDate receivedFrom,
+                                               @Param("receivedTo") LocalDate receivedTo,
+                                               Pageable pageable);
+
+    @Query("""
+           select d from Document d
+           where d.deleted = false
+             and (:search is null or :search = ''
+               or lower(d.refNo) like lower(concat('%', :search, '%'))
+               or lower(d.title) like lower(concat('%', :search, '%'))
+               or lower(d.companyName) like lower(concat('%', :search, '%')))
+             and (:status is null or d.status = :status)
+             and (:priority is null or d.priority = :priority)
+             and (:receivedFrom is null or d.receivedDate >= :receivedFrom)
+             and (:receivedTo is null or d.receivedDate <= :receivedTo)
+             and (
+                 d.currentOwnerUserId = :userId
+              or (upper(coalesce(d.visibility, 'PUBLIC')) = 'PUBLIC' and :canViewPublic = true)
+              or (
+                    upper(coalesce(d.visibility, 'PUBLIC')) = 'PRIVATE'
+                and (
+                       (:canViewPrivate = true and (
+                            d.currentOwnerUserId = :userId
+                         or exists (
+                             select m.id from DocumentMovement m
+                             where m.documentId = d.id
+                               and m.actionType = :forwardAction
+                               and upper(coalesce(m.forwardVisibility, '')) = 'PRIVATE'
+                               and (m.fromUserId = :userId or m.toUserId = :userId)
+                         )
+                       ))
+                    or (:canViewOwnCreated = true and d.createdByUserId = :userId)
+                )
+              )
+             )
+           """)
+    Page<Document> searchAccessibleNotDeletedFiltered(@Param("search") String search,
+                                                      @Param("status") Status status,
+                                                      @Param("priority") Priority priority,
+                                                      @Param("receivedFrom") LocalDate receivedFrom,
+                                                      @Param("receivedTo") LocalDate receivedTo,
+                                                      @Param("userId") Long userId,
+                                                      @Param("canViewPublic") boolean canViewPublic,
+                                                      @Param("canViewPrivate") boolean canViewPrivate,
+                                                      @Param("canViewOwnCreated") boolean canViewOwnCreated,
+                                                      @Param("forwardAction") MovementActionType forwardAction,
+                                                      Pageable pageable);
+
+    @Query("""
+           select d
+           from Document d
+           where d.deleted = false
+             and d.currentOwnerUserId = :userId
+             and d.status <> :excludedStatus
+             and (:search is null or :search = ''
+               or lower(d.refNo) like lower(concat('%', :search, '%'))
+               or lower(d.title) like lower(concat('%', :search, '%'))
+               or lower(d.companyName) like lower(concat('%', :search, '%')))
+             and (:status is null or d.status = :status)
+             and (:priority is null or d.priority = :priority)
+           """)
+    Page<Document> findAssignedActiveByOwnerFiltered(@Param("userId") Long userId,
+                                                     @Param("excludedStatus") Status excludedStatus,
+                                                     @Param("search") String search,
+                                                     @Param("status") Status status,
+                                                     @Param("priority") Priority priority,
+                                                     Pageable pageable);
 
     @Query("""
            select d from Document d

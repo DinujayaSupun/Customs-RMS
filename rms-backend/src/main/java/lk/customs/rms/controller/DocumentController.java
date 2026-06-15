@@ -33,18 +33,27 @@ public class DocumentController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String priority,
+            @RequestParam(required = false) String receivedFrom,
+            @RequestParam(required = false) String receivedTo,
+            @RequestParam(required = false) String sort,
             Authentication authentication
     ) {
-        return documentService.getDocuments(page, size, search, currentUserService.requireUserId(authentication));
+        return documentService.getDocuments(page, size, search, status, priority, receivedFrom, receivedTo, sort, currentUserService.requireUserId(authentication));
     }
 
     @GetMapping("/my-inbox")
     public Page<DocumentResponse> myInbox(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "200") int size,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String priority,
+            @RequestParam(required = false) String sort,
             Authentication authentication
     ) {
-        return documentService.getMyInboxDocuments(page, size, currentUserService.requireUserId(authentication));
+        return documentService.getMyInboxDocuments(page, size, search, status, priority, sort, currentUserService.requireUserId(authentication));
     }
 
     @GetMapping("/sent-messages")
@@ -52,9 +61,11 @@ public class DocumentController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size,
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String priority,
             Authentication authentication
     ) {
-        return documentService.getSentMessages(page, size, search, currentUserService.requireUserId(authentication));
+        return documentService.getSentMessages(page, size, search, status, priority, currentUserService.requireUserId(authentication));
     }
 
     @GetMapping("/{id}")

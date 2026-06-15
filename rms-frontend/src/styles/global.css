@@ -260,3 +260,14 @@ button,
   outline: none;
   box-shadow: var(--btn-focus);
 }
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 12px;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 700;
+}

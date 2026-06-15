@@ -13,13 +13,18 @@ function getMsg(e) {
 const BASE = "/documents";
 
 // ===================== DOCUMENTS =====================
-export async function listDocuments({ page = 0, size = 100, search } = {}) {
+export async function listDocuments({ page = 0, size = 100, search, status, priority, receivedFrom, receivedTo, sort } = {}) {
   try {
     return (await http.get(BASE, {
       params: {
         page,
         size,
         ...(search ? { search } : {}),
+        ...(status ? { status } : {}),
+        ...(priority ? { priority } : {}),
+        ...(receivedFrom ? { receivedFrom } : {}),
+        ...(receivedTo ? { receivedTo } : {}),
+        ...(sort ? { sort } : {}),
       },
     })).data;
   } catch (e) {
@@ -27,10 +32,17 @@ export async function listDocuments({ page = 0, size = 100, search } = {}) {
   }
 }
 
-export async function listMyInboxDocuments({ page = 0, size = 200 } = {}) {
+export async function listMyInboxDocuments({ page = 0, size = 200, search, status, priority, sort } = {}) {
   try {
     return (await http.get(`${BASE}/my-inbox`, {
-      params: { page, size },
+      params: {
+        page,
+        size,
+        ...(search ? { search } : {}),
+        ...(status ? { status } : {}),
+        ...(priority ? { priority } : {}),
+        ...(sort ? { sort } : {}),
+      },
     })).data;
   } catch (e) {
     throw getMsg(e);
@@ -60,6 +72,8 @@ export async function listSentMessages(params = {}) {
         page: params.page ?? 0,
         size: params.size ?? 200,
         search: params.search ?? undefined,
+        status: params.status ?? undefined,
+        priority: params.priority ?? undefined,
       },
     })).data;
   } catch (e) {

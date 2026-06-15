@@ -10,7 +10,13 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "documents")
+@Table(name = "documents", indexes = {
+    @Index(name = "idx_documents_owner_status_deleted_updated", columnList = "current_owner_user_id,status,is_deleted,updated_at"),
+    @Index(name = "idx_documents_deleted_updated_id", columnList = "is_deleted,updated_at,id"),
+    @Index(name = "idx_documents_created_by_deleted", columnList = "created_by_user_id,is_deleted"),
+    @Index(name = "idx_documents_received_date", columnList = "received_date"),
+    @Index(name = "idx_documents_visibility_deleted", columnList = "visibility,is_deleted")
+})
 @Getter
 @Setter
 public class Document {

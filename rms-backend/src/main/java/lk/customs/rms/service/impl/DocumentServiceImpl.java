@@ -10,6 +10,7 @@ import lk.customs.rms.entity.AuditLog;
 import lk.customs.rms.entity.User;
 import lk.customs.rms.enums.AppPermission;
 import lk.customs.rms.enums.MovementActionType;
+import lk.customs.rms.enums.Priority;
 import lk.customs.rms.enums.Status;
 import lk.customs.rms.exception.BadRequestException;
 import lk.customs.rms.exception.ResourceNotFoundException;
@@ -32,6 +33,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 import org.springframework.transaction.annotation.Transactional;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
@@ -178,60 +180,62 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
-    public Page<DocumentResponse> getDocuments(int page, int size, String search, Long actorUserId) {
-        var pageable = PageRequest.of(
-            page,
-            size,
-            Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"))
-        );
+    public Page<DocumentResponse> getDocuments(int page, int size, String search, String status, String priority,
+                                               String receivedFrom, String receivedTo, String sort, Long actorUserId) {
+        var pageable = PageRequest.of(page, size, resolveDocumentSort(sort));
 
         boolean canViewAll = permissionService.hasPermission(actorUserId, AppPermission.VIEW_ALL_DOCUMENTS);
         boolean canViewPublic = permissionService.hasPermission(actorUserId, AppPermission.VIEW_PUBLIC_DOCUMENT);
         boolean canViewPrivate = permissionService.hasPermission(actorUserId, AppPermission.VIEW_PRIVATE_DOCUMENT);
         boolean canViewOwnCreated = permissionService.hasPermission(actorUserId, AppPermission.VIEW_OWN_CREATED_DOCUMENTS);
+        Status statusFilter = parseStatus(status);
+        Priority priorityFilter = parsePriority(priority);
+        LocalDate receivedFromFilter = parseDate(receivedFrom);
+        LocalDate receivedToFilter = parseDate(receivedTo);
+        String normalizedSearch = normalizeSearch(search);
 
         Page<Document> docs;
         if (canViewAll) {
-            if (search == null || search.isBlank()) {
-                docs = documentRepository.findAllNotDeleted(pageable);
-            } else {
-                docs = documentRepository.searchNotDeleted(search.trim(), pageable);
-            }
+            docs = documentRepository.searchAllNotDeletedFiltered(
+                normalizedSearch,
+                statusFilter,
+                priorityFilter,
+                receivedFromFilter,
+                receivedToFilter,
+                pageable
+            );
         } else {
-            if (search == null || search.isBlank()) {
-                docs = documentRepository.findAccessibleNotDeleted(
-                        actorUserId,
-                        canViewPublic,
-                        canViewPrivate,
-                        canViewOwnCreated,
-                        MovementActionType.FORWARD,
-                        pageable
-                );
-            } else {
-                docs = documentRepository.searchAccessibleNotDeleted(
-                        search.trim(),
-                        actorUserId,
-                        canViewPublic,
-                        canViewPrivate,
-                        canViewOwnCreated,
-                        MovementActionType.FORWARD,
-                        pageable
-                );
-            }
+            docs = documentRepository.searchAccessibleNotDeletedFiltered(
+                normalizedSearch,
+                statusFilter,
+                priorityFilter,
+                receivedFromFilter,
+                receivedToFilter,
+                actorUserId,
+                canViewPublic,
+                canViewPrivate,
+                canViewOwnCreated,
+                MovementActionType.FORWARD,
+                pageable
+            );
         }
 
         return toDocumentResponsePage(docs, actorUserId);
     }
 
     @Override
-    public Page<DocumentResponse> getMyInboxDocuments(int page, int size, Long actorUserId) {
-        var pageable = PageRequest.of(
-            page,
-            size,
-            Sort.by(Sort.Order.desc("updatedAt"), Sort.Order.desc("createdAt"), Sort.Order.desc("id"))
-        );
+    public Page<DocumentResponse> getMyInboxDocuments(int page, int size, String search, String status, String priority,
+                                                      String sort, Long actorUserId) {
+        var pageable = PageRequest.of(page, size, resolveDocumentSort(sort));
 
-        Page<Document> docs = documentRepository.findAssignedActiveByOwner(actorUserId, Status.ISSUED, pageable);
+        Page<Document> docs = documentRepository.findAssignedActiveByOwnerFiltered(
+            actorUserId,
+            Status.ISSUED,
+            normalizeSearch(search),
+            parseStatus(status),
+            parsePriority(priority),
+            pageable
+        );
         return toDocumentResponsePage(docs, actorUserId);
     }
 
@@ -272,23 +276,41 @@ public class DocumentServiceImpl implements DocumentService {
                     movement -> movement,
                     (first, second) -> first
                 ));
+        Set<Long> userIds = new HashSet<>();
+        docs.getContent().forEach(d -> {
+            if (d.getCreatedByUserId() != null) userIds.add(d.getCreatedByUserId());
+            if (d.getCurrentOwnerUserId() != null) userIds.add(d.getCurrentOwnerUserId());
+        });
+        latestInboundByDoc.values().forEach(m -> {
+            Long senderUserId = resolveInboxSenderUserId(m);
+            if (senderUserId != null) userIds.add(senderUserId);
+            if (m.getActionByUserId() != null) userIds.add(m.getActionByUserId());
+            if (m.getFromUserId() != null) userIds.add(m.getFromUserId());
+        });
+        Map<Long, User> usersById = userIds.isEmpty()
+            ? Map.of()
+            : userRepository.findAllById(userIds)
+                .stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
 
         return docs.map(d -> {
-            String createdByName = userRepository.findById(d.getCreatedByUserId()).map(User::getFullName).orElse(null);
-            String ownerName = userRepository.findById(d.getCurrentOwnerUserId()).map(User::getFullName).orElse(null);
+            User createdBy = usersById.get(d.getCreatedByUserId());
+            User owner = usersById.get(d.getCurrentOwnerUserId());
+            String createdByName = createdBy == null ? null : createdBy.getFullName();
+            String ownerName = owner == null ? null : owner.getFullName();
             boolean viewedByMe = viewedDocIds.contains(d.getId());
             DocumentRemark latestRemark = canViewRemarks(d, actorUserId) ? latestRemarks.get(d.getId()) : null;
             String latestRemarkPreview = latestRemark == null ? null : toRemarkPreview(latestRemark);
             DocumentMovement latestInbound = latestInboundByDoc.get(d.getId());
             Long inboxSenderUserId = resolveInboxSenderUserId(latestInbound);
-            User inboxSender = inboxSenderUserId == null ? null : userRepository.findById(inboxSenderUserId).orElse(null);
+            User inboxSender = inboxSenderUserId == null ? null : usersById.get(inboxSenderUserId);
             boolean undoInboxMovement = latestInbound != null && latestInbound.getActionType() == MovementActionType.UNDO_SEND;
             // Inbox rows show undo notices as read-only status, not as a new action the receiver can undo again.
             User undoActor = undoInboxMovement && latestInbound.getActionByUserId() != null
-                ? userRepository.findById(latestInbound.getActionByUserId()).orElse(null)
+                ? usersById.get(latestInbound.getActionByUserId())
                 : null;
             User undoFrom = undoInboxMovement && latestInbound.getFromUserId() != null
-                ? userRepository.findById(latestInbound.getFromUserId()).orElse(null)
+                ? usersById.get(latestInbound.getFromUserId())
                 : null;
             return DocumentResponse.from(DocumentResponse.mapping(d)
                 .createdByName(createdByName)
@@ -323,58 +345,28 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
-    public Page<SentMessageResponse> getSentMessages(int page, int size, String search, Long actorUserId) {
+    public Page<SentMessageResponse> getSentMessages(int page, int size, String search, String status, String priority, Long actorUserId) {
         permissionService.ensurePermission(actorUserId, AppPermission.VIEW_SENT_MESSAGES, "You are not allowed to view sent messages.");
 
-        var pageable = PageRequest.of(page, size);
-        String normalizedSearch = search == null ? "" : search.trim().toLowerCase();
+        var pageable = PageRequest.of(page, size, Sort.by(Sort.Order.desc("actionAt"), Sort.Order.desc("id")));
+        Page<DocumentMovement> movementPage = movementRepository.findSentPageForActor(
+            actorUserId,
+            List.of(MovementActionType.FORWARD, MovementActionType.RETURN),
+            MovementActionType.UNDO_SEND,
+            normalizeSearch(search),
+            parseStatus(status),
+            parsePriority(priority),
+            pageable
+        );
 
-        List<DocumentMovement> actorMovements = movementRepository
-            .findByActionTypeInAndActionByUserIdOrderByActionAtDescIdDesc(
-                List.of(MovementActionType.FORWARD, MovementActionType.RETURN),
-                actorUserId
-            );
-        List<DocumentMovement> undoNotices = movementRepository
-            .findByActionTypeAndFromUserIdOrderByActionAtDescIdDesc(MovementActionType.UNDO_SEND, actorUserId);
-        // Sent mail includes both actions the user performed and undo notices routed back to them.
-        actorMovements = java.util.stream.Stream.concat(actorMovements.stream(), undoNotices.stream())
-            .sorted((a, b) -> {
-                LocalDateTime aTime = a.getActionAt();
-                LocalDateTime bTime = b.getActionAt();
-                int timeCompare = java.util.Comparator.nullsLast(LocalDateTime::compareTo).compare(bTime, aTime);
-                if (timeCompare != 0) return timeCompare;
-                return java.util.Comparator.nullsLast(Long::compareTo).compare(b.getId(), a.getId());
-            })
-            .toList();
-
-        List<Long> docIds = actorMovements.stream().map(DocumentMovement::getDocumentId).distinct().toList();
+        List<DocumentMovement> pageMovements = movementPage.getContent();
+        List<Long> docIds = pageMovements.stream().map(DocumentMovement::getDocumentId).distinct().toList();
         Map<Long, Document> docsById = docIds.isEmpty()
             ? Map.of()
             : documentRepository.findAllById(docIds)
                 .stream()
                 .filter(d -> !d.isDeleted())
                 .collect(Collectors.toMap(Document::getId, d -> d));
-
-        List<DocumentMovement> filteredMovements = actorMovements.stream()
-            .filter(m -> docsById.containsKey(m.getDocumentId()))
-            .filter(m -> {
-                if (normalizedSearch.isEmpty()) return true;
-                Document d = docsById.get(m.getDocumentId());
-                String ref = d == null || d.getRefNo() == null ? "" : d.getRefNo().toLowerCase();
-                String title = d == null || d.getTitle() == null ? "" : d.getTitle().toLowerCase();
-                String company = d == null || d.getCompanyName() == null ? "" : d.getCompanyName().toLowerCase();
-                return ref.contains(normalizedSearch)
-                    || title.contains(normalizedSearch)
-                    || company.contains(normalizedSearch);
-            })
-            .toList();
-
-        int start = (int) pageable.getOffset();
-        int end = Math.min(start + pageable.getPageSize(), filteredMovements.size());
-        if (start > end) {
-            start = end;
-        }
-        List<DocumentMovement> pageMovements = filteredMovements.subList(start, end);
 
         List<Long> toUserIds = pageMovements.stream()
             .map(DocumentMovement::getToUserId)
@@ -498,7 +490,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .build();
             }).toList();
 
-            return new PageImpl<>(sentRows, pageable, filteredMovements.size());
+        return new PageImpl<>(sentRows, pageable, movementPage.getTotalElements());
     }
 
     private DocumentMovement findUndoMovementForSentMovement(DocumentMovement sentMovement, List<DocumentMovement> undoMovements) {
@@ -1291,6 +1283,53 @@ public class DocumentServiceImpl implements DocumentService {
 
     private String roleName(User user) {
         return user == null || user.getRole() == null ? null : user.getRole().getRoleName();
+    }
+
+    private String normalizeSearch(String value) {
+        if (value == null) return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private Status parseStatus(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return Status.valueOf(value.trim().toUpperCase());
+        } catch (IllegalArgumentException ignored) {
+            throw new BadRequestException("Invalid status filter: " + value);
+        }
+    }
+
+    private Priority parsePriority(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return Priority.valueOf(value.trim().toUpperCase());
+        } catch (IllegalArgumentException ignored) {
+            throw new BadRequestException("Invalid priority filter: " + value);
+        }
+    }
+
+    private LocalDate parseDate(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return LocalDate.parse(value.trim());
+        } catch (Exception ignored) {
+            throw new BadRequestException("Invalid date filter: " + value);
+        }
+    }
+
+    private Sort resolveDocumentSort(String sort) {
+        return switch (String.valueOf(sort == null ? "recent" : sort).trim().toLowerCase()) {
+            case "ref_asc" -> Sort.by(Sort.Order.asc("refNo"), Sort.Order.desc("id"));
+            case "ref_desc" -> Sort.by(Sort.Order.desc("refNo"), Sort.Order.desc("id"));
+            case "title_asc" -> Sort.by(Sort.Order.asc("title"), Sort.Order.desc("id"));
+            case "priority_desc" -> Sort.by(Sort.Order.desc("priority"), Sort.Order.desc("updatedAt"), Sort.Order.desc("id"));
+            case "status_asc" -> Sort.by(Sort.Order.asc("status"), Sort.Order.desc("updatedAt"), Sort.Order.desc("id"));
+            case "days_open_desc" -> Sort.by(Sort.Order.asc("receivedDate"), Sort.Order.desc("id"));
+            case "days_open_asc" -> Sort.by(Sort.Order.desc("receivedDate"), Sort.Order.desc("id"));
+            case "recent" -> Sort.by(Sort.Order.desc("updatedAt"), Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+            default -> Sort.by(Sort.Order.desc("updatedAt"), Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+        };
     }
 
     private String toRemarkPreview(String value) {
