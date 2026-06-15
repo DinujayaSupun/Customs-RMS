@@ -61,6 +61,10 @@
             <p class="selectedFile" :class="{ muted: !selectedFileName }">
               {{ selectedFileName || "No image selected yet" }}
             </p>
+            <div v-if="selectedPicPreviewUrl" class="selectedImagePreview">
+              <span class="previewLabel">Selected image preview</span>
+              <img :src="selectedPicPreviewUrl" alt="Selected profile preview" />
+            </div>
           </section>
 
           <section class="settingsPanel compactPanel">
@@ -255,7 +259,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, onUnmounted, ref } from "vue";
 import { Eye, EyeOff } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
@@ -273,6 +277,7 @@ const { success, error } = useToast();
 
 const fileInput = ref(null);
 const selectedPic = ref(null);
+const selectedPicPreviewUrl = ref("");
 const savingPic = ref(false);
 const savingProfile = ref(false);
 const savingPassword = ref(false);
@@ -329,6 +334,13 @@ const roleDisplayName = computed(() => {
 const selectedFileName = computed(() => selectedPic.value?.name || "");
 
 let avatarRequestId = 0;
+
+function clearSelectedPicPreview() {
+  if (selectedPicPreviewUrl.value) {
+    URL.revokeObjectURL(selectedPicPreviewUrl.value);
+    selectedPicPreviewUrl.value = "";
+  }
+}
 
 async function refreshAvatarUrl() {
   const requestId = ++avatarRequestId;
@@ -405,7 +417,9 @@ function pickFile() {
 
 function onPick(event) {
   const file = event?.target?.files?.[0] || null;
+  clearSelectedPicPreview();
   selectedPic.value = file;
+  selectedPicPreviewUrl.value = file ? URL.createObjectURL(file) : "";
 }
 
 function onPhoneInput(event) {
@@ -467,6 +481,7 @@ async function uploadPicture() {
   try {
     const me = await uploadMyProfilePicture(file);
     selectedPic.value = null;
+    clearSelectedPicPreview();
     if (fileInput.value) fileInput.value.value = "";
 
     profile.value.hasProfilePicture = !!me.hasProfilePicture;
@@ -556,6 +571,10 @@ async function savePassword() {
     savingPassword.value = false;
   }
 }
+
+onUnmounted(() => {
+  clearSelectedPicPreview();
+});
 
 load();
 </script>
@@ -838,6 +857,35 @@ h3 {
 
 .selectedFile.muted {
   color: #94a3b8;
+}
+
+.selectedImagePreview {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #dbe5f0;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.previewLabel {
+  color: #475569;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.selectedImagePreview img {
+  width: 104px;
+  height: 104px;
+  border: 4px solid #ffffff;
+  border-radius: 999px;
+  object-fit: cover;
+  background: #f1f5f9;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
 }
 
 .accountList {
