@@ -386,8 +386,7 @@
                     <span class="docTypeBadge" :class="'docType-' + docTypeClass(mainAttachmentType)">
                       <component :is="attachmentIconComponent(mainAttachmentType)" class="docIcon" aria-hidden="true" />
                     </span>
-                    {{ mainFile.fileName }}
-                    <span class="ver">(v{{ mainFile.versionNo }})</span>
+                    {{ formatVersionedFileName(mainFile.versionNo, mainFile.fileName) }}
                   </div>
                   <div class="hintInline">
                     <span class="hintLabel">Main file</span>
@@ -445,7 +444,7 @@
               <div v-for="a in attachmentsSorted" :key="a.id" class="item">
                 <div class="itemTop">
                   <span class="who">
-                    <b>v{{ a.versionNo }}</b> —
+                    <b>{{ formatVersionedFileName(a.versionNo, a.fileName) }}</b>
                     <span
                       class="docTypeBadge docTypeInline"
                       :class="'docType-' + docTypeClass(resolveAttachmentTypeFromName(a.fileName))"
@@ -457,7 +456,6 @@
                         aria-hidden="true"
                       />
                     </span>
-                    {{ a.fileName }}
                     <span v-if="Number(a.versionNo) === 1" class="tag">MAIN</span>
                   </span>
                   <span class="when mono">{{ formatDateTime(a.uploadedAt) }}</span>
@@ -541,7 +539,7 @@
         <div class="viewerHead">
           <div>
             <div class="viewerTitle">Document Viewer</div>
-            <div class="viewerSub">{{ selectedFile?.fileName || "No file selected" }}</div>
+            <div class="viewerSub">{{ selectedFile ? formatVersionedFileName(selectedFile.versionNo, selectedFile.fileName) : "No file selected" }}</div>
           </div>
           <div class="viewerBtns">
             <button class="btn" :disabled="!selectedFile" @click="selectedFile && openInNewTab(selectedFile)">Open</button>
@@ -568,7 +566,7 @@
             >
               <div class="viewerItemTop">
                 <span>
-                  <b>v{{ f.versionNo }}</b>
+                  <b>{{ formatVersionedFileName(f.versionNo, f.fileName) }}</b>
                   <span
                     class="docTypeBadge docTypeInline"
                     :class="'docType-' + docTypeClass(resolveAttachmentTypeFromName(f.fileName))"
@@ -580,7 +578,6 @@
                       aria-hidden="true"
                     />
                   </span>
-                  {{ f.fileName }}
                 </span>
                 <span v-if="Number(f.versionNo) === 1" class="tagSmall">MAIN</span>
               </div>
@@ -634,6 +631,7 @@ import { getDocumentDetailsCapabilities } from "../utils/documentDetailsLogic";
 import { canDeleteMinute, canEditMinute, getEditableMinuteText } from "../utils/minuteEditLogic";
 import { getWorkflowSenderSuccessMessage } from "../utils/workflowNotificationLogic";
 import { getUndoSendInfo, needsUndoReason } from "../utils/undoSendLogic";
+import { formatVersionedFileName } from "../utils/createDocumentFilesLogic";
 import { listUsers } from "../api/auth.api";
 import {
   getDocument,
@@ -1608,11 +1606,13 @@ async function uploadPicked() {
 
   busy.value = true;
   try {
-    await uploadAttachment(documentId, pickedFile.value);
+    const uploaded = await uploadAttachment(documentId, pickedFile.value);
     pickedFile.value = null;
     if (fileInputRef.value) fileInputRef.value.value = "";
     await reloadAll();
-    successMessage.value = "Attachment uploaded successfully.";
+    successMessage.value = uploaded?.fileName
+      ? `Attachment uploaded: ${formatVersionedFileName(uploaded.versionNo, uploaded.fileName)}`
+      : "Attachment uploaded successfully.";
     toast.success(successMessage.value);
   } catch (e) {
     error.value = e?.message || "Upload failed.";

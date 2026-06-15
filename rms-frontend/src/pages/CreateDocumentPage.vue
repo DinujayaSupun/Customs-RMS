@@ -53,7 +53,7 @@
           />
           <div class="filePickRow">
             <button class="btn btn-sm" type="button" @click="openFilePicker">Choose Files</button>
-            <span class="filePickLabel">{{ selectedFiles.length ? `${selectedFiles.length} file(s) selected` : "No files chosen" }}</span>
+            <span class="filePickLabel">{{ selectedFilesSummary }}</span>
             <HoverHint text="PDF and image files can be previewed here. DOC/DOCX and other file types cannot be previewed in-browser." />
           </div>
           <div class="small">
@@ -67,7 +67,7 @@
               class="selectedFileRow"
             >
               <div class="fileName">
-                <b>{{ file.name }}</b>
+                <b>{{ getSelectedFileVersionLabel(index, file.name) }}</b>
                 <span class="tag">{{ getSelectedFileRole(index) }}</span>
                 <div class="small">{{ file.type || "unknown type" }}</div>
               </div>
@@ -146,6 +146,8 @@ import {
   addSelectedFiles,
   getFileKey,
   getSelectedFileRole,
+  getSelectedFileVersionLabel,
+  getSelectedFilesSummary,
   removeSelectedFile,
   uploadFilesInSelectedOrder,
 } from "../utils/createDocumentFilesLogic";
@@ -178,6 +180,7 @@ const fileInputRef = ref(null);
 
 const isPdf = computed(() => previewFile.value && previewFile.value.type === "application/pdf");
 const isImage = computed(() => previewFile.value && previewFile.value.type.startsWith("image/"));
+const selectedFilesSummary = computed(() => getSelectedFilesSummary(selectedFiles.value));
 
 function onFileChange(e) {
   selectedFiles.value = addSelectedFiles(selectedFiles.value, e.target.files);
