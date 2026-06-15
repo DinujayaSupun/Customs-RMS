@@ -469,9 +469,11 @@
                   :disabled="forwardBusy || !canChooseWorkflowTarget"
                   placeholder="Search user by name, role, department, or ID..."
                   spellcheck="false"
-                  @focus="forwardSearchFocused = true"
-                  @blur="forwardSearchFocused = false"
-                  @keydown.escape="forwardSearchFocused = false"
+                  @focus="openForwardSearch"
+                  @click="openForwardSearch"
+                  @input="openForwardSearch"
+                  @blur="closeForwardSearch"
+                  @keydown.escape="closeForwardSearch"
                 />
 
                 <div v-if="showForwardSearchDropdown" class="forwardSearchDropdown">
@@ -1325,6 +1327,15 @@ function selectForwardUser(user) {
   forwardUserSearch.value = "";
   forwardSearchFocused.value = false;
   autoSelectedForwardTargetId.value = null;
+}
+
+function openForwardSearch() {
+  if (forwardBusy.value || !canChooseWorkflowTarget.value) return;
+  forwardSearchFocused.value = true;
+}
+
+function closeForwardSearch() {
+  forwardSearchFocused.value = false;
 }
 
 function clearForwardSearch() {

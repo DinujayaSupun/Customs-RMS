@@ -38,10 +38,11 @@
       <aside
         class="sidebar"
         :class="{ 'sidebar-expanded': isSidebarExpanded }"
+        ref="sidebarRef"
         @mouseenter="expandSidebar"
         @mouseleave="scheduleSidebarCollapse"
         @focusin="expandSidebar"
-        @focusout="scheduleSidebarCollapse"
+        @focusout="handleSidebarFocusOut"
       >
         <div class="sidebar-top">
           <div class="sidebar-mark" aria-label="Navigation menu">
@@ -61,6 +62,8 @@
             :to="item.to"
             class="nav"
             :title="item.label"
+            @pointerdown="handleSidebarNavPress"
+            @click="handleSidebarNavClick"
           >
             <span class="nav-icon" :class="`nav-icon-${item.icon}`" aria-hidden="true">
               <svg v-if="item.icon === 'inbox'" viewBox="0 0 24 24" class="nav-svg">
@@ -113,11 +116,32 @@ import { formatUserLabel } from "../auth/userLabel";
 import { useToast } from "../composables/useToast";
 import { getBackendStatus } from "../services/backendStatus";
 
+const SIDEBAR_EXPANDED_KEY = "rms_sidebar_expanded";
+let persistedSidebarExpanded = false;
+
+function readPersistedSidebarExpanded() {
+  try {
+    return window.sessionStorage.getItem(SIDEBAR_EXPANDED_KEY) === "true";
+  } catch {
+    return persistedSidebarExpanded;
+  }
+}
+
+function setPersistedSidebarExpanded(value) {
+  persistedSidebarExpanded = value;
+  try {
+    window.sessionStorage.setItem(SIDEBAR_EXPANDED_KEY, value ? "true" : "false");
+  } catch {
+    // Session storage can be blocked; the module-level value still covers normal navigation.
+  }
+}
+
 const router = useRouter();
 const userRef = ref(getCurrentUser());
 const avatarBroken = ref(false);
 const avatarUrl = ref("");
-const isSidebarExpanded = ref(false);
+const sidebarRef = ref(null);
+const isSidebarExpanded = ref(readPersistedSidebarExpanded());
 const backendUnavailable = ref(false);
 const { success, info } = useToast();
 
@@ -154,6 +178,8 @@ const initials = computed(() => {
 
 let avatarRequestId = 0;
 let sidebarCollapseTimer = null;
+let lastSidebarNavClickAt = 0;
+const SIDEBAR_NAV_CLICK_GRACE_MS = 1000;
 
 function clearSidebarCollapseTimer() {
   if (sidebarCollapseTimer !== null) {
@@ -164,15 +190,40 @@ function clearSidebarCollapseTimer() {
 
 function expandSidebar() {
   clearSidebarCollapseTimer();
+  if (isSidebarExpanded.value) return;
+  setPersistedSidebarExpanded(true);
   isSidebarExpanded.value = true;
 }
 
 function scheduleSidebarCollapse() {
   clearSidebarCollapseTimer();
+  const navClickGraceRemaining = Math.max(0, SIDEBAR_NAV_CLICK_GRACE_MS - (Date.now() - lastSidebarNavClickAt));
   sidebarCollapseTimer = window.setTimeout(() => {
+    setPersistedSidebarExpanded(false);
     isSidebarExpanded.value = false;
     sidebarCollapseTimer = null;
-  }, 550);
+  }, 550 + navClickGraceRemaining);
+}
+
+function handleSidebarFocusOut(event) {
+  const nextFocusedElement = event?.relatedTarget;
+  if (nextFocusedElement && sidebarRef.value?.contains(nextFocusedElement)) {
+    return;
+  }
+
+  scheduleSidebarCollapse();
+}
+
+function handleSidebarNavPress() {
+  lastSidebarNavClickAt = Date.now();
+  clearSidebarCollapseTimer();
+  setPersistedSidebarExpanded(true);
+  isSidebarExpanded.value = true;
+}
+
+function handleSidebarNavClick(event) {
+  if (event?.detail > 0) return;
+  handleSidebarNavPress();
 }
 
 async function refreshAvatarUrl() {
@@ -261,10 +312,14 @@ async function showPendingWelcome() {
 }
 
 onMounted(() => {
+  isSidebarExpanded.value = readPersistedSidebarExpanded();
   backendUnavailable.value = getBackendStatus() === "unavailable";
   window.addEventListener("rms_auth_changed", onAuthChanged);
   window.addEventListener("rms_backend_status_changed", onBackendStatusChanged);
   showPendingWelcome();
+  if (isSidebarExpanded.value) {
+    scheduleSidebarCollapse();
+  }
 });
 
 onUnmounted(() => {
