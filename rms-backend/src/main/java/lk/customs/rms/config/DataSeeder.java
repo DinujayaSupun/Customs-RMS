@@ -52,6 +52,7 @@ public class DataSeeder {
             Role pma = ensureRole(roleRepository, "PMA");
             Role admin = ensureRole(roleRepository, "ADMIN");
 
+            // Seed every permission row so the admin permission matrix can toggle values immediately.
             seedPermissions(rolePermissionRepository, dc, ddc, sddc, sc, asc, pma, admin);
 
             if (!StringUtils.hasText(defaultPassword) || !StringUtils.hasText(adminPassword)) {

@@ -7,6 +7,7 @@ const http = vi.hoisted(() => ({
 
 vi.mock("./apiClient", () => ({
   createAuthedHttp: () => http,
+  createApiError: (error) => Object.assign(new Error(error?.message || "Request failed"), error),
   getApiErrorMessage: (error) => error?.message || "Request failed",
 }));
 

@@ -283,6 +283,7 @@ public class DocumentServiceImpl implements DocumentService {
             Long inboxSenderUserId = resolveInboxSenderUserId(latestInbound);
             User inboxSender = inboxSenderUserId == null ? null : userRepository.findById(inboxSenderUserId).orElse(null);
             boolean undoInboxMovement = latestInbound != null && latestInbound.getActionType() == MovementActionType.UNDO_SEND;
+            // Inbox rows show undo notices as read-only status, not as a new action the receiver can undo again.
             User undoActor = undoInboxMovement && latestInbound.getActionByUserId() != null
                 ? userRepository.findById(latestInbound.getActionByUserId()).orElse(null)
                 : null;
@@ -335,6 +336,7 @@ public class DocumentServiceImpl implements DocumentService {
             );
         List<DocumentMovement> undoNotices = movementRepository
             .findByActionTypeAndFromUserIdOrderByActionAtDescIdDesc(MovementActionType.UNDO_SEND, actorUserId);
+        // Sent mail includes both actions the user performed and undo notices routed back to them.
         actorMovements = java.util.stream.Stream.concat(actorMovements.stream(), undoNotices.stream())
             .sorted((a, b) -> {
                 LocalDateTime aTime = a.getActionAt();
@@ -421,6 +423,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .findByEntityTypeAndEntityIdInAndActionTypeOrderByPerformedAtAsc("MOVEMENT", pageDocIds, "AUTO_FORWARD_DC_TIMEOUT")
                 .stream()
                 .collect(Collectors.groupingBy(AuditLog::getEntityId));
+        // Undo rows are derived from movement history so the sent list can explain why a send is no longer reversible.
         List<DocumentMovement> undoMovements = pageDocIds.isEmpty()
             ? List.of()
             : movementRepository.findByDocumentIdInAndActionTypeOrderByDocumentIdAscActionAtAsc(
@@ -518,6 +521,7 @@ public class DocumentServiceImpl implements DocumentService {
         Document d = requireDocument(id);
         User actor = requireUser(actorUserId);
         ensureCanViewDocument(d, actorUserId);
+        // Opening the document marks it as viewed for workload counts and undo-send receiver-open checks.
         markViewedByUser(d.getId(), actorUserId);
         markDcViewedIfNeeded(d, actor);
 
@@ -693,6 +697,7 @@ public class DocumentServiceImpl implements DocumentService {
         Long to = toUser.getId();
 
         d.setCurrentOwnerUserId(to);
+        // New owner should see the document as unopened until they explicitly open it.
         documentUserViewRepository.deleteByDocumentIdAndUserId(d.getId(), to);
         d.setVisibility(forwardVisibility);
         applyDcAutoForwardTrackingAfterOwnershipChange(d, toUser);
@@ -739,6 +744,7 @@ public class DocumentServiceImpl implements DocumentService {
         Long to = toUser.getId();
 
         d.setCurrentOwnerUserId(to);
+        // Return also creates a fresh unread inbox item for the receiver.
         documentUserViewRepository.deleteByDocumentIdAndUserId(d.getId(), to);
         applyDcAutoForwardTrackingAfterOwnershipChange(d, toUser);
         d.setStatus(Status.RETURNED);
@@ -777,6 +783,7 @@ public class DocumentServiceImpl implements DocumentService {
             throw new BadRequestException("Undo Send requires a reason.");
         }
 
+        // Undo Send reverses only the latest forward/return movement and restores ownership to its sender.
         Long receiverUserId = latestMovement.getToUserId();
         Long senderUserId = latestMovement.getFromUserId();
         if (senderUserId == null) {
@@ -1033,6 +1040,7 @@ public class DocumentServiceImpl implements DocumentService {
         boolean receiverOpened = isReceiverOpenedAfterMovement(movement);
         String actionType = movement.getActionType() == null ? null : movement.getActionType().name();
 
+        // The checks below are ordered from admin/configuration gates to document-state gates for clearer UI reasons.
         if (!config.isUndoSendEnabled()) {
             return new UndoSendState(false, "DISABLED", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
         }

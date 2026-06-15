@@ -404,6 +404,7 @@ async function save() {
     const entries = [];
     for (const permission of permissions.value) {
       for (const roleName of roles.value) {
+        // Send the full matrix so unchecked permissions are persisted as explicit disabled rows.
         entries.push({
           roleName,
           permission,

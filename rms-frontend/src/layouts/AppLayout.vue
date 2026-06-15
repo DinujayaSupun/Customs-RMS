@@ -29,6 +29,11 @@
       </div>
     </header>
 
+    <div v-if="backendUnavailable" class="serverBanner" role="status">
+      <span>Cannot connect to server. Some data may be unavailable.</span>
+      <button type="button" class="serverBannerAction" @click="dismissBackendBanner">Dismiss</button>
+    </div>
+
     <div class="body">
       <aside
         class="sidebar"
@@ -106,12 +111,14 @@ import { createMyProfilePictureUrl } from "../api/auth.api";
 import { clearSession, getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabel } from "../auth/userLabel";
 import { useToast } from "../composables/useToast";
+import { getBackendStatus } from "../services/backendStatus";
 
 const router = useRouter();
 const userRef = ref(getCurrentUser());
 const avatarBroken = ref(false);
 const avatarUrl = ref("");
 const isSidebarExpanded = ref(false);
+const backendUnavailable = ref(false);
 const { success, info } = useToast();
 
 const currentUser = computed(() => userRef.value);
@@ -198,6 +205,14 @@ function onAuthChanged() {
   avatarBroken.value = false;
 }
 
+function onBackendStatusChanged(event) {
+  backendUnavailable.value = event?.detail?.status === "unavailable";
+}
+
+function dismissBackendBanner() {
+  backendUnavailable.value = false;
+}
+
 function logout() {
   clearSession();
   router.replace("/login");
@@ -246,12 +261,15 @@ async function showPendingWelcome() {
 }
 
 onMounted(() => {
+  backendUnavailable.value = getBackendStatus() === "unavailable";
   window.addEventListener("rms_auth_changed", onAuthChanged);
+  window.addEventListener("rms_backend_status_changed", onBackendStatusChanged);
   showPendingWelcome();
 });
 
 onUnmounted(() => {
   window.removeEventListener("rms_auth_changed", onAuthChanged);
+  window.removeEventListener("rms_backend_status_changed", onBackendStatusChanged);
   clearSidebarCollapseTimer();
 });
 </script>
@@ -337,6 +355,31 @@ onUnmounted(() => {
 }
 
 .body { flex: 1; display: flex; min-height: 0; }
+
+.serverBanner {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 18px;
+  border-bottom: 1px solid #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.serverBannerAction {
+  border: 1px solid #f59e0b;
+  background: #ffffff;
+  color: #92400e;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
 
 .sidebar {
   width: var(--sidebar-collapsed-width);

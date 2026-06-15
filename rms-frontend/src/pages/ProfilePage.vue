@@ -419,6 +419,7 @@ function onPick(event) {
   const file = event?.target?.files?.[0] || null;
   clearSelectedPicPreview();
   selectedPic.value = file;
+  // Show a local preview before upload; the file is not sent until Upload Photo is clicked.
   selectedPicPreviewUrl.value = file ? URL.createObjectURL(file) : "";
 }
 
@@ -573,6 +574,7 @@ async function savePassword() {
 }
 
 onUnmounted(() => {
+  // Release the browser object URL if the user leaves after selecting an image.
   clearSelectedPicPreview();
 });
 

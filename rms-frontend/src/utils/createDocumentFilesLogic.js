@@ -1,4 +1,5 @@
 export function getFileKey(file) {
+  // Browser File objects do not have stable ids, so this key prevents duplicate selections.
   return [
     file?.name || "",
     file?.size || 0,
@@ -57,6 +58,7 @@ export function getSelectedFilesSummary(files) {
 }
 
 export async function uploadFilesInSelectedOrder(documentId, files, uploadAttachment) {
+  // Upload order matters: the backend assigns V1/Main to the first file it receives.
   for (const file of files || []) {
     await uploadAttachment(documentId, file);
   }

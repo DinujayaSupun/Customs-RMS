@@ -948,6 +948,7 @@ async function deactivateUser(u) {
     return;
   }
 
+  // Deactivation needs a fallback DC because active Report At assignments cannot point to inactive users.
   deactivateTargetUser.value = u;
   deactivateFallbackDcUserId.value = activeDcs[0]?.id ?? null;
   deactivateModalOpen.value = true;
@@ -1029,6 +1030,7 @@ function openBulkActionModal() {
 }
 
 function selectAllEligibleRows() {
+  // Bulk selection is limited to rows that the current bulk mode is allowed to modify.
   selectedUserIds.value = Array.from(new Set(eligibleUsers.value.map((u) => Number(u.id))));
 }
 
@@ -1205,6 +1207,7 @@ async function downloadCsv() {
     const body = rowsData.map((u) => [u.id, u.fullName, u.username, u.email || "", u.phone || "", u.department || "", u.role, u.active, u.createdAt]);
     const csv = [header, ...body].map((line) => line.map((v) => `"${String(v ?? "").replaceAll('"', '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    // Object URL keeps export client-side; revoke immediately after triggering the download.
     const href = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = href;

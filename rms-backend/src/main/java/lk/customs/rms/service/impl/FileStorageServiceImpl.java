@@ -112,6 +112,7 @@ public class FileStorageServiceImpl implements FileStorageService {
 
         try {
             Path file = uploadRoot.resolve(relativePath).normalize();
+            // Never allow a persisted relative path to escape the configured upload directory.
             if (!file.startsWith(uploadRoot)) {
                 throw new BadRequestException("Invalid file path.");
             }
@@ -125,6 +126,7 @@ public class FileStorageServiceImpl implements FileStorageService {
     public Resource loadAsResource(String relativePath) {
         try {
             Path file = uploadRoot.resolve(relativePath).normalize();
+            // The same path containment check protects both downloads and inline browser previews.
             if (!file.startsWith(uploadRoot)) {
                 throw new BadRequestException("Invalid file path.");
             }

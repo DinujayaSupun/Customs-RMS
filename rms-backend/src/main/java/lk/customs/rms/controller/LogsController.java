@@ -85,6 +85,7 @@ public class LogsController {
         String documentFilter = normalize(document);
         Long documentId = parseLongOrNull(documentFilter);
 
+        // The document filter accepts either a text ref/title fragment or a numeric document id.
         Page<AuditLog> logs = auditLogRepository.searchLogs(
                 fromAt,
                 toAtExclusive,
@@ -161,6 +162,7 @@ public class LogsController {
         csv.append("id,performedAt,actionType,entityType,entityId,performedByUserId,performedByUserName,message\n");
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
+        // Build CSV manually to keep export dependency-free and preserve the same filtered data as the grid.
         for (AuditLog log : logs) {
             String userName = userName(usersById, log.getPerformedByUserId());
             csv.append(log.getId()).append(',')
@@ -271,6 +273,7 @@ public class LogsController {
         }
 
         if ("ATTACHMENT".equals(entityType)) {
+            // Older attachment logs may only have detailsJson, while newer ones can resolve through the attachment row.
             Long fromDetails = extractDocumentIdFromDetails(log.getDetailsJson());
             if (fromDetails != null) return fromDetails;
             return documentAttachmentRepository.findByIdAndDeletedFalse(log.getEntityId())

@@ -129,6 +129,7 @@ public class AdminUserServiceImpl implements AdminUserService {
             throw new BadRequestException("Fallback owner cannot be the same as user being deactivated.");
         }
 
+        // Active documents must keep a valid Report At user before the account is disabled.
         documentRepository.transferOwnershipForActiveDocuments(user.getId(), fallbackDc.getId(), Status.ISSUED);
         user.setIsActive(false);
         return AdminUserResponse.from(userRepository.save(user));
@@ -166,6 +167,7 @@ public class AdminUserServiceImpl implements AdminUserService {
             fileStorageService.deleteIfExists(user.getProfilePicturePath());
         }
 
+        // Soft-delete preserves historical references while removing personal contact/profile data.
         user.setIsDeleted(true);
         user.setDeletedAt(LocalDateTime.now());
         user.setDeletedByUserId(actorUserId);
@@ -269,6 +271,7 @@ public class AdminUserServiceImpl implements AdminUserService {
             throw new BadRequestException("Users must have the same role to merge.");
         }
 
+        // Merge only moves active ownership; audit/movement history remains tied to original user ids.
         documentRepository.transferOwnershipForActiveDocuments(source.getId(), target.getId(), Status.ISSUED);
         source.setIsActive(false);
         userRepository.save(source);

@@ -1,5 +1,6 @@
 @import "tailwindcss";
 
+/* Shared button tokens used to keep page-level button classes visually consistent. */
 :root {
   --btn-bg: #ffffff;
   --btn-bg-hover: #f8fafc;
@@ -18,6 +19,7 @@
   --btn-danger-text: #b91c1c;
 }
 
+/* Base button treatment. Repeated class selectors intentionally override older scoped page styles. */
 button,
 .btn.btn.btn.btn,
 .iconBtn.iconBtn.iconBtn,
@@ -79,6 +81,7 @@ button,
   transform: none;
 }
 
+/* Semantic variants used across forms, workflow actions, and destructive actions. */
 .btn.btn-primary.btn-primary.btn-primary,
 .btn.btn.btn.btn-primary {
   border-color: var(--btn-primary-border);
@@ -129,6 +132,7 @@ button,
   box-shadow: var(--btn-shadow-hover);
 }
 
+/* Workflow-specific action with a distinct but restrained state color. */
 .undoSendBtn.undoSendBtn.undoSendBtn {
   border-color: #c4b5fd;
   background: linear-gradient(180deg, #ffffff 0%, #f5f3ff 100%);
@@ -141,6 +145,7 @@ button,
   box-shadow: 0 8px 18px rgba(109, 40, 217, 0.14), 0 2px 4px rgba(109, 40, 217, 0.08);
 }
 
+/* Compact icon-only buttons used in modals, previews, and inline controls. */
 .iconBtn.iconBtn.iconBtn {
   display: inline-flex;
   align-items: center;
@@ -175,6 +180,7 @@ button,
   box-shadow: none;
 }
 
+/* Text-style actions still need keyboard focus and disabled states. */
 .linkBtn.linkBtn.linkBtn {
   border: 0;
   background: transparent;
@@ -194,6 +200,7 @@ button,
   cursor: not-allowed;
 }
 
+/* Header logout button sits on a dark surface, so it gets a separate contrast treatment. */
 .logout.logout.logout {
   display: inline-flex;
   align-items: center;
@@ -227,6 +234,7 @@ button,
   box-shadow: 0 0 0 3px rgba(191, 219, 254, 0.34);
 }
 
+/* Password visibility controls are icon buttons embedded inside input fields. */
 .passwordToggle.passwordToggle.passwordToggle {
   border: 1px solid transparent;
   border-radius: 10px;

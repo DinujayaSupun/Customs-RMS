@@ -67,7 +67,7 @@ public class AttachmentServiceImpl implements AttachmentService {
 
         int nextVersion = attachmentRepository.findMaxVersionNo(documentId) + 1;
 
-        // Mark current latest=false (if any)
+        // Only one attachment is marked latest; version history remains available for file review.
         var existing = attachmentRepository.findByDocumentIdAndDeletedFalseOrderByVersionNoDesc(documentId);
         for (var a : existing) {
             if (Boolean.TRUE.equals(a.getIsLatest())) {
@@ -158,7 +158,7 @@ public class AttachmentServiceImpl implements AttachmentService {
         a.setIsLatest(false);
         attachmentRepository.save(a);
 
-        // Restore latest to previous highest version (if any)
+        // Deleting the latest attachment promotes the previous highest version back to latest.
         var remaining = attachmentRepository.findByDocumentIdAndDeletedFalseOrderByVersionNoDesc(a.getDocumentId());
         if (!remaining.isEmpty()) {
             DocumentAttachment latest = remaining.get(0);
@@ -206,6 +206,7 @@ public class AttachmentServiceImpl implements AttachmentService {
         }
 
         private void ensureHistoryAccess(Document doc, Long actorUserId) {
+                // File history follows the same Report At or VIEW_ALL_HISTORY rule as movements.
                 if (doc.getCurrentOwnerUserId().equals(actorUserId)) {
                         return;
                 }

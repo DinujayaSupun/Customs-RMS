@@ -59,6 +59,7 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
+        // Iterate over a snapshot so stale sessions can be removed while messages are being sent.
         for (WebSocketSession session : new ArrayList<>(sessions)) {
             try {
                 if (!session.isOpen()) {
@@ -109,6 +110,7 @@ public class NotificationWebSocketHandler extends TextWebSocketHandler {
     }
 
     private String toJson(RealtimeNotificationMessage message) {
+        // Keep serialization local to avoid pulling a JSON mapper into this low-level WebSocket handler.
         return "{" +
                 "\"type\":\"" + escape(message.type()) + "\"," +
                 "\"message\":\"" + escape(message.message()) + "\"," +

@@ -125,6 +125,7 @@ public class PermissionServiceImpl implements PermissionService {
             }
         }
 
+        // Return explicit disabled rows for missing role/permission pairs so the admin grid is complete.
         List<RolePermissionEntryResponse> savedEntries = rolePermissionRepository.findAllByOrderByRole_RoleNameAscPermissionNameAsc()
                 .stream()
                 .map(rp -> RolePermissionEntryResponse.builder()

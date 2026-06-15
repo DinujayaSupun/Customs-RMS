@@ -63,6 +63,7 @@ public class AuditLogServiceImpl implements AuditLogService {
 
     @Override
     public void logAttachment(Long documentId, Long attachmentId, Long userId, String actionType, String message) {
+        // Store documentId in details because the primary audit entity is the attachment row.
         String details = toDetailsJson(Map.of(
                 "documentId", documentId,
                 "attachmentId", attachmentId

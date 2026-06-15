@@ -1,16 +1,16 @@
-import { createAuthedHttp, getApiErrorMessage } from "./apiClient";
+import { createApiError, createAuthedHttp } from "./apiClient";
 
 const http = createAuthedHttp();
 
 function getMsg(e) {
-  return getApiErrorMessage(e);
+  return createApiError(e);
 }
 
 export async function listAuditLogs(params = {}) {
   try {
     return (await http.get("/audit-logs", { params })).data;
   } catch (e) {
-    throw new Error(getMsg(e));
+    throw getMsg(e);
   }
 }
 
@@ -18,7 +18,7 @@ export async function getAuditLogFilterOptions() {
   try {
     return (await http.get("/audit-logs/filter-options")).data;
   } catch (e) {
-    throw new Error(getMsg(e));
+    throw getMsg(e);
   }
 }
 
@@ -38,6 +38,6 @@ export async function exportAuditLogsCsv(params = {}) {
       fileName,
     };
   } catch (e) {
-    throw new Error(getMsg(e));
+    throw getMsg(e);
   }
 }

@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { getCurrentUser, hasPermission, clearSession, getAccessToken } from "../auth/currentUser";
 import { getMe } from "../api/auth.api";
+import { shouldClearSessionForAuthCheckError } from "./authGuardLogic";
 import DocumentsPage from "../pages/DocumentsPage.vue";
 import DocumentDetailsPage from "../pages/DocumentDetailsPage.vue";
 import CreateDocumentPage from "../pages/CreateDocumentPage.vue";
@@ -42,6 +43,7 @@ const router = createRouter({
   routes,
 });
 
+// Validate the token with the backend before showing protected pages; stale tokens are cleared here.
 router.beforeEach(async (to) => {
   if (to.meta?.public) return true;
 
@@ -58,8 +60,11 @@ router.beforeEach(async (to) => {
     await getMe();
     return true;
   } catch (error) {
-    clearSession();
+    if (!shouldClearSessionForAuthCheckError(error)) {
+      return true;
+    }
 
+    clearSession();
     return {
       path: "/login",
       query: { redirect: to.fullPath },
@@ -67,6 +72,7 @@ router.beforeEach(async (to) => {
   }
 });
 
+// Admin pages are guarded in the router as well as on the backend to avoid exposing admin UI.
 router.beforeEach((to) => {
   if (!to.meta?.adminOnly) return true;
   const user = getCurrentUser();
@@ -74,6 +80,7 @@ router.beforeEach((to) => {
   return { path: "/documents" };
 });
 
+// Permission-specific routes stay declarative through route meta.
 router.beforeEach((to) => {
   if (!to.meta?.requiredPermission) return true;
   const user = getCurrentUser();

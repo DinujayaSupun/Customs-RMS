@@ -6,6 +6,7 @@ export function sortAttachmentsByVersion(attachments) {
 export function getPrimaryAttachment(attachments) {
   const sorted = sortAttachmentsByVersion(attachments);
   if (!sorted.length) return null;
+  // Version 1 is the business-defined main file; fall back defensively for older data.
   return sorted.find((item) => Number(item?.versionNo) === 1) || sorted[0];
 }
 

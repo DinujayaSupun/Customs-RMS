@@ -52,6 +52,7 @@ export function getDocumentDetailsCapabilities({
   const canForwardReturnByStatus = !!doc
     && forwardReturnAllowedStatuses.includes(String(doc.status || "").toUpperCase());
 
+  // Action buttons mirror backend workflow rules so users do not see controls they cannot use.
   const canForward = !!doc
     && canForwardReturnByStatus
     && owner
