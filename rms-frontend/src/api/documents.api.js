@@ -7,7 +7,7 @@ function getMsg(e) {
 }
 
 /**
- * Your backend uses /api/documents (confirmed by controllers in your zip).
+ * backend uses /api/documents.
  * So we keep it clean and stable.
  */
 const BASE = "/documents";
