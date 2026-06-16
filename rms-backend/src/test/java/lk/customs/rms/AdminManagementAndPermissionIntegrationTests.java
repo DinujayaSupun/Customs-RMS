@@ -115,6 +115,42 @@ class AdminManagementAndPermissionIntegrationTests {
     }
 
     @Test
+    void duplicateCandidatesIncludeOnlyActiveNotDeletedUsersWithRoles() throws Exception {
+        String password = "Admin1234";
+        User admin = createUser("ADMIN", "dup-admin-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+
+        String duplicateName = "Duplicate Candidate " + UUID.randomUUID();
+        User activeOne = createUser("SC", "dup-active-a-", password);
+        activeOne.setFullName(duplicateName);
+        userRepository.saveAndFlush(activeOne);
+
+        User activeTwo = createUser("SC", "dup-active-b-", password);
+        activeTwo.setFullName(duplicateName);
+        userRepository.saveAndFlush(activeTwo);
+
+        User differentRole = createUser("PMA", "dup-different-role-", password);
+        differentRole.setFullName(duplicateName);
+        userRepository.saveAndFlush(differentRole);
+
+        User inactive = createUser("SC", "dup-inactive-", password);
+        inactive.setFullName(duplicateName);
+        inactive.setIsActive(false);
+        userRepository.saveAndFlush(inactive);
+
+        User deleted = createUser("SC", "dup-deleted-", password);
+        deleted.setFullName(duplicateName);
+        deleted.setIsDeleted(true);
+        userRepository.saveAndFlush(deleted);
+
+        mockMvc.perform(get("/api/admin/users/duplicates")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.fullName == '%s' && @.role == 'SC')].users.length()".formatted(duplicateName)).value(hasItem(2)))
+                .andExpect(jsonPath("$[?(@.fullName == '%s' && @.role == 'PMA')]".formatted(duplicateName)).isEmpty());
+    }
+
+    @Test
     void adminCanDeactivateUserTransferOwnershipAndResetPassword() throws Exception {
         String adminPassword = "Admin1234";
         String userPassword = "Member1234";

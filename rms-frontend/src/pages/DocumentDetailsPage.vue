@@ -627,7 +627,7 @@ import {
   isPdfAttachmentName,
   resolveAttachmentTypeFromName,
 } from "../utils/attachmentViewerLogic";
-import { getDocumentDetailsCapabilities } from "../utils/documentDetailsLogic";
+import { buildMovementRemarksMap, getDocumentDetailsCapabilities } from "../utils/documentDetailsLogic";
 import { canDeleteMinute, canEditMinute, getEditableMinuteText } from "../utils/minuteEditLogic";
 import { getWorkflowSenderSuccessMessage } from "../utils/workflowNotificationLogic";
 import { getUndoSendInfo, needsUndoReason } from "../utils/undoSendLogic";
@@ -733,7 +733,13 @@ const canApprove = computed(() => detailCapabilities.value.canApprove);
 const canReject  = computed(() => detailCapabilities.value.canReject);
 const canIssue   = computed(() => detailCapabilities.value.canIssue);
 const canReopen  = computed(() => detailCapabilities.value.canReopen);
-const canDeleteDocument = computed(() => hasPermission(currentUser.value, "DELETE_DOCUMENT"));
+const canDeleteDocument = computed(() => {
+  if (doc.value?.canDelete !== undefined && doc.value?.canDelete !== null) {
+    return Boolean(doc.value.canDelete);
+  }
+  if (hasPermission(currentUser.value, "DELETE_ANY_DOCUMENT")) return true;
+  return Number(doc.value?.currentOwnerUserId) === Number(currentUser.value?.id);
+});
 const availableWorkflowActionNames = computed(() => {
   const names = ["Forward", "Return"];
   if (approveRejectButtonsEnabled.value) {
@@ -932,41 +938,7 @@ function movementUserLabel(movement, kind) {
   }, users.value);
 }
 
-const movementRemarksById = computed(() => {
-  const result = new Map();
-  for (const m of movements.value) {
-    result.set(m.id, []);
-  }
-
-  for (const r of remarks.value) {
-    const remarkTime = parseDateMs(r.remarkedAt);
-    if (remarkTime == null) continue;
-
-    let bestMovement = null;
-    let bestDelta = Number.POSITIVE_INFINITY;
-
-    for (const m of movements.value) {
-      if (Number(m.actionByUserId) !== Number(r.remarkedByUserId)) continue;
-
-      const actionTime = parseDateMs(m.actionAt);
-      if (actionTime == null) continue;
-
-      const delta = actionTime - remarkTime;
-      if (delta < 0) continue;
-
-      if (delta <= 10 * 60 * 1000 && delta < bestDelta) {
-        bestDelta = delta;
-        bestMovement = m;
-      }
-    }
-
-    if (bestMovement) {
-      result.get(bestMovement.id).push(r);
-    }
-  }
-
-  return result;
-});
+const movementRemarksById = computed(() => buildMovementRemarksMap(movements.value, remarks.value));
 
 function isPdf(name) {
   return isPdfAttachmentName(name);
@@ -1032,12 +1004,6 @@ function displayMovementActionLabel(actionType) {
 
 function isDateOnlyValue(value) {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
-}
-
-function parseDateMs(value) {
-  if (!value) return null;
-  const t = new Date(value).getTime();
-  return Number.isNaN(t) ? null : t;
 }
 
 function findLatestMovementTime(actionTypes) {
@@ -1236,7 +1202,7 @@ async function deleteCurrentDocument() {
   successMessage.value = "";
 
   if (!canDeleteDocument.value) {
-    error.value = "You are not allowed to delete documents.";
+    error.value = "Only the current Report At user can delete this document.";
     toast.error(error.value);
     return;
   }

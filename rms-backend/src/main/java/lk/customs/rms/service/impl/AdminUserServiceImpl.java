@@ -225,11 +225,7 @@ public class AdminUserServiceImpl implements AdminUserService {
 
     @Override
     public List<DuplicateUserCandidateResponse> findDuplicateCandidates() {
-        List<User> activeUsers = userRepository.findAll().stream()
-                .filter(user -> !Boolean.TRUE.equals(user.getIsDeleted()))
-                .filter(user -> Boolean.TRUE.equals(user.getIsActive()))
-                .filter(user -> user.getRole() != null)
-                .toList();
+        List<User> activeUsers = userRepository.findDuplicateCandidateUsers();
 
         Map<String, List<User>> grouped = activeUsers.stream()
                 .collect(Collectors.groupingBy(user ->

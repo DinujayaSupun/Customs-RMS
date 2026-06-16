@@ -2,6 +2,7 @@ package lk.customs.rms;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lk.customs.rms.entity.AuditLog;
 import lk.customs.rms.entity.Document;
 import lk.customs.rms.entity.DcAutoForwardConfig;
 import lk.customs.rms.entity.Role;
@@ -267,23 +268,27 @@ class AttachmentAndVisibilityIntegrationTests {
     }
 
     @Test
-    void documentDeleteRequiresDeleteDocumentPermission() throws Exception {
+    void currentReportAtUserCanDeleteDocumentWithoutDeleteDocumentPermission() throws Exception {
         String password = "DocDelete123";
-        User owner = createUser("PMA", "doc-delete-denied-", password);
+        User owner = createUser("PMA", "doc-delete-owner-no-perm-", password);
         String ownerToken = loginAndGetToken(owner.getUsername(), password);
-        long documentId = createDocument(ownerToken, "doc-delete-denied");
+        long documentId = createDocument(ownerToken, "doc-delete-owner-no-perm");
 
-        Map<Long, Boolean> originalPmaPermissions = snapshotRolePermissions("PMA", AppPermission.DELETE_DOCUMENT);
+        Map<Long, Boolean> originalPmaPermissions = snapshotRolePermissions(
+                "PMA",
+                AppPermission.DELETE_DOCUMENT,
+                AppPermission.DELETE_ANY_DOCUMENT
+        );
 
         try {
             setRolePermission("PMA", AppPermission.DELETE_DOCUMENT, false);
+            setRolePermission("PMA", AppPermission.DELETE_ANY_DOCUMENT, false);
 
             mockMvc.perform(delete("/api/documents/{documentId}", documentId)
                             .header("Authorization", bearer(ownerToken)))
-                    .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.message").value("You are not allowed to delete documents."));
+                    .andExpect(status().isNoContent());
 
-            assertThat(documentRepository.findByIdAndDeletedFalse(documentId)).isPresent();
+            assertThat(documentRepository.findByIdAndDeletedFalse(documentId)).isEmpty();
         } finally {
             restoreRolePermissions(originalPmaPermissions);
         }
@@ -315,12 +320,108 @@ class AttachmentAndVisibilityIntegrationTests {
                         .header("Authorization", bearer(adminToken)))
                 .andExpect(status().isNotFound());
 
-        assertThat(auditLogRepository.findByEntityTypeAndEntityIdOrderByPerformedAtAsc("DOCUMENT", documentId))
-                .anySatisfy(log -> {
-                    assertThat(log.getActionType()).isEqualTo("DELETE");
-                    assertThat(log.getPerformedByUserId()).isEqualTo(admin.getId());
-                    assertThat(log.getMessage()).isEqualTo("Document deleted (soft)");
-                });
+        AuditLog deleteLog = auditLogRepository.findByEntityTypeAndEntityIdOrderByPerformedAtAsc("DOCUMENT", documentId)
+                .stream()
+                .filter(log -> "DELETE".equals(log.getActionType()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Delete audit log not found."));
+        assertThat(deleteLog.getPerformedByUserId()).isEqualTo(admin.getId());
+        assertThat(deleteLog.getMessage()).contains(deleted.getRefNo(), deleted.getTitle(), admin.getFullName());
+
+        JsonNode details = objectMapper.readTree(deleteLog.getDetailsJson());
+        assertThat(details.get("documentId").asLong()).isEqualTo(documentId);
+        assertThat(details.get("refNo").asText()).isEqualTo(deleted.getRefNo());
+        assertThat(details.get("title").asText()).isEqualTo(deleted.getTitle());
+        assertThat(details.get("status").asText()).isEqualTo("PENDING");
+        assertThat(details.get("priority").asText()).isEqualTo("HIGH");
+        assertThat(details.get("currentOwnerUserId").asLong()).isEqualTo(admin.getId());
+        assertThat(details.get("currentOwnerName").asText()).isEqualTo(admin.getFullName());
+        assertThat(details.get("deletedByUserId").asLong()).isEqualTo(admin.getId());
+        assertThat(details.get("deletedByName").asText()).isEqualTo(admin.getFullName());
+    }
+
+    @Test
+    void documentDeleteRequiresCurrentReportAtUserUnlessDeleteAnyDocumentPermissionIsEnabled() throws Exception {
+        String password = "DocDelete123";
+        User owner = createUser("PMA", "doc-delete-owner-", password);
+        User outsider = createUser("PMA", "doc-delete-outsider-", password);
+        String ownerToken = loginAndGetToken(owner.getUsername(), password);
+        String outsiderToken = loginAndGetToken(outsider.getUsername(), password);
+
+        long ownedDocumentId = createDocumentForOwner(ownerToken, owner.getId(), "doc-delete-owner-ok");
+        long otherOwnedDocumentId = createDocumentForOwner(ownerToken, owner.getId(), "doc-delete-owner-only");
+
+        Map<Long, Boolean> originalPmaPermissions = snapshotRolePermissions(
+                "PMA",
+                AppPermission.DELETE_DOCUMENT,
+                AppPermission.DELETE_ANY_DOCUMENT
+        );
+
+        try {
+            setRolePermission("PMA", AppPermission.DELETE_DOCUMENT, false);
+            setRolePermission("PMA", AppPermission.DELETE_ANY_DOCUMENT, false);
+
+            mockMvc.perform(delete("/api/documents/{documentId}", otherOwnedDocumentId)
+                            .header("Authorization", bearer(outsiderToken)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("Only the current Report At user can delete this document."));
+            assertThat(documentRepository.findByIdAndDeletedFalse(otherOwnedDocumentId)).isPresent();
+
+            mockMvc.perform(delete("/api/documents/{documentId}", ownedDocumentId)
+                            .header("Authorization", bearer(ownerToken)))
+                    .andExpect(status().isNoContent());
+            assertThat(documentRepository.findByIdAndDeletedFalse(ownedDocumentId)).isEmpty();
+
+            setRolePermission("PMA", AppPermission.DELETE_ANY_DOCUMENT, true);
+
+            mockMvc.perform(delete("/api/documents/{documentId}", otherOwnedDocumentId)
+                            .header("Authorization", bearer(outsiderToken)))
+                    .andExpect(status().isNoContent());
+            assertThat(documentRepository.findByIdAndDeletedFalse(otherOwnedDocumentId)).isEmpty();
+        } finally {
+            restoreRolePermissions(originalPmaPermissions);
+        }
+    }
+
+    @Test
+    void documentResponseExposesServerSideDeleteCapability() throws Exception {
+        String password = "DocDelete123";
+        User owner = createUser("PMA", "doc-delete-cap-owner-", password);
+        User outsider = createUser("PMA", "doc-delete-cap-outsider-", password);
+        String ownerToken = loginAndGetToken(owner.getUsername(), password);
+        String outsiderToken = loginAndGetToken(outsider.getUsername(), password);
+        long documentId = createDocumentForOwner(ownerToken, owner.getId(), "doc-delete-capability");
+        setDocumentVisibility(documentId, "PUBLIC");
+
+        Map<Long, Boolean> originalPmaPermissions = snapshotRolePermissions(
+                "PMA",
+                AppPermission.VIEW_PUBLIC_DOCUMENT,
+                AppPermission.DELETE_ANY_DOCUMENT
+        );
+
+        try {
+            setRolePermission("PMA", AppPermission.VIEW_PUBLIC_DOCUMENT, true);
+            setRolePermission("PMA", AppPermission.DELETE_ANY_DOCUMENT, false);
+
+            mockMvc.perform(get("/api/documents/{documentId}", documentId)
+                            .header("Authorization", bearer(ownerToken)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.canDelete").value(true));
+
+            mockMvc.perform(get("/api/documents/{documentId}", documentId)
+                            .header("Authorization", bearer(outsiderToken)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.canDelete").value(false));
+
+            setRolePermission("PMA", AppPermission.DELETE_ANY_DOCUMENT, true);
+
+            mockMvc.perform(get("/api/documents/{documentId}", documentId)
+                            .header("Authorization", bearer(outsiderToken)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.canDelete").value(true));
+        } finally {
+            restoreRolePermissions(originalPmaPermissions);
+        }
     }
 
     @Test

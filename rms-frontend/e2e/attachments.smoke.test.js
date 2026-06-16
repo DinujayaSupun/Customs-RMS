@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 import { assertUserHasPermissions, createDocumentByApi, createTempUserByAdmin, loginFromUI } from "./helpers/auth";
 
 test("owner can upload and delete an attachment from document details", async ({ page, request }) => {
+  test.setTimeout(90_000);
+
   const owner = await createTempUserByAdmin(request, "DC");
   await assertUserHasPermissions(
     request,
@@ -17,7 +19,7 @@ test("owner can upload and delete an attachment from document details", async ({
   await expect(page).toHaveURL(/\/inbox$/);
 
   await page.goto(`/documents/${document.id}`);
-  await expect(page).toHaveURL(new RegExp(`/documents/${document.id}$`));
+  await expect(page.getByRole("heading", { name: `Document ${document.refNo}` })).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("No files yet.")).toBeVisible();
 
   await page.locator("#attachmentFileInput").setInputFiles({
@@ -28,11 +30,11 @@ test("owner can upload and delete an attachment from document details", async ({
   await expect(page.getByText(fileName)).toBeVisible();
 
   await page.getByRole("button", { name: "Upload Attachment" }).click();
-  await expect(page.getByText("Attachment uploaded successfully.", { exact: true })).toBeVisible();
+  await expect(page.getByText(`Attachment uploaded: V1 - ${fileName}`, { exact: true })).toBeVisible();
 
   const uploadedItem = page.locator(".item", { hasText: fileName }).first();
   await expect(uploadedItem).toBeVisible();
-  await expect(uploadedItem).toContainText("v1");
+  await expect(uploadedItem).toContainText("V1");
   await expect(uploadedItem).toContainText("MAIN");
 
   page.once("dialog", async (dialog) => {

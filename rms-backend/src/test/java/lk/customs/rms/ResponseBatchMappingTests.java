@@ -168,6 +168,40 @@ class ResponseBatchMappingTests {
         verify(userRepository, never()).findById(anyLong());
     }
 
+    @Test
+    void auditLogExportIncludesDetailsJsonForInvestigationContext() {
+        AuditLogRepository auditLogRepository = mock(AuditLogRepository.class);
+        UserRepository userRepository = mock(UserRepository.class);
+        DocumentRepository documentRepository = mock(DocumentRepository.class);
+        DocumentAttachmentRepository attachmentRepository = mock(DocumentAttachmentRepository.class);
+        CurrentUserService currentUserService = mock(CurrentUserService.class);
+        PermissionService permissionService = mock(PermissionService.class);
+        Authentication authentication = mock(Authentication.class);
+
+        AuditLog deleteLog = auditLog(1L, 10L);
+        deleteLog.setActionType("DELETE");
+        deleteLog.setDetailsJson("{\"refNo\":\"CUS-001\",\"deletedByName\":\"Samantha\"}");
+
+        when(currentUserService.requireUserId(authentication)).thenReturn(7L);
+        when(permissionService.hasPermission(7L, AppPermission.VIEW_LOGS)).thenReturn(true);
+        when(auditLogRepository.searchLogs(any(), any(), any(), any(), any(), any(), any())).thenReturn(new PageImpl<>(List.of(deleteLog)));
+        when(userRepository.findAllById(any())).thenReturn(List.of(user(10L, "Samantha")));
+
+        LogsController controller = new LogsController(
+                auditLogRepository,
+                userRepository,
+                documentRepository,
+                attachmentRepository,
+                currentUserService,
+                permissionService
+        );
+
+        String csv = new String(controller.exportCsv(null, null, null, null, null, authentication).getBody());
+
+        assertThat(csv).contains("detailsJson");
+        assertThat(csv).contains("\"{\"\"refNo\"\":\"\"CUS-001\"\",\"\"deletedByName\"\":\"\"Samantha\"\"}\"");
+    }
+
     private DocumentMovement movement(Long id, Long documentId, Long fromUserId, Long toUserId, Long actionByUserId) {
         DocumentMovement movement = new DocumentMovement();
         movement.setId(id);

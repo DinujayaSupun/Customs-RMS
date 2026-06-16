@@ -3,6 +3,7 @@ package lk.customs.rms.enums;
 public enum AppPermission {
     CREATE_DOCUMENT,
     DELETE_DOCUMENT,
+    DELETE_ANY_DOCUMENT,
     VIEW_PUBLIC_DOCUMENT,
     VIEW_PRIVATE_DOCUMENT,
     VIEW_OWN_CREATED_DOCUMENTS,

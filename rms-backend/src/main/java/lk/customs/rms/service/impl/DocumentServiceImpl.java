@@ -37,6 +37,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -176,6 +177,7 @@ public class DocumentServiceImpl implements DocumentService {
         return DocumentResponse.from(DocumentResponse.mapping(saved)
                 .createdByName(createdBy.getFullName())
                 .ownerName(owner.getFullName())
+                .canDelete(canDeleteDocument(saved, actorUserId, false))
                 .build());
     }
 
@@ -293,6 +295,8 @@ public class DocumentServiceImpl implements DocumentService {
                 .stream()
                 .collect(Collectors.toMap(User::getId, u -> u));
 
+        boolean canDeleteAnyDocument = permissionService.hasPermission(actorUserId, AppPermission.DELETE_ANY_DOCUMENT);
+
         return docs.map(d -> {
             User createdBy = usersById.get(d.getCreatedByUserId());
             User owner = usersById.get(d.getCurrentOwnerUserId());
@@ -340,6 +344,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .undoSendFromUserId(undoInboxMovement ? latestInbound.getFromUserId() : null)
                 .undoSendFromName(undoFrom == null ? null : undoFrom.getFullName())
                 .undoSendFromRole(roleName(undoFrom))
+                .canDelete(canDeleteDocument(d, actorUserId, canDeleteAnyDocument))
                 .build());
         });
     }
@@ -542,6 +547,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .undoSendActionType(undoState.actionType())
                 .undoSendRequiresReason(undoState.requiresReason())
                 .undoSendShowExpiredInfo(undoState.showExpiredInfo())
+                .canDelete(canDeleteDocument(d, actorUserId))
                 .build());
     }
 
@@ -608,7 +614,17 @@ public class DocumentServiceImpl implements DocumentService {
                 .mainAttachmentType(mainAttachmentType)
                 .latestRemarkPreview(latestRemarkPreview)
                 .viewedByMe(true)
+                .canDelete(canDeleteDocument(saved, actorUserId))
                 .build());
+    }
+
+    private boolean canDeleteDocument(Document document, Long actorUserId) {
+        return canDeleteDocument(document, actorUserId, permissionService.hasPermission(actorUserId, AppPermission.DELETE_ANY_DOCUMENT));
+    }
+
+    private boolean canDeleteDocument(Document document, Long actorUserId, boolean canDeleteAnyDocument) {
+        if (document == null || actorUserId == null) return false;
+        return actorUserId.equals(document.getCurrentOwnerUserId()) || canDeleteAnyDocument;
     }
 
     private String resolveMainAttachmentType(Long documentId) {
@@ -638,16 +654,51 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     public void deleteDocument(Long id, Long actorUserId) {
-        permissionService.ensurePermission(actorUserId, AppPermission.DELETE_DOCUMENT, "You are not allowed to delete documents.");
-
         Document d = requireDocument(id);
+        boolean isCurrentReportAtUser = actorUserId.equals(d.getCurrentOwnerUserId());
+        boolean canDeleteAnyDocument = permissionService.hasPermission(actorUserId, AppPermission.DELETE_ANY_DOCUMENT);
+        if (!isCurrentReportAtUser && !canDeleteAnyDocument) {
+            throw new BadRequestException("Only the current Report At user can delete this document.");
+        }
+
+        String deletedByName = userRepository.findById(actorUserId).map(User::getFullName).orElse("Unknown user");
+        String currentOwnerName = d.getCurrentOwnerUserId() == null
+                ? null
+                : userRepository.findById(d.getCurrentOwnerUserId()).map(User::getFullName).orElse(null);
+        String createdByName = d.getCreatedByUserId() == null
+                ? null
+                : userRepository.findById(d.getCreatedByUserId()).map(User::getFullName).orElse(null);
+        LocalDateTime deletedAt = LocalDateTime.now();
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("documentId", d.getId());
+        details.put("refNo", d.getRefNo());
+        details.put("title", d.getTitle());
+        details.put("companyName", d.getCompanyName());
+        details.put("status", d.getStatus() == null ? null : d.getStatus().name());
+        details.put("priority", d.getPriority() == null ? null : d.getPriority().name());
+        details.put("visibility", d.getVisibility());
+        details.put("currentOwnerUserId", d.getCurrentOwnerUserId());
+        details.put("currentOwnerName", currentOwnerName);
+        details.put("createdByUserId", d.getCreatedByUserId());
+        details.put("createdByName", createdByName);
+        details.put("deletedByUserId", actorUserId);
+        details.put("deletedByName", deletedByName);
+        details.put("deletedAt", deletedAt.toString());
+        details.put("deleteScope", isCurrentReportAtUser ? "REPORT_AT_USER" : "DELETE_ANY_DOCUMENT");
 
         d.setDeleted(true);
-        d.setDeletedAt(LocalDateTime.now());
+        d.setDeletedAt(deletedAt);
         d.setDeletedByUserId(actorUserId);
         documentRepository.save(d);
 
-        auditLogService.logDocumentDelete(id, actorUserId, "Document deleted (soft)");
+        auditLogService.logEventWithDetails(
+                "DOCUMENT",
+                id,
+                "DELETE",
+                actorUserId,
+                "Document deleted: " + d.getRefNo() + " - " + d.getTitle() + " by " + deletedByName,
+                details
+        );
     }
 
     // ==========================================================

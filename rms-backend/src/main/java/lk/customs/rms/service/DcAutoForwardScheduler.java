@@ -10,6 +10,7 @@ import lk.customs.rms.repository.DocumentMovementRepository;
 import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.DocumentUserViewRepository;
 import lk.customs.rms.repository.UserRepository;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +20,9 @@ import java.util.List;
 
 @Component
 public class DcAutoForwardScheduler {
+
+    private static final int AUTO_FORWARD_BATCH_SIZE = 100;
+    private static final int AUTO_FORWARD_MAX_PER_RUN = 1000;
 
     private final DcAutoForwardConfigService dcAutoForwardConfigService;
     private final DocumentRepository documentRepository;
@@ -62,47 +66,57 @@ public class DcAutoForwardScheduler {
         if (dcUsers.isEmpty()) return;
         List<Long> dcUserIds = dcUsers.stream().map(User::getId).toList();
 
-        List<Document> candidates = documentRepository.findPendingDcAutoForwardCandidates(dcUserIds);
-        if (candidates.isEmpty()) return;
-
         LocalDateTime now = LocalDateTime.now();
-        for (Document doc : candidates) {
-            if (doc.getDcAssignedAt() == null) continue;
-            LocalDateTime dueAt = doc.getDcAssignedAt().plusMinutes(config.getTimeoutMinutes());
-            if (now.isBefore(dueAt)) continue;
+        LocalDateTime cutoffAt = now.minusMinutes(config.getTimeoutMinutes());
+        int processed = 0;
 
-            Long from = doc.getCurrentOwnerUserId();
-            doc.setCurrentOwnerUserId(receiver.getId());
-            documentUserViewRepository.deleteByDocumentIdAndUserId(doc.getId(), receiver.getId());
-            doc.setStatus(Status.IN_PROGRESS);
-            doc.setDcAssignedAt(null);
-            doc.setDcViewedAt(null);
-            doc.setUpdatedAt(LocalDateTime.now());
-            documentRepository.save(doc);
+        while (processed < AUTO_FORWARD_MAX_PER_RUN) {
+            int remaining = AUTO_FORWARD_MAX_PER_RUN - processed;
+            var page = PageRequest.of(0, Math.min(AUTO_FORWARD_BATCH_SIZE, remaining));
+            List<Document> candidates = documentRepository
+                    .findPendingDcAutoForwardCandidates(dcUserIds, cutoffAt, page)
+                    .getContent();
+            if (candidates.isEmpty()) return;
 
-            String forwardVisibility = doc.getVisibility();
-            if (forwardVisibility == null || forwardVisibility.isBlank()) {
-                forwardVisibility = "PUBLIC";
-            } else {
-                forwardVisibility = forwardVisibility.trim().toUpperCase();
+            for (Document doc : candidates) {
+                autoForwardDocument(doc, receiver.getId(), config.getTimeoutMinutes(), now);
+                processed += 1;
             }
-
-            DocumentMovement mv = DocumentMovement.create(
-                    doc.getId(),
-                    from,
-                    receiver.getId(),
-                    from,
-                    MovementActionType.FORWARD,
-                    forwardVisibility
-            );
-            movementRepository.save(mv);
-
-            auditLogService.logMovement(
-                    doc.getId(),
-                    from,
-                    "AUTO_FORWARD_DC_TIMEOUT",
-                    "Auto-forwarded after DC did not view in " + config.getTimeoutMinutes() + " minute(s). Receiver userId=" + receiver.getId()
-            );
         }
+    }
+
+    private void autoForwardDocument(Document doc, Long receiverUserId, int timeoutMinutes, LocalDateTime now) {
+        Long from = doc.getCurrentOwnerUserId();
+        doc.setCurrentOwnerUserId(receiverUserId);
+        documentUserViewRepository.deleteByDocumentIdAndUserId(doc.getId(), receiverUserId);
+        doc.setStatus(Status.IN_PROGRESS);
+        doc.setDcAssignedAt(null);
+        doc.setDcViewedAt(null);
+        doc.setUpdatedAt(now);
+        documentRepository.save(doc);
+
+        String forwardVisibility = doc.getVisibility();
+        if (forwardVisibility == null || forwardVisibility.isBlank()) {
+            forwardVisibility = "PUBLIC";
+        } else {
+            forwardVisibility = forwardVisibility.trim().toUpperCase();
+        }
+
+        DocumentMovement mv = DocumentMovement.create(
+                doc.getId(),
+                from,
+                receiverUserId,
+                from,
+                MovementActionType.FORWARD,
+                forwardVisibility
+        );
+        movementRepository.save(mv);
+
+        auditLogService.logMovement(
+                doc.getId(),
+                from,
+                "AUTO_FORWARD_DC_TIMEOUT",
+                "Auto-forwarded after DC did not view in " + timeoutMinutes + " minute(s). Receiver userId=" + receiverUserId
+        );
     }
 }

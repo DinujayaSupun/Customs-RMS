@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { getDocumentDetailsCapabilities, getAvailableForwardVisibilities, getDaysOpenDisplay } from "./documentDetailsLogic";
+import {
+  buildMovementRemarksMap,
+  getDocumentDetailsCapabilities,
+  getAvailableForwardVisibilities,
+  getDaysOpenDisplay,
+} from "./documentDetailsLogic";
 
 function user(id, permissions) {
   return { id, permissions };
@@ -137,5 +142,26 @@ describe("documentDetailsLogic", () => {
         forwardReturnAllowedStatuses: ["PENDING", "IN_PROGRESS", "RETURNED"],
       }).canIssue,
     ).toBe(true);
+  });
+
+  it("matches remarks to the nearest later movement by the same user within the allowed window", () => {
+    const movements = [
+      { id: 1, actionByUserId: 7, actionAt: "2026-06-15T10:05:00Z" },
+      { id: 2, actionByUserId: 8, actionAt: "2026-06-15T10:06:00Z" },
+      { id: 3, actionByUserId: 7, actionAt: "2026-06-15T10:08:00Z" },
+      { id: 4, actionByUserId: 7, actionAt: "2026-06-15T10:40:00Z" },
+    ];
+    const remarks = [
+      { id: 10, remarkedByUserId: 7, remarkedAt: "2026-06-15T10:00:00Z", remarkText: "nearest later movement" },
+      { id: 11, remarkedByUserId: 8, remarkedAt: "2026-06-15T10:00:00Z", remarkText: "different user" },
+      { id: 12, remarkedByUserId: 7, remarkedAt: "2026-06-15T10:20:00Z", remarkText: "outside window" },
+    ];
+
+    const map = buildMovementRemarksMap(movements, remarks);
+
+    expect(map.get(1)).toEqual([remarks[0]]);
+    expect(map.get(2)).toEqual([remarks[1]]);
+    expect(map.get(3)).toEqual([]);
+    expect(map.get(4)).toEqual([]);
   });
 });

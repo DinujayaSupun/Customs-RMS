@@ -161,7 +161,7 @@
                     <ExternalLink class="actionIcon" aria-hidden="true" />
                   </button>
                   <button
-                    v-if="canDelete"
+                    v-if="canDeleteRow(d)"
                     class="iconBtn dangerIcon"
                     :disabled="deletingId === d.id"
                     title="Delete document"
@@ -302,6 +302,7 @@ import { File, FileText, FileSpreadsheet, Image, Archive, Eye, ExternalLink, Tra
 import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
 import { useToast } from "../composables/useToast";
+import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import { listDocuments, listMovements, listRemarks, listAttachments, createAttachmentDownloadUrl, deleteDocument } from "../api/documents.api";
 import { listUsers } from "../api/auth.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
@@ -316,7 +317,7 @@ const toast = useToast();
 
 const currentUser = ref(getCurrentUser());
 const canCreate = computed(() => hasPermission(currentUser.value, "CREATE_DOCUMENT"));
-const canDelete = computed(() => hasPermission(currentUser.value, "DELETE_DOCUMENT"));
+const canDeleteAnyDocument = computed(() => hasPermission(currentUser.value, "DELETE_ANY_DOCUMENT"));
 const canViewRemarksWhenNotReportAt = computed(() => hasPermission(currentUser.value, "VIEW_REMARKS_WHEN_NOT_REPORT_AT"));
 
 const q = ref("");
@@ -541,6 +542,13 @@ function openDetails(id) {
   router.push(`/documents/${id}`);
 }
 
+function canDeleteRow(document) {
+  if (!document) return false;
+  if (document.canDelete !== undefined && document.canDelete !== null) return Boolean(document.canDelete);
+  if (canDeleteAnyDocument.value) return true;
+  return Number(document.currentOwnerUserId) === Number(currentUser.value?.id);
+}
+
 function goCreate() {
   router.push("/documents/new");
 }
@@ -638,7 +646,12 @@ function toDaysOpenScore(doc) {
   return daysOpen === "-" || daysOpen === "Closed" ? -1 : Number(daysOpen);
 }
 
-watch([q, status, priority, receivedFrom, receivedTo, sortBy], () => {
+useDebouncedWatch(q, () => {
+  page.value = 0;
+  load();
+});
+
+watch([status, priority, receivedFrom, receivedTo, sortBy], () => {
   page.value = 0;
   load();
 });

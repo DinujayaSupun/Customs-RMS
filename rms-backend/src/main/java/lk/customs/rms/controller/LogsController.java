@@ -165,7 +165,7 @@ public class LogsController {
         Map<Long, User> usersById = usersByIdForLogs(logs);
 
         StringBuilder csv = new StringBuilder();
-        csv.append("id,performedAt,actionType,entityType,entityId,performedByUserId,performedByUserName,message\n");
+        csv.append("id,performedAt,actionType,entityType,entityId,performedByUserId,performedByUserName,message,detailsJson\n");
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
         // Build CSV manually to keep export dependency-free and preserve the same filtered data as the grid.
@@ -178,7 +178,8 @@ public class LogsController {
                     .append(log.getEntityId() == null ? "" : log.getEntityId()).append(',')
                     .append(log.getPerformedByUserId() == null ? "" : log.getPerformedByUserId()).append(',')
                     .append(csvCell(userName)).append(',')
-                    .append(csvCell(log.getMessage()))
+                    .append(csvCell(log.getMessage())).append(',')
+                    .append(csvCell(log.getDetailsJson()))
                     .append('\n');
         }
 

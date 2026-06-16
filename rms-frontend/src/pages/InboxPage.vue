@@ -538,6 +538,7 @@ import { File, FileText, FileSpreadsheet, Image, Archive, Eye, Send } from "luci
 import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
 import { useToast } from "../composables/useToast";
+import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import { listUsers } from "../api/auth.api";
 import { getAttachmentViewerState, resolveAttachmentTypeFromName } from "../utils/attachmentViewerLogic";
 import { formatDateSafe, formatDateTimeSafe } from "../utils/dateFormat";
@@ -956,7 +957,12 @@ function applyNow() {
   rows.value = sortDocuments(filtered);
 }
 
-watch([q, status, priority, sortBy, viewFilter], () => {
+useDebouncedWatch(q, () => {
+  page.value = 0;
+  load();
+});
+
+watch([status, priority, sortBy, viewFilter], () => {
   page.value = 0;
   load();
 });

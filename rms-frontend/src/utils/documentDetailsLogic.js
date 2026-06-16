@@ -122,3 +122,56 @@ export function getDocumentDetailsCapabilities({
     daysOpenDisplay: getDaysOpenDisplay(doc),
   };
 }
+
+function parseDateMs(value) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+export function buildMovementRemarksMap(movements, remarks, maxDeltaMs = 10 * 60 * 1000) {
+  const result = new Map();
+  const movementsByUserId = new Map();
+
+  for (const movement of movements || []) {
+    result.set(movement.id, []);
+
+    const actionTime = parseDateMs(movement?.actionAt);
+    const actionByUserId = Number(movement?.actionByUserId);
+    if (actionTime == null || !Number.isFinite(actionByUserId)) continue;
+
+    const userMovements = movementsByUserId.get(actionByUserId) || [];
+    userMovements.push({ movement, actionTime });
+    movementsByUserId.set(actionByUserId, userMovements);
+  }
+
+  for (const userMovements of movementsByUserId.values()) {
+    userMovements.sort((a, b) => a.actionTime - b.actionTime);
+  }
+
+  for (const remark of remarks || []) {
+    const remarkTime = parseDateMs(remark?.remarkedAt);
+    const remarkUserId = Number(remark?.remarkedByUserId);
+    if (remarkTime == null || !Number.isFinite(remarkUserId)) continue;
+
+    const userMovements = movementsByUserId.get(remarkUserId) || [];
+    let bestMovement = null;
+    let bestDelta = Number.POSITIVE_INFINITY;
+
+    for (const { movement, actionTime } of userMovements) {
+      const delta = actionTime - remarkTime;
+      if (delta < 0) continue;
+      if (delta > maxDeltaMs) break;
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        bestMovement = movement;
+      }
+    }
+
+    if (bestMovement && result.has(bestMovement.id)) {
+      result.get(bestMovement.id).push(remark);
+    }
+  }
+
+  return result;
+}

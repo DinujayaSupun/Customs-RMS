@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -201,10 +202,14 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
            where d.deleted = false
              and d.currentOwnerUserId in :dcUserIds
              and d.dcAssignedAt is not null
+             and d.dcAssignedAt <= :cutoffAt
              and d.dcViewedAt is null
              and d.status not in (lk.customs.rms.enums.Status.ISSUED, lk.customs.rms.enums.Status.REJECTED, lk.customs.rms.enums.Status.APPROVED)
+           order by d.dcAssignedAt asc, d.id asc
            """)
-    List<Document> findPendingDcAutoForwardCandidates(@Param("dcUserIds") List<Long> dcUserIds);
+    Page<Document> findPendingDcAutoForwardCandidates(@Param("dcUserIds") List<Long> dcUserIds,
+                                                      @Param("cutoffAt") LocalDateTime cutoffAt,
+                                                      Pageable pageable);
 
     Optional<Document> findByIdAndDeletedFalse(Long id);
 

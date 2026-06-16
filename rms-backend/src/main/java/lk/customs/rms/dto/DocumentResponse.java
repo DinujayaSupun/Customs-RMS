@@ -47,6 +47,7 @@ public class DocumentResponse {
     private LocalDateTime latestRemarkAt;
     private Boolean viewedByMe;
     private Boolean canUndoSend;
+    private Boolean canDelete;
     private String undoSendStatus;
     private LocalDateTime undoSendExpiresAt;
     private Boolean undoSendReceiverOpened;
@@ -93,6 +94,7 @@ public class DocumentResponse {
                 .latestRemarkAt(mapping.latestRemarkAt)
                 .viewedByMe(mapping.viewedByMe)
                 .canUndoSend(mapping.canUndoSend)
+                .canDelete(mapping.canDelete)
                 .undoSendStatus(mapping.undoSendStatus)
                 .undoSendExpiresAt(mapping.undoSendExpiresAt)
                 .undoSendReceiverOpened(mapping.undoSendReceiverOpened)
@@ -134,6 +136,8 @@ public class DocumentResponse {
         private LocalDateTime latestRemarkAt;
         @Builder.Default
         private Boolean canUndoSend = false;
+        @Builder.Default
+        private Boolean canDelete = false;
         private String undoSendStatus;
         private LocalDateTime undoSendExpiresAt;
         @Builder.Default
