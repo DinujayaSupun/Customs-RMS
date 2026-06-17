@@ -3,6 +3,7 @@ package lk.customs.rms.repository;
 import lk.customs.rms.entity.Document;
 import lk.customs.rms.enums.MovementActionType;
 import lk.customs.rms.enums.Priority;
+import lk.customs.rms.enums.RecipientType;
 import lk.customs.rms.enums.Status;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -191,6 +192,53 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
              and (:priority is null or d.priority = :priority)
            """)
     Page<Document> findAssignedActiveByOwnerFiltered(@Param("userId") Long userId,
+                                                     @Param("excludedStatus") Status excludedStatus,
+                                                     @Param("search") String search,
+                                                     @Param("status") Status status,
+                                                     @Param("priority") Priority priority,
+                                                     Pageable pageable);
+
+    @Query("""
+           select distinct d
+           from Document d
+           where d.deleted = false
+             and d.status <> :excludedStatus
+             and (
+                (:recipientType is null and (
+                    d.currentOwnerUserId = :userId
+                    or exists (
+                        select r.id
+                        from DocumentRecipient r, DocumentRecipientSet s
+                        where s.id = r.recipientSetId
+                          and s.active = true
+                          and r.removedAt is null
+                          and r.documentId = d.id
+                          and r.userId = :userId
+                          and r.recipientType in :copiedTypes
+                    )
+                ))
+                or (:recipientType = lk.customs.rms.enums.RecipientType.TO and d.currentOwnerUserId = :userId)
+                or exists (
+                    select r.id
+                    from DocumentRecipient r, DocumentRecipientSet s
+                    where s.id = r.recipientSetId
+                      and s.active = true
+                      and r.removedAt is null
+                      and r.documentId = d.id
+                      and r.userId = :userId
+                      and r.recipientType = :recipientType
+                )
+             )
+             and (:search is null or :search = ''
+               or lower(d.refNo) like lower(concat('%', :search, '%'))
+               or lower(d.title) like lower(concat('%', :search, '%'))
+               or lower(d.companyName) like lower(concat('%', :search, '%')))
+             and (:status is null or d.status = :status)
+             and (:priority is null or d.priority = :priority)
+           """)
+    Page<Document> findInboxAccessibleActiveFiltered(@Param("userId") Long userId,
+                                                     @Param("copiedTypes") List<RecipientType> copiedTypes,
+                                                     @Param("recipientType") RecipientType recipientType,
                                                      @Param("excludedStatus") Status excludedStatus,
                                                      @Param("search") String search,
                                                      @Param("status") Status status,

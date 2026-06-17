@@ -2,6 +2,7 @@ package lk.customs.rms.controller;
 
 import jakarta.validation.Valid;
 import lk.customs.rms.dto.*;
+import lk.customs.rms.enums.RecipientType;
 import lk.customs.rms.security.CurrentUserService;
 import lk.customs.rms.service.DocumentService;
 import org.springframework.data.domain.Page;
@@ -51,9 +52,10 @@ public class DocumentController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String priority,
             @RequestParam(required = false) String sort,
+            @RequestParam(required = false) RecipientType recipientType,
             Authentication authentication
     ) {
-        return documentService.getMyInboxDocuments(page, size, search, status, priority, sort, currentUserService.requireUserId(authentication));
+        return documentService.getMyInboxDocuments(page, size, search, status, priority, sort, recipientType, currentUserService.requireUserId(authentication));
     }
 
     @GetMapping("/sent-messages")
@@ -83,6 +85,14 @@ public class DocumentController {
                                    @Valid @RequestBody UpdateDocumentRequest request,
                                    Authentication authentication) {
         return documentService.updateDocument(id, request, currentUserService.requireUserId(authentication));
+    }
+
+    @PutMapping("/{id}/recipients")
+    public DocumentResponse updateRecipients(@PathVariable Long id,
+                                             @RequestBody(required = false) UpdateDocumentRecipientsRequest request,
+                                             Authentication authentication) {
+        return documentService.updateRecipients(id, request == null ? new UpdateDocumentRecipientsRequest() : request,
+                currentUserService.requireUserId(authentication));
     }
 
     @DeleteMapping("/{id}")

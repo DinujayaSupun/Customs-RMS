@@ -32,7 +32,7 @@ export async function listDocuments({ page = 0, size = 100, search, status, prio
   }
 }
 
-export async function listMyInboxDocuments({ page = 0, size = 200, search, status, priority, sort } = {}) {
+export async function listMyInboxDocuments({ page = 0, size = 200, search, status, priority, sort, recipientType } = {}) {
   try {
     return (await http.get(`${BASE}/my-inbox`, {
       params: {
@@ -42,6 +42,7 @@ export async function listMyInboxDocuments({ page = 0, size = 200, search, statu
         ...(status ? { status } : {}),
         ...(priority ? { priority } : {}),
         ...(sort ? { sort } : {}),
+        ...(recipientType ? { recipientType } : {}),
       },
     })).data;
   } catch (e) {
@@ -92,6 +93,14 @@ export async function getDocument(id) {
 export async function updateDocument(id, payload) {
   try {
     return (await http.put(`${BASE}/${id}`, payload)).data;
+  } catch (e) {
+    throw getMsg(e);
+  }
+}
+
+export async function updateDocumentRecipients(id, payload) {
+  try {
+    return (await http.put(`${BASE}/${id}/recipients`, payload)).data;
   } catch (e) {
     throw getMsg(e);
   }

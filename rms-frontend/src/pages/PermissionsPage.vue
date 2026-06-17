@@ -145,7 +145,7 @@
           </div>
         </div>
 
-        <div class="tableWrap">
+        <div v-if="loading || permissions.length === 0" class="tableWrap">
           <table class="table">
             <thead>
               <tr>
@@ -178,6 +178,46 @@
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div v-else class="permissionGroupList">
+          <div v-for="group in permissionGroups" :key="group.key" class="permissionGroup">
+            <div class="permissionGroupHead">
+              <div>
+                <h3>{{ group.title }}</h3>
+                <p>{{ group.description }}</p>
+              </div>
+            </div>
+
+            <div class="tableWrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Permission</th>
+                    <th v-for="roleName in roles" :key="`${group.key}-head-${roleName}`">{{ roleName }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="permission in group.permissions" :key="`${group.key}-${permission}`">
+                    <td :title="permission">
+                      <div class="permTitle">{{ friendlyLabel(permission) }}</div>
+                      <div class="permCode truncateText">{{ permission }}</div>
+                    </td>
+                    <td v-for="roleName in roles" :key="`${group.key}-${permission}-${roleName}`" class="checkCell">
+                      <label class="toggleWrap">
+                        <input
+                          type="checkbox"
+                          :checked="isEnabled(roleName, permission)"
+                          @change="setEnabled(roleName, permission, $event.target.checked)"
+                        />
+                        <span>{{ isEnabled(roleName, permission) ? "Yes" : "No" }}</span>
+                      </label>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -229,6 +269,78 @@ const undoSendShowExpiredInfo = ref(true);
 const eligibleReceivers = computed(() =>
   allUsers.value.filter((u) => ["DDC", "SDDC"].includes(String(u.role || "").toUpperCase()))
 );
+
+const permissionGroupDefinitions = [
+  {
+    key: "copied",
+    title: "CC / BCC Recipients",
+    description: "Control what copied users can see or do when they are not the Report At user.",
+    match: (permission) => /^(CC|BCC)_/.test(permission) || [
+      "MANAGE_DOCUMENT_RECIPIENTS",
+      "MANAGE_ANY_DOCUMENT_RECIPIENTS",
+      "VIEW_HIDDEN_RECIPIENTS",
+    ].includes(permission),
+  },
+  {
+    key: "workflow",
+    title: "Workflow",
+    description: "Permissions for routing, decisions, minutes, and document lifecycle actions.",
+    match: (permission) => [
+      "FORWARD_DOCUMENT",
+      "RETURN_DOCUMENT",
+      "APPROVE_DOCUMENT",
+      "REJECT_DOCUMENT",
+      "ISSUE_DOCUMENT",
+      "REOPEN_DOCUMENT",
+      "ADD_REMARK",
+      "VIEW_REMARKS_WHEN_NOT_REPORT_AT",
+      "VIEW_ALL_HISTORY",
+      "FORWARD_PUBLIC",
+      "FORWARD_PRIVATE",
+      "CHANGE_DOCUMENT_VISIBILITY",
+    ].includes(permission),
+  },
+  {
+    key: "documents",
+    title: "Documents And Files",
+    description: "Create, update, delete, and attachment permissions for normal document handling.",
+    match: (permission) => /DOCUMENT|ATTACHMENT/.test(permission),
+  },
+  {
+    key: "admin",
+    title: "Administration",
+    description: "Admin screens, logs, user management, and system-level controls.",
+    match: (permission) => /ADMIN|USER|ROLE|LOG|PERMISSION/.test(permission),
+  },
+];
+
+const permissionGroups = computed(() => {
+  const assigned = new Set();
+  const groups = [];
+
+  for (const definition of permissionGroupDefinitions) {
+    const matched = permissions.value.filter((permission) => {
+      const normalized = String(permission || "").toUpperCase();
+      return !assigned.has(normalized) && definition.match(normalized);
+    });
+    matched.forEach((permission) => assigned.add(String(permission || "").toUpperCase()));
+    if (matched.length > 0) {
+      groups.push({ ...definition, permissions: matched });
+    }
+  }
+
+  const remaining = permissions.value.filter((permission) => !assigned.has(String(permission || "").toUpperCase()));
+  if (remaining.length > 0) {
+    groups.push({
+      key: "other",
+      title: "Other",
+      description: "Additional permissions returned by the backend.",
+      permissions: remaining,
+    });
+  }
+
+  return groups;
+});
 
 function cellKey(roleName, permission) {
   return `${roleName}::${permission}`;
@@ -545,6 +657,39 @@ h2 {
   margin: 4px 0 0;
   font-size: 12px;
   color: #6b7280;
+}
+
+.permissionGroupList {
+  display:grid;
+  gap:14px;
+}
+
+.permissionGroup {
+  border:1px solid #dbeafe;
+  border-radius:14px;
+  background:#fff;
+  overflow:hidden;
+}
+
+.permissionGroupHead {
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  padding:14px;
+  border-bottom:1px solid #e5edf8;
+  background:#f8fbff;
+}
+
+.permissionGroupHead h3 {
+  margin:0;
+  color:#1e3a8a;
+  font-size:15px;
+}
+
+.permissionGroupHead p {
+  margin:4px 0 0;
+  color:#64748b;
+  font-size:12px;
 }
 
 .configGrid {

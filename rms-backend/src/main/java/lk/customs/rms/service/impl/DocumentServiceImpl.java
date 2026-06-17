@@ -11,6 +11,8 @@ import lk.customs.rms.entity.User;
 import lk.customs.rms.enums.AppPermission;
 import lk.customs.rms.enums.MovementActionType;
 import lk.customs.rms.enums.Priority;
+import lk.customs.rms.enums.RecipientSetReason;
+import lk.customs.rms.enums.RecipientType;
 import lk.customs.rms.enums.Status;
 import lk.customs.rms.exception.BadRequestException;
 import lk.customs.rms.exception.ResourceNotFoundException;
@@ -23,6 +25,7 @@ import lk.customs.rms.repository.AuditLogRepository;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.service.AuditLogService;
 import lk.customs.rms.service.DcAutoForwardConfigService;
+import lk.customs.rms.service.DocumentRecipientService;
 import lk.customs.rms.service.DocumentService;
 import lk.customs.rms.service.PermissionService;
 import lk.customs.rms.service.RealtimeNotificationService;
@@ -88,6 +91,18 @@ public class DocumentServiceImpl implements DocumentService {
             boolean showExpiredInfo
     ) {}
 
+    private record RecipientCapabilities(
+            String recipientType,
+            RecipientSummaryResponse recipientSummary,
+            boolean canManageRecipients,
+            boolean canWorkflow,
+            boolean canViewAttachments,
+            boolean canUploadAttachment,
+            boolean canDeleteOwnAttachment,
+            boolean canViewTimeline,
+            boolean canViewMinutes
+    ) {}
+
     private final DocumentRepository documentRepository;
     private final DocumentAttachmentRepository attachmentRepository;
     private final DocumentMovementRepository movementRepository;
@@ -99,6 +114,7 @@ public class DocumentServiceImpl implements DocumentService {
     private final PermissionService permissionService;
     private final RealtimeNotificationService realtimeNotificationService;
     private final DcAutoForwardConfigService dcAutoForwardConfigService;
+    private final DocumentRecipientService documentRecipientService;
 
     public DocumentServiceImpl(
             DocumentRepository documentRepository,
@@ -111,7 +127,8 @@ public class DocumentServiceImpl implements DocumentService {
             AuditLogService auditLogService,
                 PermissionService permissionService,
                 RealtimeNotificationService realtimeNotificationService,
-                DcAutoForwardConfigService dcAutoForwardConfigService
+                DcAutoForwardConfigService dcAutoForwardConfigService,
+                DocumentRecipientService documentRecipientService
     ) {
         this.documentRepository = documentRepository;
         this.attachmentRepository = attachmentRepository;
@@ -124,6 +141,7 @@ public class DocumentServiceImpl implements DocumentService {
         this.permissionService = permissionService;
         this.realtimeNotificationService = realtimeNotificationService;
         this.dcAutoForwardConfigService = dcAutoForwardConfigService;
+        this.documentRecipientService = documentRecipientService;
     }
 
     // ==========================================================
@@ -170,14 +188,17 @@ public class DocumentServiceImpl implements DocumentService {
                 createdBy.getId(),
                 MovementActionType.CREATE
         );
-        movementRepository.save(mv);
+        DocumentMovement savedMovement = movementRepository.save(mv);
+        documentRecipientService.createInitialSet(saved, createdBy.getId(), savedMovement.getId());
 
         auditLogService.logDocumentCreate(saved.getId(), createdBy.getId(), "Document created");
 
-        return DocumentResponse.from(DocumentResponse.mapping(saved)
+        return DocumentResponse.from(withRecipientCapabilities(DocumentResponse.mapping(saved)
                 .createdByName(createdBy.getFullName())
                 .ownerName(owner.getFullName())
-                .canDelete(canDeleteDocument(saved, actorUserId, false))
+                .canDelete(canDeleteDocument(saved, actorUserId, false)),
+                saved,
+                actorUserId)
                 .build());
     }
 
@@ -227,11 +248,13 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     public Page<DocumentResponse> getMyInboxDocuments(int page, int size, String search, String status, String priority,
-                                                      String sort, Long actorUserId) {
+                                                      String sort, RecipientType recipientType, Long actorUserId) {
         var pageable = PageRequest.of(page, size, resolveDocumentSort(sort));
 
-        Page<Document> docs = documentRepository.findAssignedActiveByOwnerFiltered(
+        Page<Document> docs = documentRepository.findInboxAccessibleActiveFiltered(
             actorUserId,
+            List.of(RecipientType.CC, RecipientType.BCC),
+            recipientType,
             Status.ISSUED,
             normalizeSearch(search),
             parseStatus(status),
@@ -316,7 +339,7 @@ public class DocumentServiceImpl implements DocumentService {
             User undoFrom = undoInboxMovement && latestInbound.getFromUserId() != null
                 ? usersById.get(latestInbound.getFromUserId())
                 : null;
-            return DocumentResponse.from(DocumentResponse.mapping(d)
+            return DocumentResponse.from(withRecipientCapabilities(DocumentResponse.mapping(d)
                 .createdByName(createdByName)
                 .ownerName(ownerName)
                 .mainAttachmentType(mainAttachmentTypes.get(d.getId()))
@@ -344,7 +367,9 @@ public class DocumentServiceImpl implements DocumentService {
                 .undoSendFromUserId(undoInboxMovement ? latestInbound.getFromUserId() : null)
                 .undoSendFromName(undoFrom == null ? null : undoFrom.getFullName())
                 .undoSendFromRole(roleName(undoFrom))
-                .canDelete(canDeleteDocument(d, actorUserId, canDeleteAnyDocument))
+                .canDelete(canDeleteDocument(d, actorUserId, canDeleteAnyDocument)),
+                d,
+                actorUserId)
                 .build());
         });
     }
@@ -467,6 +492,9 @@ public class DocumentServiceImpl implements DocumentService {
                     undoMovementsByDoc.getOrDefault(movement.getDocumentId(), List.of())
                 );
             User undoActor = undoMovement == null ? null : undoActorsById.get(undoMovement.getActionByUserId());
+            RecipientSummaryResponse recipientSummary = doc == null
+                ? null
+                : documentRecipientService.summaryForSentMovement(doc, movement.getId(), actorUserId);
             return SentMessageResponse.builder()
                 .movementId(movement.getId())
                 .documentId(movement.getDocumentId())
@@ -479,6 +507,8 @@ public class DocumentServiceImpl implements DocumentService {
                 .forwardVisibility(movement.getForwardVisibility())
                 .toUserId(movement.getToUserId())
                 .toUserName(userNamesById.get(movement.getToUserId()))
+                .recipientSummary(recipientSummary)
+                .recipientSummaryText(recipientSummary == null ? null : recipientSummary.getCompactText())
                 .latestRemarkPreview(ownMinutePreview)
                 .sentAt(movement.getActionAt())
                 .autoForwarded(autoForwarded)
@@ -534,7 +564,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .map(movement -> resolveUndoSendState(d, movement, actorUserId))
                 .orElse(resolveUndoSendState(d, null, actorUserId));
 
-        return DocumentResponse.from(DocumentResponse.mapping(d)
+        return DocumentResponse.from(withRecipientCapabilities(DocumentResponse.mapping(d)
                 .createdByName(createdByName)
                 .ownerName(ownerName)
                 .mainAttachmentType(mainAttachmentType)
@@ -547,7 +577,9 @@ public class DocumentServiceImpl implements DocumentService {
                 .undoSendActionType(undoState.actionType())
                 .undoSendRequiresReason(undoState.requiresReason())
                 .undoSendShowExpiredInfo(undoState.showExpiredInfo())
-                .canDelete(canDeleteDocument(d, actorUserId))
+                .canDelete(canDeleteDocument(d, actorUserId)),
+                d,
+                actorUserId)
                 .build());
     }
 
@@ -608,14 +640,75 @@ public class DocumentServiceImpl implements DocumentService {
             .map(this::toRemarkPreview)
             .orElse(null);
 
-        return DocumentResponse.from(DocumentResponse.mapping(saved)
+        return DocumentResponse.from(withRecipientCapabilities(DocumentResponse.mapping(saved)
                 .createdByName(createdByName)
                 .ownerName(ownerName)
                 .mainAttachmentType(mainAttachmentType)
                 .latestRemarkPreview(latestRemarkPreview)
                 .viewedByMe(true)
-                .canDelete(canDeleteDocument(saved, actorUserId))
+                .canDelete(canDeleteDocument(saved, actorUserId)),
+                saved,
+                actorUserId)
                 .build());
+    }
+
+    @Override
+    @Transactional
+    public DocumentResponse updateRecipients(Long id, UpdateDocumentRecipientsRequest request, Long actorUserId) {
+        Document d = requireDocument(id);
+        ensureCanViewDocument(d, actorUserId);
+        Map<String, List<Long>> previousRecipients = documentRecipientService.getActiveRecipientsByType(id);
+        List<Long> newCcUserIds = request == null || request.getCcUserIds() == null ? List.of() : request.getCcUserIds();
+        List<Long> newBccUserIds = request == null || request.getBccUserIds() == null ? List.of() : request.getBccUserIds();
+        documentRecipientService.updateCopiedRecipients(
+                d,
+                newCcUserIds,
+                newBccUserIds,
+                actorUserId
+        );
+        touchDocument(d);
+        documentRepository.save(d);
+
+        Map<String, List<Long>> updatedRecipients = documentRecipientService.getActiveRecipientsByType(id);
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("documentId", id);
+        details.put("actorUserId", actorUserId);
+        details.put("activeRecipientSetId", documentRecipientService.activeRecipientSetId(id).orElse(null));
+        details.put("previousCcUserIds", previousRecipients.getOrDefault("cc", List.of()));
+        details.put("previousBccUserIds", previousRecipients.getOrDefault("bcc", List.of()));
+        details.put("ccUserIds", updatedRecipients.getOrDefault("cc", List.of()));
+        details.put("bccUserIds", updatedRecipients.getOrDefault("bcc", List.of()));
+        details.put("addedCcUserIds", addedIds(previousRecipients.getOrDefault("cc", List.of()), updatedRecipients.getOrDefault("cc", List.of())));
+        details.put("removedCcUserIds", removedIds(previousRecipients.getOrDefault("cc", List.of()), updatedRecipients.getOrDefault("cc", List.of())));
+        details.put("addedBccUserIds", addedIds(previousRecipients.getOrDefault("bcc", List.of()), updatedRecipients.getOrDefault("bcc", List.of())));
+        details.put("removedBccUserIds", removedIds(previousRecipients.getOrDefault("bcc", List.of()), updatedRecipients.getOrDefault("bcc", List.of())));
+
+        auditLogService.logEventWithDetails(
+                "DOCUMENT",
+                id,
+                "RECIPIENTS_UPDATE",
+                actorUserId,
+                "Document recipients updated",
+                details
+        );
+
+        return getDocumentById(id, actorUserId);
+    }
+
+    private List<Long> addedIds(List<Long> previousIds, List<Long> currentIds) {
+        Set<Long> previous = new HashSet<>(previousIds == null ? List.of() : previousIds);
+        return (currentIds == null ? List.<Long>of() : currentIds)
+                .stream()
+                .filter(id -> !previous.contains(id))
+                .toList();
+    }
+
+    private List<Long> removedIds(List<Long> previousIds, List<Long> currentIds) {
+        Set<Long> current = new HashSet<>(currentIds == null ? List.of() : currentIds);
+        return (previousIds == null ? List.<Long>of() : previousIds)
+                .stream()
+                .filter(id -> !current.contains(id))
+                .toList();
     }
 
     private boolean canDeleteDocument(Document document, Long actorUserId) {
@@ -625,6 +718,41 @@ public class DocumentServiceImpl implements DocumentService {
     private boolean canDeleteDocument(Document document, Long actorUserId, boolean canDeleteAnyDocument) {
         if (document == null || actorUserId == null) return false;
         return actorUserId.equals(document.getCurrentOwnerUserId()) || canDeleteAnyDocument;
+    }
+
+    private DocumentResponse.Mapping.MappingBuilder withRecipientCapabilities(
+            DocumentResponse.Mapping.MappingBuilder builder,
+            Document document,
+            Long actorUserId
+    ) {
+        RecipientCapabilities capabilities = recipientCapabilities(document, actorUserId);
+        return builder
+                .recipientType(capabilities.recipientType())
+                .recipientSummary(capabilities.recipientSummary())
+                .canManageRecipients(capabilities.canManageRecipients())
+                .canWorkflow(capabilities.canWorkflow())
+                .canViewAttachments(capabilities.canViewAttachments())
+                .canUploadAttachment(capabilities.canUploadAttachment())
+                .canDeleteOwnAttachment(capabilities.canDeleteOwnAttachment())
+                .canViewTimeline(capabilities.canViewTimeline())
+                .canViewMinutes(capabilities.canViewMinutes());
+    }
+
+    private RecipientCapabilities recipientCapabilities(Document document, Long actorUserId) {
+        RecipientType recipientType = documentRecipientService.activeRecipientType(document.getId(), actorUserId)
+                .orElse(document.getCurrentOwnerUserId().equals(actorUserId) ? RecipientType.TO : null);
+        boolean isWorkflowOwner = document.getCurrentOwnerUserId().equals(actorUserId);
+        return new RecipientCapabilities(
+                recipientType == null ? null : recipientType.name(),
+                documentRecipientService.summaryForViewer(document, actorUserId),
+                documentRecipientService.canManageRecipients(document, actorUserId),
+                isWorkflowOwner,
+                documentRecipientService.canViewAttachments(document, actorUserId),
+                documentRecipientService.canUploadAttachment(document, actorUserId),
+                documentRecipientService.canDeleteOwnAttachment(document, actorUserId),
+                documentRecipientService.canViewTimeline(document, actorUserId),
+                documentRecipientService.canViewMinutes(document, actorUserId)
+        );
     }
 
     private String resolveMainAttachmentType(Long documentId) {
@@ -749,9 +877,27 @@ public class DocumentServiceImpl implements DocumentService {
         documentRepository.save(d);
 
         DocumentMovement mv = DocumentMovement.create(documentId, from, to, actionBy.getId(), MovementActionType.FORWARD, forwardVisibility);
-        movementRepository.save(mv);
+        DocumentMovement savedMovement = movementRepository.save(mv);
+        documentRecipientService.createForwardSet(d, to, request.getCcUserIds(), request.getBccUserIds(), actionBy.getId(), savedMovement.getId());
+        Map<String, List<Long>> forwardRecipients = documentRecipientService.getActiveRecipientsByType(documentId);
+        Map<String, Object> forwardDetails = new LinkedHashMap<>();
+        forwardDetails.put("fromUserId", from);
+        forwardDetails.put("toUserId", to);
+        forwardDetails.put("toUserIds", forwardRecipients.getOrDefault("to", List.of()));
+        forwardDetails.put("ccUserIds", forwardRecipients.getOrDefault("cc", List.of()));
+        forwardDetails.put("bccUserIds", forwardRecipients.getOrDefault("bcc", List.of()));
+        forwardDetails.put("forwardVisibility", forwardVisibility);
+        forwardDetails.put("movementId", savedMovement.getId());
+        forwardDetails.put("activeRecipientSetId", documentRecipientService.activeRecipientSetId(documentId).orElse(null));
 
-        auditLogService.logMovement(documentId, actionBy.getId(), "FORWARD", "Forwarded to userId=" + to + " with visibility=" + forwardVisibility);
+        auditLogService.logEventWithDetails(
+                "MOVEMENT",
+                documentId,
+                "FORWARD",
+                actionBy.getId(),
+                "Forwarded to userId=" + to + " with visibility=" + forwardVisibility,
+                forwardDetails
+        );
         realtimeNotificationService.notifyDocumentForwarded(
             to,
             d.getId(),
@@ -773,8 +919,6 @@ public class DocumentServiceImpl implements DocumentService {
         ensureCanForwardOrReturn(d);
 
         User actionBy = requireUser(actorUserId);
-        User toUser = requireUser(request.getToUserId());
-
         // Ownership check
         if (!d.getCurrentOwnerUserId().equals(actionBy.getId())) {
             throw new BadRequestException("Only the current owner can return this document.");
@@ -784,9 +928,15 @@ public class DocumentServiceImpl implements DocumentService {
         saveRemarkIfPresent(d, actionBy.getId(), request.getRemarkText(), "Remark added during return");
 
         Long from = d.getCurrentOwnerUserId();
-        Long to = toUser.getId();
+        Long requestedTo = request.getToUserId();
+        d.setCurrentOwnerUserId(requestedTo);
 
-        d.setCurrentOwnerUserId(to);
+        DocumentMovement mv = DocumentMovement.create(documentId, from, requestedTo, actionBy.getId(), MovementActionType.RETURN);
+        DocumentMovement savedMovement = movementRepository.save(mv);
+        documentRecipientService.restorePreviousSetForTo(d, requestedTo, actionBy.getId(), savedMovement.getId(), RecipientSetReason.RETURN);
+        Long to = d.getCurrentOwnerUserId();
+        User toUser = requireUser(to);
+
         // Return also creates a fresh unread inbox item for the receiver.
         documentUserViewRepository.deleteByDocumentIdAndUserId(d.getId(), to);
         applyDcAutoForwardTrackingAfterOwnershipChange(d, toUser);
@@ -794,10 +944,24 @@ public class DocumentServiceImpl implements DocumentService {
         touchDocument(d);
         documentRepository.save(d);
 
-        DocumentMovement mv = DocumentMovement.create(documentId, from, to, actionBy.getId(), MovementActionType.RETURN);
-        movementRepository.save(mv);
+        Map<String, List<Long>> recipients = documentRecipientService.getActiveRecipientsByType(documentId);
+        Map<String, Object> returnDetails = new LinkedHashMap<>();
+        returnDetails.put("fromUserId", from);
+        returnDetails.put("toUserId", to);
+        returnDetails.put("toUserIds", recipients.getOrDefault("to", List.of()));
+        returnDetails.put("ccUserIds", recipients.getOrDefault("cc", List.of()));
+        returnDetails.put("bccUserIds", recipients.getOrDefault("bcc", List.of()));
+        returnDetails.put("movementId", savedMovement.getId());
+        returnDetails.put("restoredRecipientSetId", documentRecipientService.activeRecipientSetId(documentId).orElse(null));
 
-        auditLogService.logMovement(documentId, actionBy.getId(), "RETURN", "Returned to userId=" + to);
+        auditLogService.logEventWithDetails(
+                "MOVEMENT",
+                documentId,
+                "RETURN",
+                actionBy.getId(),
+                "Returned to userId=" + to,
+                returnDetails
+        );
         realtimeNotificationService.notifyDocumentReturned(
             to,
             d.getId(),
@@ -833,14 +997,6 @@ public class DocumentServiceImpl implements DocumentService {
             throw new BadRequestException("Cannot undo this movement because the sender is unknown.");
         }
 
-        d.setCurrentOwnerUserId(senderUserId);
-        d.setStatus(Status.IN_PROGRESS);
-        d.setCompletedAt(null);
-        documentUserViewRepository.deleteByDocumentIdAndUserId(d.getId(), senderUserId);
-        applyDcAutoForwardTrackingAfterOwnershipChange(d, actor);
-        touchDocument(d);
-        documentRepository.save(d);
-
         DocumentMovement undoMovement = DocumentMovement.create(
                 documentId,
                 receiverUserId,
@@ -849,14 +1005,36 @@ public class DocumentServiceImpl implements DocumentService {
                 MovementActionType.UNDO_SEND,
                 latestMovement.getForwardVisibility()
         );
-        movementRepository.save(undoMovement);
+        DocumentMovement savedUndoMovement = movementRepository.save(undoMovement);
+        d.setCurrentOwnerUserId(senderUserId);
+        documentRecipientService.restorePreviousSetForTo(d, senderUserId, actorUserId, savedUndoMovement.getId(), RecipientSetReason.UNDO_SEND);
+        d.setStatus(Status.IN_PROGRESS);
+        d.setCompletedAt(null);
+        documentUserViewRepository.deleteByDocumentIdAndUserId(d.getId(), senderUserId);
+        applyDcAutoForwardTrackingAfterOwnershipChange(d, actor);
+        touchDocument(d);
+        documentRepository.save(d);
 
-        auditLogService.logMovement(
+        Map<String, List<Long>> undoRecipients = documentRecipientService.getActiveRecipientsByType(documentId);
+        Map<String, Object> undoDetails = new LinkedHashMap<>();
+        undoDetails.put("fromUserId", receiverUserId);
+        undoDetails.put("toUserId", d.getCurrentOwnerUserId());
+        undoDetails.put("toUserIds", undoRecipients.getOrDefault("to", List.of()));
+        undoDetails.put("ccUserIds", undoRecipients.getOrDefault("cc", List.of()));
+        undoDetails.put("bccUserIds", undoRecipients.getOrDefault("bcc", List.of()));
+        undoDetails.put("previousMovementId", latestMovement.getId());
+        undoDetails.put("undoMovementId", savedUndoMovement.getId());
+        undoDetails.put("restoredRecipientSetId", documentRecipientService.activeRecipientSetId(documentId).orElse(null));
+        undoDetails.put("reason", reason);
+
+        auditLogService.logEventWithDetails(
+                "MOVEMENT",
                 documentId,
-                actorUserId,
                 "UNDO_SEND",
-                "Undo send from userId=" + receiverUserId + " back to userId=" + senderUserId
-                        + (reason.isBlank() ? "" : ". Reason: " + reason)
+                actorUserId,
+                "Undo send from userId=" + receiverUserId + " back to userId=" + d.getCurrentOwnerUserId()
+                        + (reason.isBlank() ? "" : ". Reason: " + reason),
+                undoDetails
         );
 
         var config = dcAutoForwardConfigService.getOrCreateEntity();
@@ -871,7 +1049,7 @@ public class DocumentServiceImpl implements DocumentService {
             );
         }
         realtimeNotificationService.notifyDocumentUndoReturnedToSender(
-                senderUserId,
+                d.getCurrentOwnerUserId(),
                 d.getId(),
                 d.getRefNo(),
                 d.getTitle(),
@@ -1017,9 +1195,23 @@ public class DocumentServiceImpl implements DocumentService {
         // Movement: REOPEN (owner unchanged; log from->to as same owner)
         Long owner = d.getCurrentOwnerUserId();
         DocumentMovement mv = DocumentMovement.create(documentId, owner, owner, actorUserId, MovementActionType.REOPEN);
-        movementRepository.save(mv);
+        DocumentMovement savedMovement = movementRepository.save(mv);
+        documentRecipientService.createOwnerOnlySet(d, actorUserId, actorUserId, savedMovement.getId(), RecipientSetReason.REOPEN);
+        documentRepository.save(d);
 
-        auditLogService.logMovement(documentId, actorUserId, "REOPEN", "Reopened by DC");
+        auditLogService.logEventWithDetails(
+                "MOVEMENT",
+                documentId,
+                "REOPEN",
+                actorUserId,
+                "Reopened by DC with reason: " + reason,
+                Map.of(
+                        "reopenedByUserId", actorUserId,
+                        "toUserId", actorUserId,
+                        "reason", reason,
+                        "movementId", savedMovement.getId()
+                )
+        );
     }
 
     // ==========================================================
@@ -1215,6 +1407,10 @@ public class DocumentServiceImpl implements DocumentService {
             return;
         }
 
+        if (documentRecipientService.canViewAsCopiedRecipient(doc, actorUserId)) {
+            return;
+        }
+
         String visibility = effectiveVisibility(doc);
         if ("PUBLIC".equals(visibility)) {
             if (permissionService.hasPermission(actorUserId, AppPermission.VIEW_PUBLIC_DOCUMENT)) {
@@ -1319,7 +1515,7 @@ public class DocumentServiceImpl implements DocumentService {
         if (document.getCurrentOwnerUserId() != null && document.getCurrentOwnerUserId().equals(actorUserId)) {
             return true;
         }
-        return permissionService.hasPermission(actorUserId, AppPermission.VIEW_REMARKS_WHEN_NOT_REPORT_AT);
+        return documentRecipientService.canViewMinutes(document, actorUserId);
     }
 
     private Long resolveInboxSenderUserId(DocumentMovement movement) {

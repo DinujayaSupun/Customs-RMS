@@ -9,6 +9,7 @@
           <span class="pill">Status: {{ displayStatusLabel(doc?.status) || "-" }}</span>
           <span class="pill">Priority: {{ doc?.priority || "-" }}</span>
         <span class="pill">Report At: {{ ownerLabel }}</span>
+          <span v-if="recipientSummaryText" class="pill recipientPill">{{ recipientSummaryText }}</span>
         </div>
 
         <div class="subMeta">
@@ -28,6 +29,9 @@
         </button>
         <button v-if="canDeleteDocument" class="btn danger" @click="deleteCurrentDocument" :disabled="busy">
           Delete
+        </button>
+        <button v-if="canManageRecipients" class="btn" @click="openManageRecipients" :disabled="busy">
+          Manage Recipients
         </button>
         <button class="btn" @click="reloadAll" :disabled="busy">Refresh</button>
         <button class="btn" @click="goBack">Back</button>
@@ -205,6 +209,30 @@
           </div>
 
           <div class="formRow">
+            <div class="label">CC</div>
+            <RecipientChipPicker
+              v-model="forwardCcUserIds"
+              :users="users"
+              :exclude-user-ids="[currentUser?.id, toUserId]"
+              :other-selected-ids="forwardBccUserIds"
+              :disabled="busy || !canForward"
+              placeholder="No CC users selected"
+            />
+          </div>
+
+          <div class="formRow">
+            <div class="label">BCC</div>
+            <RecipientChipPicker
+              v-model="forwardBccUserIds"
+              :users="users"
+              :exclude-user-ids="[currentUser?.id, toUserId]"
+              :other-selected-ids="forwardCcUserIds"
+              :disabled="busy || !canForward"
+              placeholder="No BCC users selected"
+            />
+          </div>
+
+          <div class="formRow">
             <div class="label">Forward To</div>
 
             <div class="forwardSearchWrap">
@@ -371,7 +399,7 @@
           <div class="cardSub">Preview, open, upload, or remove document attachments.</div>
 
           <!-- (Keeping your existing file visibility rule) -->
-          <div v-if="!canViewHistory" class="lockBox">
+          <div v-if="!canViewFiles" class="lockBox">
               Only the <b>user currently shown in Report At</b> can view file history.
           </div>
 
@@ -464,7 +492,7 @@
                 <div class="btnRow" style="margin-top:10px;">
                   <button class="btn" @click="openViewer(a)">Preview</button>
                   <button class="btn" @click="openInNewTab(a)">Open</button>
-                  <button class="btn danger" :disabled="busy || !canUploadAttachments" @click="removeAttachment(a)">
+                  <button class="btn danger" :disabled="busy || !canDeleteAttachment(a)" @click="removeAttachment(a)">
                     Delete
                   </button>
                 </div>
@@ -501,6 +529,9 @@
                   <span class="when mono">{{ formatDateTime(m.actionAt) }}</span>
                 </div>
                 <div class="smallHint">Action by: {{ movementUserLabel(m, "actionBy") }}</div>
+                <div v-if="movementRecipientText(m)" class="smallHint">
+                  Recipients: {{ movementRecipientText(m) }}
+                </div>
                 <div v-if="String(m.actionType).toUpperCase() === 'FORWARD'" class="smallHint">
                   Visibility: <b>{{ m.forwardVisibility || "PUBLIC" }}</b>
                 </div>
@@ -529,6 +560,55 @@
               </div>
             </div>
           </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- RECIPIENT EDITOR -->
+    <div v-if="manageRecipientsOpen" class="modalOverlay" @click.self="closeManageRecipients">
+      <div class="modalPanel recipientModal">
+        <div class="modalHead">
+          <div>
+            <div class="modalTitle">Manage Recipients</div>
+            <div class="modalSub">Update copied access without forwarding the document.</div>
+          </div>
+          <button class="btn" :disabled="manageRecipientsBusy" @click="closeManageRecipients">Close</button>
+        </div>
+
+        <div class="recipientCurrent">
+          <span class="recipientCurrentLabel">To</span>
+          <b>{{ recipientGroupText(doc?.recipientSummary?.to) || ownerLabel }}</b>
+        </div>
+
+        <div class="formRow">
+          <div class="label">CC</div>
+          <RecipientChipPicker
+            v-model="manageCcUserIds"
+            :users="users"
+            :exclude-user-ids="manageRecipientExcludedIds"
+            :other-selected-ids="manageBccUserIds"
+            :disabled="manageRecipientsBusy"
+            placeholder="No CC users selected"
+          />
+        </div>
+
+        <div class="formRow">
+          <div class="label">BCC</div>
+          <RecipientChipPicker
+            v-model="manageBccUserIds"
+            :users="users"
+            :exclude-user-ids="manageRecipientExcludedIds"
+            :other-selected-ids="manageCcUserIds"
+            :disabled="manageRecipientsBusy"
+            placeholder="No BCC users selected"
+          />
+        </div>
+
+        <div class="btnRow recipientModalActions">
+          <button class="btn" :disabled="manageRecipientsBusy" @click="closeManageRecipients">Cancel</button>
+          <button class="btn btn-primary" :disabled="manageRecipientsBusy" @click="saveManagedRecipients">
+            {{ manageRecipientsBusy ? "Saving..." : "Save Recipients" }}
+          </button>
         </div>
       </div>
     </div>
@@ -618,6 +698,7 @@ import { useRoute, useRouter } from "vue-router";
 import { File, FileText, FileSpreadsheet, Image, Archive } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
+import RecipientChipPicker from "../components/RecipientChipPicker.vue";
 import { useToast } from "../composables/useToast";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabel, formatUserLabelFromParts } from "../auth/userLabel";
@@ -632,10 +713,12 @@ import { canDeleteMinute, canEditMinute, getEditableMinuteText } from "../utils/
 import { getWorkflowSenderSuccessMessage } from "../utils/workflowNotificationLogic";
 import { getUndoSendInfo, needsUndoReason } from "../utils/undoSendLogic";
 import { formatVersionedFileName } from "../utils/createDocumentFilesLogic";
+import { compactRecipientSummary, fullRecipientSummary, recipientDisplayName, recipientIds } from "../utils/recipientSummaryLogic";
 import { listUsers } from "../api/auth.api";
 import {
   getDocument,
   updateDocument,
+  updateDocumentRecipients,
   deleteDocument,
   listMovements,
   listRemarks,
@@ -697,6 +780,12 @@ const toUserId = ref(null);
 const forwardVisibility = ref("PUBLIC");
 const forwardUserSearch = ref("");
 const forwardSearchFocused = ref(false);
+const forwardCcUserIds = ref([]);
+const forwardBccUserIds = ref([]);
+const manageRecipientsOpen = ref(false);
+const manageRecipientsBusy = ref(false);
+const manageCcUserIds = ref([]);
+const manageBccUserIds = ref([]);
 
 // ✅ ONE remark box
 const remarkDraft = ref("");
@@ -716,12 +805,13 @@ const detailCapabilities = computed(() => getDocumentDetailsCapabilities({
 }));
 const isOwner = computed(() => detailCapabilities.value.isOwner);
 const canViewAllHistory = computed(() => detailCapabilities.value.canViewAllHistory);
-const canViewRemarks = computed(() => detailCapabilities.value.canViewRemarks);
+const canViewRemarks = computed(() => doc.value?.canViewMinutes ?? detailCapabilities.value.canViewRemarks);
 const isIssued = computed(() => detailCapabilities.value.isIssued);
 const isEditLocked = computed(() => detailCapabilities.value.isEditLocked);
 const canEditDetails = computed(() => detailCapabilities.value.canEditDetails);
-const canViewHistory = computed(() => detailCapabilities.value.canViewHistory);
-const canUploadAttachments = computed(() => detailCapabilities.value.canUploadAttachments);
+const canViewHistory = computed(() => doc.value?.canViewTimeline ?? detailCapabilities.value.canViewHistory);
+const canViewFiles = computed(() => doc.value?.canViewAttachments ?? canViewHistory.value);
+const canUploadAttachments = computed(() => doc.value?.canUploadAttachment ?? detailCapabilities.value.canUploadAttachments);
 const availableForwardVisibilities = computed(() => detailCapabilities.value.availableForwardVisibilities);
 const canForwardReturnByStatus = computed(() => detailCapabilities.value.canForwardReturnByStatus);
 const forwardReturnAllowedStatusesLabel = computed(() => forwardReturnAllowedStatuses.value.map(displayStatusLabel).join(", ") || "none");
@@ -740,6 +830,8 @@ const canDeleteDocument = computed(() => {
   if (hasPermission(currentUser.value, "DELETE_ANY_DOCUMENT")) return true;
   return Number(doc.value?.currentOwnerUserId) === Number(currentUser.value?.id);
 });
+const canManageRecipients = computed(() => !!doc.value?.canManageRecipients);
+const recipientSummaryText = computed(() => fullRecipientSummary(doc.value?.recipientSummary));
 const availableWorkflowActionNames = computed(() => {
   const names = ["Forward", "Return"];
   if (approveRejectButtonsEnabled.value) {
@@ -786,6 +878,16 @@ const forwardTargets = computed(() => {
   const all = users.value.filter((u) => Number(u.id) !== Number(currentUser.value.id));
   return all;
 });
+const copiedRecipientTargets = computed(() => {
+  const blocked = new Set([Number(currentUser.value?.id), Number(toUserId.value)].filter(Number.isFinite));
+  return users.value.filter((u) => !blocked.has(Number(u.id)));
+});
+const manageRecipientTargets = computed(() => {
+  const toIds = recipientIds(doc.value?.recipientSummary, "to").map(Number);
+  const blocked = new Set(toIds.filter(Number.isFinite));
+  return users.value.filter((u) => !blocked.has(Number(u.id)));
+});
+const manageRecipientExcludedIds = computed(() => recipientIds(doc.value?.recipientSummary, "to"));
 
 const preferredReturnTargetId = computed(() => {
   if (!canReturn.value || !currentUser.value?.id || forwardTargets.value.length === 0) return null;
@@ -843,6 +945,65 @@ function selectForwardUser(user) {
   forwardUserSearch.value = formatUserLabel(user);
   forwardSearchFocused.value = false;
   autoSelectedTargetId.value = null;
+}
+
+function recipientGroupText(recipients = []) {
+  if (!Array.isArray(recipients) || recipients.length === 0) return "";
+  return recipients.map(recipientDisplayName).join(", ");
+}
+
+function uniqueNumericIds(values) {
+  return [...new Set((values || [])
+    .map(Number)
+    .filter((value) => Number.isFinite(value) && value > 0))];
+}
+
+function openManageRecipients() {
+  error.value = "";
+  successMessage.value = "";
+  manageCcUserIds.value = recipientIds(doc.value?.recipientSummary, "cc").map(String);
+  manageBccUserIds.value = recipientIds(doc.value?.recipientSummary, "bcc").map(String);
+  manageRecipientsOpen.value = true;
+}
+
+function closeManageRecipients() {
+  if (manageRecipientsBusy.value) return;
+  manageRecipientsOpen.value = false;
+}
+
+async function saveManagedRecipients() {
+  error.value = "";
+  successMessage.value = "";
+
+  if (!canManageRecipients.value) {
+    error.value = "You are not allowed to manage recipients for this document.";
+    toast.error(error.value);
+    return;
+  }
+
+  const ccUserIds = uniqueNumericIds(manageCcUserIds.value);
+  const bccUserIds = uniqueNumericIds(manageBccUserIds.value);
+  const overlap = ccUserIds.find((id) => bccUserIds.includes(id));
+  if (overlap) {
+    error.value = "The same user cannot be both CC and BCC.";
+    toast.warning(error.value);
+    return;
+  }
+
+  manageRecipientsBusy.value = true;
+  busy.value = true;
+  try {
+    doc.value = await updateDocumentRecipients(documentId, { ccUserIds, bccUserIds });
+    manageRecipientsOpen.value = false;
+    successMessage.value = "Recipients updated successfully.";
+    toast.success(successMessage.value);
+  } catch (e) {
+    error.value = e?.message || "Failed to update recipients.";
+    toast.error(error.value);
+  } finally {
+    manageRecipientsBusy.value = false;
+    busy.value = false;
+  }
 }
 
 // Keep the workflow target valid and default Return to the most recent sender.
@@ -938,10 +1099,21 @@ function movementUserLabel(movement, kind) {
   }, users.value);
 }
 
+function movementRecipientText(movement) {
+  return fullRecipientSummary(movement?.recipientSummary);
+}
+
 const movementRemarksById = computed(() => buildMovementRemarksMap(movements.value, remarks.value));
 
 function isPdf(name) {
   return isPdfAttachmentName(name);
+}
+
+function canDeleteAttachment(attachment) {
+  if (!attachment) return false;
+  if (doc.value?.canWorkflow && hasPermission(currentUser.value, "DELETE_ATTACHMENT")) return true;
+  if (!doc.value?.canDeleteOwnAttachment) return false;
+  return Number(attachment.uploadedBy) === Number(currentUser.value?.id) && Number(attachment.versionNo) !== 1;
 }
 function isImage(name) {
   return isImageAttachmentName(name);
@@ -1137,10 +1309,8 @@ async function reloadAll() {
 
     remarks.value = canViewRemarks.value ? await listRemarks(documentId) : [];
 
-    // Keep your history lock only for movements/files
     if (canViewHistory.value) {
       movements.value = await listMovements(documentId);
-      attachments.value = await listAttachments(documentId);
 
       const movementIds = new Set(movements.value.map((m) => m.id));
       if (!movementIds.has(selectedMovementId.value)) {
@@ -1148,9 +1318,10 @@ async function reloadAll() {
       }
     } else {
       movements.value = [];
-      attachments.value = [];
       selectedMovementId.value = null;
     }
+
+    attachments.value = canViewFiles.value ? await listAttachments(documentId) : [];
 
     if (viewerOpen.value) {
       const still = attachmentsSorted.value.find(x => x.id === selectedFile.value?.id);
@@ -1398,11 +1569,21 @@ async function doForward() {
     toast.warning(error.value);
     return;
   }
+  const ccUserIds = uniqueNumericIds(forwardCcUserIds.value);
+  const bccUserIds = uniqueNumericIds(forwardBccUserIds.value);
+  const copiedOverlap = ccUserIds.find((id) => bccUserIds.includes(id));
+  if (copiedOverlap) {
+    error.value = "The same user cannot be both CC and BCC.";
+    toast.warning(error.value);
+    return;
+  }
 
   busy.value = true;
   try {
     await forwardDocument(documentId, {
       toUserId: Number(toUserId.value),
+      ccUserIds,
+      bccUserIds,
       forwardVisibility: selectedVisibility,
       remarkText: remarkOrNull(), // ✅ this is what backend expects
     });
@@ -2121,6 +2302,10 @@ async function removeAttachment(a) {
   box-shadow:0 0 0 3px rgba(37, 99, 235, 0.12);
 }
 
+.recipientMultiSelect {
+  min-height: 84px;
+}
+
 .textarea {
   min-height:96px;
   line-height:1.5;
@@ -2301,6 +2486,75 @@ async function removeAttachment(a) {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* Viewer */
+.modalOverlay {
+  position:fixed;
+  inset:0;
+  z-index:90;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:18px;
+  background:rgba(15,23,42,0.55);
+}
+
+.modalPanel {
+  width:min(560px, 100%);
+  max-height:calc(100vh - 36px);
+  overflow:auto;
+  border:1px solid #dbe3ef;
+  border-radius:14px;
+  background:#fff;
+  box-shadow:0 24px 70px rgba(15,23,42,0.24);
+}
+
+.recipientModal {
+  padding:16px;
+}
+
+.modalHead {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:12px;
+}
+
+.modalTitle {
+  color:#0f172a;
+  font-size:16px;
+  font-weight:900;
+}
+
+.modalSub {
+  margin-top:3px;
+  color:#64748b;
+  font-size:12px;
+}
+
+.recipientCurrent {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 12px;
+  border:1px solid #dbeafe;
+  border-radius:10px;
+  background:#f8fbff;
+  color:#0f172a;
+  overflow-wrap:anywhere;
+}
+
+.recipientCurrentLabel {
+  color:#1d4ed8;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+}
+
+.recipientModalActions {
+  justify-content:flex-end;
+}
+
 .viewerOverlay {
   position:fixed; inset:0;
   background:rgba(0,0,0,0.35);

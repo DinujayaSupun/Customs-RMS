@@ -5,9 +5,11 @@ import lk.customs.rms.dto.DocumentResponse;
 import lk.customs.rms.dto.MyWorkloadStatsResponse;
 import lk.customs.rms.dto.SentMessageResponse;
 import lk.customs.rms.dto.UpdateDocumentRequest;
+import lk.customs.rms.dto.UpdateDocumentRecipientsRequest;
 import lk.customs.rms.dto.DecisionRequest;
 import lk.customs.rms.dto.ForwardReturnRequest;
 import lk.customs.rms.dto.UndoSendRequest;
+import lk.customs.rms.enums.RecipientType;
 import org.springframework.data.domain.Page;
 
 public interface DocumentService {
@@ -18,7 +20,7 @@ public interface DocumentService {
                                         String receivedFrom, String receivedTo, String sort, Long actorUserId);
 
     Page<DocumentResponse> getMyInboxDocuments(int page, int size, String search, String status, String priority,
-                                               String sort, Long actorUserId);
+                                               String sort, RecipientType recipientType, Long actorUserId);
 
     Page<SentMessageResponse> getSentMessages(int page, int size, String search, String status, String priority, Long actorUserId);
 
@@ -27,6 +29,8 @@ public interface DocumentService {
     MyWorkloadStatsResponse getMyWorkloadStats(Long actorUserId);
 
     DocumentResponse updateDocument(Long id, UpdateDocumentRequest request, Long actorUserId);
+
+    DocumentResponse updateRecipients(Long id, UpdateDocumentRecipientsRequest request, Long actorUserId);
 
     void deleteDocument(Long id, Long actorUserId);
 

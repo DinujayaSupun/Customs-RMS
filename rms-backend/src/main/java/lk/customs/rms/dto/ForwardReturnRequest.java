@@ -4,6 +4,8 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.List;
+
 @Getter
 @Setter
 public class ForwardReturnRequest {
@@ -16,4 +18,8 @@ public class ForwardReturnRequest {
 
     // ✅ Optional remark to save before forward/return
     private String remarkText;
+
+    private List<Long> ccUserIds;
+
+    private List<Long> bccUserIds;
 }

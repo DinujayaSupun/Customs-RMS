@@ -16,6 +16,7 @@ import lk.customs.rms.repository.DocumentMovementRepository;
 import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.security.CurrentUserService;
+import lk.customs.rms.service.DocumentRecipientService;
 import lk.customs.rms.service.PermissionService;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Page;
@@ -45,6 +46,7 @@ class ResponseBatchMappingTests {
         UserRepository userRepository = mock(UserRepository.class);
         CurrentUserService currentUserService = mock(CurrentUserService.class);
         PermissionService permissionService = mock(PermissionService.class);
+        DocumentRecipientService documentRecipientService = mock(DocumentRecipientService.class);
         Authentication authentication = mock(Authentication.class);
 
         Document document = new Document();
@@ -56,6 +58,7 @@ class ResponseBatchMappingTests {
 
         when(documentRepository.findByIdAndDeletedFalse(99L)).thenReturn(Optional.of(document));
         when(currentUserService.requireUserId(authentication)).thenReturn(10L);
+        when(documentRecipientService.canViewTimeline(document, 10L)).thenReturn(true);
         when(movementRepository.findByDocumentIdOrderByActionAtAsc(99L)).thenReturn(List.of(first, second));
         when(userRepository.findAllById(any())).thenReturn(List.of(
                 user(10L, "Owner User"),
@@ -68,7 +71,8 @@ class ResponseBatchMappingTests {
                 movementRepository,
                 userRepository,
                 currentUserService,
-                permissionService
+                permissionService,
+                documentRecipientService
         );
 
         List<MovementResponse> responses = controller.getMovements(99L, authentication);

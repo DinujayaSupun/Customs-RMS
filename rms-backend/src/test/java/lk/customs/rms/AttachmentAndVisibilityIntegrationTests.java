@@ -42,6 +42,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -541,6 +542,157 @@ class AttachmentAndVisibilityIntegrationTests {
         }
     }
 
+    @Test
+    void copiedRecipientsCanViewAndManageOwnAttachmentsWhileReturnRestoresPreviousRecipientSet() throws Exception {
+        String password = "Recipients123";
+        User sender = createUser("ADMIN", "recipient-sender-", password);
+        User toUser = createUser("DDC", "recipient-to-", password);
+        User ccUser = createUser("PMA", "recipient-cc-", password);
+        User replacementCcUser = createUser("PMA", "recipient-cc-replace-", password);
+        User bccUser = createUser("PMA", "recipient-bcc-", password);
+
+        String senderToken = loginAndGetToken(sender.getUsername(), password);
+        String toToken = loginAndGetToken(toUser.getUsername(), password);
+        String ccToken = loginAndGetToken(ccUser.getUsername(), password);
+        String replacementCcToken = loginAndGetToken(replacementCcUser.getUsername(), password);
+        String bccToken = loginAndGetToken(bccUser.getUsername(), password);
+
+        long documentId = createDocument(senderToken, "recipient-flow");
+        long mainAttachmentId = uploadAttachment(documentId, senderToken, "main.txt", "main").get("id").asLong();
+
+        Map<Long, Boolean> originalPmaPermissions = snapshotRolePermissions(
+                "PMA",
+                AppPermission.VIEW_PRIVATE_DOCUMENT,
+                AppPermission.VIEW_PUBLIC_DOCUMENT,
+                AppPermission.VIEW_ALL_DOCUMENTS,
+                AppPermission.CC_VIEW_DOCUMENT,
+                AppPermission.CC_VIEW_ATTACHMENTS,
+                AppPermission.CC_UPLOAD_ATTACHMENTS,
+                AppPermission.CC_DELETE_OWN_ATTACHMENTS,
+                AppPermission.BCC_VIEW_DOCUMENT,
+                AppPermission.BCC_VIEW_ATTACHMENTS,
+                AppPermission.UPLOAD_ATTACHMENT,
+                AppPermission.DELETE_ATTACHMENT
+        );
+        Map<Long, Boolean> originalDdcPermissions = snapshotRolePermissions(
+                "DDC",
+                AppPermission.MANAGE_DOCUMENT_RECIPIENTS
+        );
+
+        try {
+            setRolePermission("DDC", AppPermission.MANAGE_DOCUMENT_RECIPIENTS, true);
+            setRolePermission("PMA", AppPermission.VIEW_PRIVATE_DOCUMENT, false);
+            setRolePermission("PMA", AppPermission.VIEW_PUBLIC_DOCUMENT, false);
+            setRolePermission("PMA", AppPermission.VIEW_ALL_DOCUMENTS, false);
+            setRolePermission("PMA", AppPermission.CC_VIEW_DOCUMENT, true);
+            setRolePermission("PMA", AppPermission.CC_VIEW_ATTACHMENTS, true);
+            setRolePermission("PMA", AppPermission.CC_UPLOAD_ATTACHMENTS, true);
+            setRolePermission("PMA", AppPermission.CC_DELETE_OWN_ATTACHMENTS, true);
+            setRolePermission("PMA", AppPermission.BCC_VIEW_DOCUMENT, true);
+            setRolePermission("PMA", AppPermission.BCC_VIEW_ATTACHMENTS, true);
+            setRolePermission("PMA", AppPermission.UPLOAD_ATTACHMENT, true);
+            setRolePermission("PMA", AppPermission.DELETE_ATTACHMENT, true);
+
+            mockMvc.perform(post("/api/documents/{documentId}/forward", documentId)
+                            .header("Authorization", bearer(senderToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "toUserId": %d,
+                                      "ccUserIds": [%d],
+                                      "bccUserIds": [%d],
+                                      "forwardVisibility": "PRIVATE",
+                                      "remarkText": "Forward with copied recipients"
+                                    }
+                                    """.formatted(toUser.getId(), ccUser.getId(), bccUser.getId())))
+                    .andExpect(status().isOk());
+
+            mockMvc.perform(get("/api/documents/{documentId}", documentId)
+                            .header("Authorization", bearer(ccToken)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.recipientType").value("CC"))
+                    .andExpect(jsonPath("$.canWorkflow").value(false))
+                    .andExpect(jsonPath("$.canUploadAttachment").value(true))
+                    .andExpect(jsonPath("$.recipientSummary.bcc").isEmpty());
+
+            mockMvc.perform(get("/api/documents/{documentId}", documentId)
+                            .header("Authorization", bearer(bccToken)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.recipientType").value("BCC"))
+                    .andExpect(jsonPath("$.recipientSummary.bcc[0].name").value("you"));
+
+            MvcResult recipientUpdateResult = mockMvc.perform(put("/api/documents/{documentId}/recipients", documentId)
+                            .header("Authorization", bearer(toToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "ccUserIds": [%d],
+                                      "bccUserIds": [%d]
+                                    }
+                                    """.formatted(replacementCcUser.getId(), bccUser.getId())))
+                    .andReturn();
+            assertThat(recipientUpdateResult.getResponse().getStatus())
+                    .as(recipientUpdateResult.getResponse().getContentAsString())
+                    .isEqualTo(200);
+            JsonNode recipientUpdateJson = objectMapper.readTree(recipientUpdateResult.getResponse().getContentAsString());
+            assertThat(recipientUpdateJson.at("/recipientSummary/cc/0/userId").asLong()).isEqualTo(replacementCcUser.getId());
+            assertThat(recipientUpdateJson.at("/recipientSummary/bcc").isArray()).isTrue();
+            assertThat(recipientUpdateJson.at("/recipientSummary/bcc").size()).isZero();
+
+            mockMvc.perform(get("/api/documents/{documentId}", documentId)
+                            .header("Authorization", bearer(replacementCcToken)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.recipientType").value("CC"));
+
+            mockMvc.perform(post("/api/documents/{documentId}/forward", documentId)
+                            .header("Authorization", bearer(ccToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "toUserId": %d,
+                                      "forwardVisibility": "PRIVATE"
+                                    }
+                                    """.formatted(sender.getId())))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("Only the current owner can forward this document."));
+
+            long ccAttachmentId = uploadAttachment(documentId, replacementCcToken, "cc-owned.txt", "cc").get("id").asLong();
+            JsonNode uploadAuditDetails = objectMapper.readTree(latestAuditLog("ATTACHMENT", ccAttachmentId, "UPLOAD").getDetailsJson());
+            assertThat(uploadAuditDetails.get("actorRecipientType").asText()).isEqualTo("CC");
+
+            mockMvc.perform(delete("/api/attachments/{attachmentId}", mainAttachmentId)
+                            .header("Authorization", bearer(replacementCcToken)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("Copied recipients can delete only their own attachments."));
+
+            mockMvc.perform(delete("/api/attachments/{attachmentId}", ccAttachmentId)
+                            .header("Authorization", bearer(replacementCcToken)))
+                    .andExpect(status().isNoContent());
+            JsonNode deleteAuditDetails = objectMapper.readTree(latestAuditLog("ATTACHMENT", ccAttachmentId, "DELETE").getDetailsJson());
+            assertThat(deleteAuditDetails.get("actorRecipientType").asText()).isEqualTo("CC");
+
+            mockMvc.perform(post("/api/documents/{documentId}/return", documentId)
+                            .header("Authorization", bearer(toToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "toUserId": %d,
+                                      "remarkText": "Return to previous set"
+                                    }
+                                    """.formatted(sender.getId())))
+                    .andExpect(status().isOk());
+
+            mockMvc.perform(get("/api/documents/{documentId}", documentId)
+                            .header("Authorization", bearer(senderToken)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.recipientType").value("TO"))
+                    .andExpect(jsonPath("$.recipientSummary.to[0].currentUser").value(true));
+        } finally {
+            restoreRolePermissions(originalPmaPermissions);
+            restoreRolePermissions(originalDdcPermissions);
+        }
+    }
+
     private User createUser(String roleName, String prefix, String rawPassword) {
         Role role = roleRepository.findByRoleName(roleName)
                 .orElseThrow(() -> new IllegalStateException("Role not found: " + roleName));
@@ -668,6 +820,14 @@ class AttachmentAndVisibilityIntegrationTests {
 
     private JsonNode readJson(MvcResult result) throws Exception {
         return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private AuditLog latestAuditLog(String entityType, Long entityId, String actionType) {
+        return auditLogRepository.findByEntityTypeAndEntityIdOrderByPerformedAtAsc(entityType, entityId)
+                .stream()
+                .filter(log -> actionType.equals(log.getActionType()))
+                .reduce((first, second) -> second)
+                .orElseThrow(() -> new AssertionError("Audit log not found: " + actionType));
     }
 
     private void ensureApproveRejectButtonsEnabled() {

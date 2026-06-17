@@ -88,6 +88,30 @@
           >
             Opened
           </button>
+          <button
+            v-if="inboxMode === 'received'"
+            class="chip"
+            :class="{ chipActive: viewFilter === 'to' }"
+            @click="viewFilter = 'to'"
+          >
+            To
+          </button>
+          <button
+            v-if="inboxMode === 'received'"
+            class="chip"
+            :class="{ chipActive: viewFilter === 'cc' }"
+            @click="viewFilter = 'cc'"
+          >
+            CC
+          </button>
+          <button
+            v-if="inboxMode === 'received'"
+            class="chip"
+            :class="{ chipActive: viewFilter === 'bcc' }"
+            @click="viewFilter = 'bcc'"
+          >
+            BCC
+          </button>
           <button class="chip" :class="{ chipActive: viewFilter === 'urgent' }" @click="viewFilter = 'urgent'">Urgent</button>
         </div>
       </div>
@@ -188,6 +212,10 @@
                   <span :title="inboxReceivedPreview(d).minuteLine ? null : inboxReceivedPreview(d).minuteTooltip">
                     {{ inboxReceivedPreview(d).senderLine }}
                   </span>
+                  <template v-if="recipientSummaryText(d)">
+                    <span> • </span>
+                    <span class="recipientMetaLine" :title="recipientSummaryText(d)">{{ recipientSummaryText(d) }}</span>
+                  </template>
                   <template v-if="inboxReceivedPreview(d).minuteLine">
                     <br />
                     <span :title="inboxReceivedPreview(d).minuteTooltip">{{ inboxReceivedPreview(d).minuteLine }}</span>
@@ -514,6 +542,30 @@
                 </option>
               </select>
             </div>
+
+            <div class="formRow">
+              <label class="label">CC</label>
+              <RecipientChipPicker
+                v-model="forwardCcUserIds"
+                :users="users"
+                :exclude-user-ids="[currentUser?.id, forwardToUserId]"
+                :other-selected-ids="forwardBccUserIds"
+                :disabled="forwardBusy || !canForwardSelectedDoc"
+                placeholder="No CC users selected"
+              />
+            </div>
+
+            <div class="formRow">
+              <label class="label">BCC</label>
+              <RecipientChipPicker
+                v-model="forwardBccUserIds"
+                :users="users"
+                :exclude-user-ids="[currentUser?.id, forwardToUserId]"
+                :other-selected-ids="forwardCcUserIds"
+                :disabled="forwardBusy || !canForwardSelectedDoc"
+                placeholder="No BCC users selected"
+              />
+            </div>
           </div>
 
           <div class="modalFoot">
@@ -537,6 +589,7 @@ import { useRouter } from "vue-router";
 import { File, FileText, FileSpreadsheet, Image, Archive, Eye, Send } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
+import RecipientChipPicker from "../components/RecipientChipPicker.vue";
 import { useToast } from "../composables/useToast";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import { listUsers } from "../api/auth.api";
@@ -561,6 +614,7 @@ import { buildInboxReceivedPreview, findPreferredReturnTargetId, markInboxDocume
 import { canForwardInboxDocument, canReturnInboxDocument } from "../utils/inboxPermissionLogic";
 import { getWorkflowSenderSuccessMessage } from "../utils/workflowNotificationLogic";
 import { getUndoSendInfo, needsUndoReason } from "../utils/undoSendLogic";
+import { compactRecipientSummary, fullRecipientSummary } from "../utils/recipientSummaryLogic";
 
 const router = useRouter();
 const toast = useToast();
@@ -585,6 +639,10 @@ const last = ref(true);
 const totalElements = ref(0);
 const totalPages = ref(1);
 const totalPagesDisplay = computed(() => Math.max(totalPages.value || 1, 1));
+const backendRecipientFilter = computed(() => {
+  const filter = String(viewFilter.value || "").toUpperCase();
+  return ["TO", "CC", "BCC"].includes(filter) ? filter : undefined;
+});
 
 const previewOpen = ref(false);
 const previewDoc = ref(null);
@@ -604,6 +662,8 @@ const forwardVisibility = ref("PUBLIC");
 const forwardToUserId = ref(null);
 const forwardUserSearch = ref("");
 const forwardSearchFocused = ref(false);
+const forwardCcUserIds = ref([]);
+const forwardBccUserIds = ref([]);
 const forwardAttachments = ref([]);
 const forwardAttachmentsLoading = ref(false);
 const forwardAttachmentsError = ref("");
@@ -653,6 +713,10 @@ const availableForwardVisibilities = computed(() => {
 const forwardTargets = computed(() => {
   const all = users.value.filter((u) => Number(u.id) !== Number(currentUser.value?.id));
   return all;
+});
+const copiedRecipientTargets = computed(() => {
+  const blocked = new Set([Number(currentUser.value?.id), Number(forwardToUserId.value)].filter(Number.isFinite));
+  return users.value.filter((u) => !blocked.has(Number(u.id)));
 });
 
 const canForwardSelectedDoc = computed(() => canForwardRow(forwardDoc.value));
@@ -750,11 +814,17 @@ const previewIsOwner = computed(() => {
 
 const previewCanViewRemarks = computed(() => {
   if (!previewDoc.value || !currentUser.value) return false;
+  if (previewDoc.value.canViewMinutes !== undefined && previewDoc.value.canViewMinutes !== null) {
+    return !!previewDoc.value.canViewMinutes;
+  }
   return previewIsOwner.value || hasPermission(currentUser.value, "VIEW_REMARKS_WHEN_NOT_REPORT_AT");
 });
 
 const previewCanSeeOperational = computed(() => {
   if (!previewDoc.value || !currentUser.value) return false;
+  if (previewDoc.value.canViewTimeline !== undefined && previewDoc.value.canViewTimeline !== null) {
+    return !!previewDoc.value.canViewTimeline;
+  }
   return hasPermission(currentUser.value, "VIEW_ALL_HISTORY") || previewIsOwner.value;
 });
 
@@ -830,11 +900,22 @@ function inboxReceivedPreview(doc) {
   return buildInboxReceivedPreview(doc, displayMinuteTime, currentUser.value?.id);
 }
 
+function recipientSummaryText(doc) {
+  return compactRecipientSummary(doc?.recipientSummary);
+}
+
+function sentRecipientSummaryText(doc) {
+  return fullRecipientSummary(doc?.recipientSummary);
+}
+
 function undoSendInfo(doc) {
   return getUndoSendInfo(doc);
 }
 
 function sentToLabel(doc) {
+  const recipientText = sentRecipientSummaryText(doc);
+  if (recipientText) return recipientText.replace(/^To:\s*/i, "");
+
   const name = String(doc?.toUserName || "").trim();
   return name || "Unknown user";
 }
@@ -940,6 +1021,9 @@ function applyFilters(list) {
     const matchView = (() => {
       if (inboxMode.value === "received" && viewFilter.value === "unopened") return !isViewedByMe(d);
       if (inboxMode.value === "received" && viewFilter.value === "opened") return isViewedByMe(d);
+      if (inboxMode.value === "received" && viewFilter.value === "to") return String(d.recipientType || "").toUpperCase() === "TO";
+      if (inboxMode.value === "received" && viewFilter.value === "cc") return String(d.recipientType || "").toUpperCase() === "CC";
+      if (inboxMode.value === "received" && viewFilter.value === "bcc") return String(d.recipientType || "").toUpperCase() === "BCC";
       if (viewFilter.value === "urgent") return String(d.priority || "").toUpperCase() === "URGENT";
       return true;
     })();
@@ -1030,6 +1114,7 @@ async function loadReceived() {
       status: status.value || undefined,
       priority: viewFilter.value === "urgent" ? "URGENT" : (priority.value || undefined),
       sort: sortBy.value,
+      recipientType: backendRecipientFilter.value,
     });
     const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
     allRows.value = list;
@@ -1262,6 +1347,8 @@ function resetForwardForm() {
   forwardToUserId.value = null;
   forwardUserSearch.value = "";
   forwardSearchFocused.value = false;
+  forwardCcUserIds.value = [];
+  forwardBccUserIds.value = [];
   forwardMovements.value = [];
   autoSelectedForwardTargetId.value = null;
   forwardAttachments.value = [];
@@ -1335,6 +1422,12 @@ function selectForwardUser(user) {
   autoSelectedForwardTargetId.value = null;
 }
 
+function uniqueNumericIds(values) {
+  return [...new Set((values || [])
+    .map(Number)
+    .filter((value) => Number.isFinite(value) && value > 0))];
+}
+
 function openForwardSearch() {
   if (forwardBusy.value || !canChooseWorkflowTarget.value) return;
   forwardSearchFocused.value = true;
@@ -1375,11 +1468,20 @@ async function submitForward() {
     error.value = "You do not have permission for selected forward visibility.";
     return;
   }
+  const ccUserIds = uniqueNumericIds(forwardCcUserIds.value);
+  const bccUserIds = uniqueNumericIds(forwardBccUserIds.value);
+  const copiedOverlap = ccUserIds.find((id) => bccUserIds.includes(id));
+  if (copiedOverlap) {
+    error.value = "The same user cannot be both CC and BCC.";
+    return;
+  }
 
   forwardBusy.value = true;
   try {
     await forwardDocument(documentId, {
       toUserId: Number(forwardToUserId.value),
+      ccUserIds,
+      bccUserIds,
       forwardVisibility: selectedVisibility,
       remarkText: forwardRemark.value.trim() || null,
     });
@@ -2419,6 +2521,13 @@ h2 { margin:0; line-height:1.15; }
 .formRow .input {
   width:100%;
   box-sizing:border-box;
+}
+
+.recipientMultiSelect {
+  height:auto;
+  min-height:84px;
+  padding-top:8px;
+  padding-bottom:8px;
 }
 
 .textarea {

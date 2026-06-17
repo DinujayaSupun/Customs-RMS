@@ -5,6 +5,7 @@ import lk.customs.rms.entity.Document;
 import lk.customs.rms.entity.DocumentMovement;
 import lk.customs.rms.entity.User;
 import lk.customs.rms.enums.MovementActionType;
+import lk.customs.rms.enums.RecipientSetReason;
 import lk.customs.rms.enums.Status;
 import lk.customs.rms.repository.DocumentMovementRepository;
 import lk.customs.rms.repository.DocumentRepository;
@@ -16,7 +17,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Component
 public class DcAutoForwardScheduler {
@@ -30,19 +33,22 @@ public class DcAutoForwardScheduler {
     private final DocumentUserViewRepository documentUserViewRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
+    private final DocumentRecipientService documentRecipientService;
 
     public DcAutoForwardScheduler(DcAutoForwardConfigService dcAutoForwardConfigService,
                                   DocumentRepository documentRepository,
                                   DocumentMovementRepository movementRepository,
                                   DocumentUserViewRepository documentUserViewRepository,
                                   UserRepository userRepository,
-                                  AuditLogService auditLogService) {
+                                  AuditLogService auditLogService,
+                                  DocumentRecipientService documentRecipientService) {
         this.dcAutoForwardConfigService = dcAutoForwardConfigService;
         this.documentRepository = documentRepository;
         this.movementRepository = movementRepository;
         this.documentUserViewRepository = documentUserViewRepository;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
+        this.documentRecipientService = documentRecipientService;
     }
 
     @Scheduled(fixedDelayString = "${app.dc-auto-forward.poll-ms:60000}")
@@ -87,6 +93,7 @@ public class DcAutoForwardScheduler {
 
     private void autoForwardDocument(Document doc, Long receiverUserId, int timeoutMinutes, LocalDateTime now) {
         Long from = doc.getCurrentOwnerUserId();
+        Map<String, List<Long>> previousRecipients = documentRecipientService.getActiveRecipientsByType(doc.getId());
         doc.setCurrentOwnerUserId(receiverUserId);
         documentUserViewRepository.deleteByDocumentIdAndUserId(doc.getId(), receiverUserId);
         doc.setStatus(Status.IN_PROGRESS);
@@ -110,13 +117,37 @@ public class DcAutoForwardScheduler {
                 MovementActionType.FORWARD,
                 forwardVisibility
         );
-        movementRepository.save(mv);
-
-        auditLogService.logMovement(
-                doc.getId(),
+        DocumentMovement savedMovement = movementRepository.save(mv);
+        documentRecipientService.preserveCopiedRecipientsWithNewTo(
+                doc,
+                receiverUserId,
                 from,
+                savedMovement.getId(),
+                RecipientSetReason.AUTO_FORWARD
+        );
+        documentRepository.save(doc);
+        Map<String, List<Long>> preservedRecipients = documentRecipientService.getActiveRecipientsByType(doc.getId());
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("documentId", doc.getId());
+        details.put("oldToUserId", from);
+        details.put("newToUserId", receiverUserId);
+        details.put("toUserId", receiverUserId);
+        details.put("toUserIds", preservedRecipients.getOrDefault("to", List.of()));
+        details.put("ccUserIds", preservedRecipients.getOrDefault("cc", List.of()));
+        details.put("bccUserIds", preservedRecipients.getOrDefault("bcc", List.of()));
+        details.put("preservedCcUserIds", previousRecipients.getOrDefault("cc", List.of()));
+        details.put("preservedBccUserIds", previousRecipients.getOrDefault("bcc", List.of()));
+        details.put("movementId", savedMovement.getId());
+        details.put("activeRecipientSetId", documentRecipientService.activeRecipientSetId(doc.getId()).orElse(null));
+        details.put("timeoutMinutes", timeoutMinutes);
+
+        auditLogService.logEventWithDetails(
+                "MOVEMENT",
+                doc.getId(),
                 "AUTO_FORWARD_DC_TIMEOUT",
-                "Auto-forwarded after DC did not view in " + timeoutMinutes + " minute(s). Receiver userId=" + receiverUserId
+                from,
+                "Auto-forwarded after DC did not view in " + timeoutMinutes + " minute(s). Receiver userId=" + receiverUserId,
+                details
         );
     }
 }

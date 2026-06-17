@@ -25,11 +25,17 @@ export function canPreviewDocument(doc, user) {
 }
 
 export function canSeePreviewOperational(doc, user) {
+  if (doc?.canViewTimeline !== undefined && doc?.canViewTimeline !== null) {
+    return !!doc.canViewTimeline;
+  }
   return canPreviewDocument(doc, user);
 }
 
 export function canSeePreviewRemarks(doc, user) {
   if (!doc || !user) return false;
+  if (doc.canViewMinutes !== undefined && doc.canViewMinutes !== null) {
+    return !!doc.canViewMinutes;
+  }
   return Number(doc.currentOwnerUserId) === Number(user.id)
     || hasPermission(user, "VIEW_REMARKS_WHEN_NOT_REPORT_AT");
 }

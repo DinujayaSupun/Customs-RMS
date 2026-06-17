@@ -21,6 +21,8 @@ public class SentMessageResponse {
     private String forwardVisibility;
     private Long toUserId;
     private String toUserName;
+    private RecipientSummaryResponse recipientSummary;
+    private String recipientSummaryText;
     private String latestRemarkPreview;
     private LocalDateTime sentAt;
     private boolean autoForwarded;
