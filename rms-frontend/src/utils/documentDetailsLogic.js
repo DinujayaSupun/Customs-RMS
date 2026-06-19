@@ -99,6 +99,8 @@ export function getDocumentDetailsCapabilities({
 
   const canAddRemark = !!doc && owner && !issued && hasPermission(user, "ADD_REMARK");
 
+  const canWorkflow = canForward || canReturn || canApprove || canReject || canIssue || canReopen;
+
   return {
     isOwner: owner,
     canViewAllHistory,
@@ -118,7 +120,8 @@ export function getDocumentDetailsCapabilities({
     canIssue,
     canReopen,
     canAddRemark,
-    canTypeRemark: canAddRemark || canForward || canReturn || canApprove || canReject || canIssue || canReopen,
+    canTypeRemark: canAddRemark || canWorkflow,
+    canWorkflow,
     daysOpenDisplay: getDaysOpenDisplay(doc),
   };
 }

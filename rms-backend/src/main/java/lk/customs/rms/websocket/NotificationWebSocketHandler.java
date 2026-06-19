@@ -1,4 +1,4 @@
-package lk.customs.rms.service;
+package lk.customs.rms.websocket;
 
 import lk.customs.rms.dto.RealtimeNotificationMessage;
 import org.springframework.stereotype.Component;

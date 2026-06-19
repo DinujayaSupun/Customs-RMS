@@ -1,5 +1,11 @@
 package lk.customs.rms.service;
 
+import lk.customs.rms.dto.AuditLogFilterOptionsResponse;
+import lk.customs.rms.dto.AuditLogResponse;
+import org.springframework.data.domain.Page;
+
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 
 public interface AuditLogService {
@@ -30,4 +36,18 @@ public interface AuditLogService {
 
     // ✅ NEW: remark logging (stored as DOCUMENT entity_type so it appears in document history)
     void logRemark(Long documentId, Long userId, String actionType, String message, Long remarkId);
+
+    // --- Query methods ---
+
+    Page<AuditLogResponse> searchLogs(LocalDate fromDate, LocalDate toDate,
+                                      String actionType, Long performedByUserId,
+                                      String document, int page, int size);
+
+    AuditLogFilterOptionsResponse getFilterOptions();
+
+    byte[] exportCsvBytes(LocalDate fromDate, LocalDate toDate,
+                          String actionType, Long performedByUserId,
+                          String document);
+
+    List<AuditLogResponse> getHistoryForDocument(Long documentId);
 }

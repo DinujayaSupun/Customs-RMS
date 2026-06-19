@@ -24,7 +24,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @RestController
-@CrossOrigin
+
 @RequestMapping("/api/documents/{documentId}/movements")
 public class DocumentMovementController {
 

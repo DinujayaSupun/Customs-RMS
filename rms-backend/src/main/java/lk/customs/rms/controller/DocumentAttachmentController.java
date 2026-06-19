@@ -21,7 +21,7 @@ import java.nio.file.Files;
 import java.util.List;
 
 @RestController
-@CrossOrigin
+
 public class DocumentAttachmentController {
 
     private final AttachmentService attachmentService;
@@ -79,7 +79,8 @@ public class DocumentAttachmentController {
                 mediaType = MediaType.parseMediaType(detected);
             }
         } catch (Exception ignored) {
-            // fallback below
+            // probeContentType can fail on some JVM/OS combinations;
+            // APPLICATION_OCTET_STREAM fallback below is safe.
         }
 
         // If detection fails, use filename extensions for common preview types

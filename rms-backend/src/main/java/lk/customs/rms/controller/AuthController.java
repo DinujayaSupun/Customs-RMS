@@ -34,7 +34,7 @@ import java.util.Locale;
 import java.util.Map;
 
 @RestController
-@CrossOrigin
+
 @RequestMapping("/api/auth")
 public class AuthController {
 

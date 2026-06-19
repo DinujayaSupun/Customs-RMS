@@ -24,7 +24,7 @@
       </div>
 
       <div class="rightBtns">
-        <button class="btn btn-primary" @click="openViewer(mainFile)" :disabled="!mainFile">
+        <button class="btn btn-primary" @click="openViewer(mainFile)" :disabled="!mainFile || !canViewFiles">
           Open Viewer
         </button>
         <button v-if="canDeleteDocument" class="btn danger" @click="deleteCurrentDocument" :disabled="busy">
@@ -162,11 +162,11 @@
         </div>
 
         <!-- ACTIONS -->
-        <div class="card workflowCard">
+        <div v-if="canWorkflow || canAddRemark || undoSendInfo.canUndo || !!undoSendInfo.helper" class="card workflowCard">
           <div class="cardTitle">Workflow Actions</div>
           <div class="cardSub">Add a minute, choose the next officer, and run the allowed action.</div>
 
-          <div class="ownershipBanner" :class="{ owner: isOwner }">
+          <div v-if="canWorkflow || canAddRemark" class="ownershipBanner" :class="{ owner: isOwner }">
             <div>
               <span class="ownershipLabel">Current User</span>
               <b>{{ formatUserLabel(currentUser) }}</b>
@@ -180,13 +180,13 @@
           </div>
 
           <!-- ✅ ONE remark box (used for forward + manual save) -->
-          <div class="formRow">
+          <div v-if="canTypeRemark" class="formRow">
             <div class="label">Minute (optional)</div>
 
             <textarea
               class="textarea"
               v-model="remarkDraft"
-              :disabled="busy || !canTypeRemark"
+              :disabled="busy"
               placeholder="Type minute..."
             ></textarea>
 
@@ -194,7 +194,7 @@
               <span class="hintLabel">Minute help</span>
               <HoverHint :text="canAddRemark
                 ? `You can save this minute now, or attach it when you run an available workflow action (${availableWorkflowActionNames}).`
-                : 'Minutes are read-only here. Only the current Report At user with Add Minute permission can add or save minutes.'" />
+                : `Attach a minute when you run a workflow action (${availableWorkflowActionNames}).`" />
             </div>
 
             <div class="btnRow" style="margin-top:8px;">
@@ -208,6 +208,8 @@
             </div>
           </div>
 
+          <template v-if="canForward || canReturn">
+          <template v-if="canForward">
           <div class="formRow">
             <div class="label">CC</div>
             <RecipientChipPicker
@@ -215,7 +217,7 @@
               :users="users"
               :exclude-user-ids="[currentUser?.id, toUserId]"
               :other-selected-ids="forwardBccUserIds"
-              :disabled="busy || !canForward"
+              :disabled="busy"
               placeholder="No CC users selected"
             />
           </div>
@@ -227,19 +229,20 @@
               :users="users"
               :exclude-user-ids="[currentUser?.id, toUserId]"
               :other-selected-ids="forwardCcUserIds"
-              :disabled="busy || !canForward"
+              :disabled="busy"
               placeholder="No BCC users selected"
             />
           </div>
+          </template>
 
           <div class="formRow">
-            <div class="label">Forward To</div>
+            <div class="label">{{ canForward ? 'Forward To' : 'Return To' }}</div>
 
             <div class="forwardSearchWrap">
               <input
                 class="input forwardSearch"
                 v-model="forwardUserSearch"
-                :disabled="busy || !canChooseWorkflowTarget"
+                :disabled="busy"
                 placeholder="Search user by name, role, department, or ID..."
                 spellcheck="false"
                 @focus="forwardSearchFocused = true"
@@ -270,7 +273,7 @@
               <b>{{ formatUserLabel(selectedForwardUser) }}</b>
             </div>
             <div v-else class="forwardSelected muted">
-              Select a user from the search results before forwarding or returning.
+              Select a user from the search results before {{ canForward ? 'forwarding or returning' : 'returning' }}.
             </div>
 
             <div class="forwardSearchMeta">
@@ -287,15 +290,15 @@
             </div>
 
               <div class="hintInline">
-                <span class="hintLabel">Forward rules</span>
+                <span class="hintLabel">{{ canForward ? 'Forward rules' : 'Return rules' }}</span>
                 <HoverHint :text="`Forward/Return are available only for the current Report At user with the required permission. Return suggests the most recent sender when possible, but you can choose another allowed user. Allowed statuses: ${forwardReturnAllowedStatusesLabel}.`" />
               </div>
           </div>
 
-          <div class="formRow">
+          <div v-if="canForward" class="formRow">
             <div class="label">Forward Visibility</div>
 
-            <select class="input" v-model="forwardVisibility" :disabled="busy || !canForward">
+            <select class="input" v-model="forwardVisibility" :disabled="busy">
               <option v-for="opt in availableForwardVisibilities" :key="opt" :value="opt">
                 {{ opt.charAt(0) + opt.slice(1).toLowerCase() }}
               </option>
@@ -306,12 +309,13 @@
               <HoverHint :text="`This sets visibility for the next Forward/Return movement. Options come from your public/private forward permissions; changing visibility also requires Change Document Visibility permission. Undo Send does not change the document's saved visibility. Available now: ${availableForwardVisibilities.join(', ') || 'None'}.`" />
             </div>
           </div>
+          </template>
 
-          <div class="btnRow">
-            <button class="btn btn-primary" :disabled="busy || !canForward" @click="doForward">
+          <div v-if="canWorkflow || undoSendInfo.canUndo || !!undoSendInfo.helper" class="btnRow">
+            <button v-if="canForward" class="btn btn-primary" :disabled="busy" @click="doForward">
               Forward
             </button>
-            <button class="btn" :disabled="busy || !canReturn" @click="doReturn">
+            <button v-if="canReturn" class="btn" :disabled="busy" @click="doReturn">
               Return
             </button>
             <button
@@ -326,13 +330,13 @@
 
             <div class="spacer"></div>
 
-            <button v-if="approveRejectButtonsEnabled" class="btn" :disabled="busy || !canApprove" @click="doApprove">Approve</button>
-            <button v-if="approveRejectButtonsEnabled" class="btn" :disabled="busy || !canReject" @click="doReject">Reject</button>
-            <button class="btn" :disabled="busy || !canIssue" @click="doIssue">Done</button>
-            <button class="btn" :disabled="busy || !canReopen" @click="doReopen">Reopen</button>
+            <button v-if="approveRejectButtonsEnabled && canApprove" class="btn" :disabled="busy" @click="doApprove">Approve</button>
+            <button v-if="approveRejectButtonsEnabled && canReject" class="btn" :disabled="busy" @click="doReject">Reject</button>
+            <button v-if="canIssue" class="btn" :disabled="busy" @click="doIssue">Done</button>
+            <button v-if="canReopen" class="btn" :disabled="busy" @click="doReopen">Reopen</button>
           </div>
 
-          <div class="hintInline">
+          <div v-if="canWorkflow" class="hintInline">
             <span class="hintLabel">Workflow rules</span>
             <HoverHint :text="workflowRulesHint" />
           </div>
@@ -400,7 +404,7 @@
 
           <!-- (Keeping your existing file visibility rule) -->
           <div v-if="!canViewFiles" class="lockBox">
-              Only the <b>user currently shown in Report At</b> can view file history.
+            You do not have permission to view this document's files.
           </div>
 
           <template v-else>
@@ -434,6 +438,7 @@
               </div>
             </template>
 
+            <template v-if="canUploadAttachments">
             <div class="attachRow">
               <input
                 id="attachmentFileInput"
@@ -441,12 +446,10 @@
                 class="hiddenFileInput"
                 type="file"
                 @change="onFilePick"
-                :disabled="!canUploadAttachments"
               />
               <button
                 class="btn"
                 type="button"
-                :disabled="!canUploadAttachments"
                 @click="openFilePicker"
               >
                 Choose File
@@ -454,7 +457,7 @@
               <span class="filePickLabel">{{ pickedFile ? pickedFile.name : "No file chosen" }}</span>
               <button
                 class="btn btn-primary"
-                :disabled="busy || !pickedFile || !canUploadAttachments"
+                :disabled="busy || !pickedFile"
                 @click="uploadPicked"
               >
                 Upload Attachment
@@ -465,6 +468,7 @@
               <span class="hintLabel">Upload rules</span>
             <HoverHint text="Upload is allowed only for the current Report At user with Upload Attachment permission, and is blocked after the document is Done. The first uploaded file is the main file; later uploads are added as attachments." />
             </div>
+            </template>
 
             <div v-if="attachmentsSorted.length === 0" class="empty">No files yet.</div>
 
@@ -492,7 +496,7 @@
                 <div class="btnRow" style="margin-top:10px;">
                   <button class="btn" @click="openViewer(a)">Preview</button>
                   <button class="btn" @click="openInNewTab(a)">Open</button>
-                  <button class="btn danger" :disabled="busy || !canDeleteAttachment(a)" @click="removeAttachment(a)">
+                  <button v-if="canDeleteAttachment(a)" class="btn danger" :disabled="busy" @click="removeAttachment(a)">
                     Delete
                   </button>
                 </div>
@@ -507,7 +511,7 @@
           <div class="cardSub">Track every workflow handoff and action history.</div>
 
           <div v-if="!canViewHistory" class="lockBox">
-              Only the <b>user currently shown in Report At</b> can view movement history.
+            You do not have permission to view this document's movement history.
           </div>
 
           <template v-else>
@@ -823,6 +827,7 @@ const canApprove = computed(() => detailCapabilities.value.canApprove);
 const canReject  = computed(() => detailCapabilities.value.canReject);
 const canIssue   = computed(() => detailCapabilities.value.canIssue);
 const canReopen  = computed(() => detailCapabilities.value.canReopen);
+const canWorkflow = computed(() => detailCapabilities.value.canWorkflow);
 const canDeleteDocument = computed(() => {
   if (doc.value?.canDelete !== undefined && doc.value?.canDelete !== null) {
     return Boolean(doc.value.canDelete);
@@ -2417,6 +2422,17 @@ async function removeAttachment(a) {
   .viewerHead {
     flex-direction:column;
     align-items:stretch;
+  }
+
+  .viewerSplit {
+    grid-template-columns:1fr;
+    grid-template-rows:auto 1fr;
+  }
+
+  .viewerList {
+    max-height:200px;
+    border-right:0;
+    border-bottom:1px solid #e5e7eb;
   }
 
   .detailsCard .kv {

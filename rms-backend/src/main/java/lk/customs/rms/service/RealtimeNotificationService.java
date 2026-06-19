@@ -1,6 +1,7 @@
 package lk.customs.rms.service;
 
 import lk.customs.rms.dto.RealtimeNotificationMessage;
+import lk.customs.rms.websocket.NotificationWebSocketHandler;
 import org.springframework.stereotype.Service;
 
 @Service

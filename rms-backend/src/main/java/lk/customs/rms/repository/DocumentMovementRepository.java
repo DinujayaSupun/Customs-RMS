@@ -88,4 +88,14 @@ public interface DocumentMovementRepository extends JpaRepository<DocumentMoveme
         boolean existsPrivateForwardTrailForUser(@Param("documentId") Long documentId,
                                                                                          @Param("userId") Long userId,
                                                                                          @Param("forwardAction") MovementActionType forwardAction);
+
+    @Query("""
+            select m from DocumentMovement m
+            where m.documentId in :documentIds
+              and m.id = (
+                  select max(m2.id) from DocumentMovement m2
+                  where m2.documentId = m.documentId
+              )
+            """)
+    List<DocumentMovement> findLatestByDocumentIds(@Param("documentIds") Collection<Long> documentIds);
 }

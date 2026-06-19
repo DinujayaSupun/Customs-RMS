@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -74,6 +75,24 @@ public class PermissionServiceImpl implements PermissionService {
                 .map(name -> name.toUpperCase(Locale.ROOT))
                 .distinct()
                 .toList();
+    }
+
+    @Override
+    public Set<AppPermission> getPermissionsForUser(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BadRequestException("User not found: " + userId));
+        if (user.getRole() == null) return EnumSet.noneOf(AppPermission.class);
+        Set<AppPermission> result = EnumSet.noneOf(AppPermission.class);
+        rolePermissionRepository
+                .findByRole_RoleNameIgnoreCaseOrderByPermissionNameAsc(user.getRole().getRoleName())
+                .stream()
+                .filter(rp -> Boolean.TRUE.equals(rp.getEnabled()))
+                .forEach(rp -> {
+                    try {
+                        result.add(AppPermission.valueOf(rp.getPermissionName().toUpperCase(Locale.ROOT)));
+                    } catch (IllegalArgumentException ignored) {}
+                });
+        return result;
     }
 
     @Override

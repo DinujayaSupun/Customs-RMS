@@ -8,6 +8,7 @@
     "dev:free-ports:force": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/free-dev-ports.ps1 -Force",
     "dev:banner": "node -e \"console.log('========================================'); console.log('Customs RMS Dev URLs'); console.log('Frontend: http://localhost:5173'); console.log('Backend : http://localhost:8080'); console.log('========================================');\"",
     "dev:backend": "set MAVEN_USER_HOME=%CD%\\.m2&& rms-backend\\mvnw.cmd -f rms-backend/pom.xml spring-boot:run",
+    "dev:backend:unix": "MAVEN_USER_HOME=$(pwd)/.m2 rms-backend/mvnw -f rms-backend/pom.xml spring-boot:run",
     "dev:frontend": "npm --prefix rms-frontend run dev",
     "dev:all": "npm run dev:check-ports && npm run dev:banner && node scripts/dev-with-env.js"
   },

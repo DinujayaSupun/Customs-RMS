@@ -26,7 +26,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
-@CrossOrigin
+
 @RequestMapping("/api/documents/{documentId}/remarks")
 public class DocumentRemarkController {
 

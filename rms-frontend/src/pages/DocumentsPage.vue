@@ -786,7 +786,7 @@ h2 { margin:0; line-height:1.15; }
 }
 
 .tableWrap {
-  overflow-x:hidden;
+  overflow-x:auto;
   overflow-y:auto;
   position:relative;
   z-index:0;

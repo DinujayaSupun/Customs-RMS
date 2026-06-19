@@ -144,6 +144,51 @@ describe("documentDetailsLogic", () => {
     ).toBe(true);
   });
 
+  it("exposes canWorkflow true when any single workflow action is available", () => {
+    const baseDoc = {
+      currentOwnerUserId: 7,
+      status: "IN_PROGRESS",
+      receivedDate: "2026-04-20",
+      completedAt: null,
+      issuedAt: null,
+    };
+
+    expect(
+      getDocumentDetailsCapabilities({
+        doc: baseDoc,
+        user: user(7, ["FORWARD_DOCUMENT", "FORWARD_PUBLIC"]),
+        approveRejectButtonsEnabled: true,
+        forwardReturnAllowedStatuses: ["IN_PROGRESS"],
+      }).canWorkflow,
+    ).toBe(true);
+
+    expect(
+      getDocumentDetailsCapabilities({
+        doc: baseDoc,
+        user: user(7, ["APPROVE_DOCUMENT"]),
+        approveRejectButtonsEnabled: true,
+        forwardReturnAllowedStatuses: [],
+      }).canWorkflow,
+    ).toBe(true);
+  });
+
+  it("exposes canWorkflow false for a non-owner viewer with no workflow permissions", () => {
+    expect(
+      getDocumentDetailsCapabilities({
+        doc: {
+          currentOwnerUserId: 99,
+          status: "IN_PROGRESS",
+          receivedDate: "2026-04-20",
+          completedAt: null,
+          issuedAt: null,
+        },
+        user: user(7, ["VIEW_REMARKS_WHEN_NOT_REPORT_AT"]),
+        approveRejectButtonsEnabled: true,
+        forwardReturnAllowedStatuses: ["IN_PROGRESS"],
+      }).canWorkflow,
+    ).toBe(false);
+  });
+
   it("matches remarks to the nearest later movement by the same user within the allowed window", () => {
     const movements = [
       { id: 1, actionByUserId: 7, actionAt: "2026-06-15T10:05:00Z" },

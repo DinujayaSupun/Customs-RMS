@@ -20,6 +20,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -113,10 +115,18 @@ public class DocumentRecipientServiceImpl implements DocumentRecipientService {
         }
 
         List<DocumentRecipientSet> sets = recipientSetRepository.findByDocumentIdOrderByCreatedAtDescIdDesc(document.getId());
+        List<Long> inactiveSetIds = sets.stream().filter(s -> !s.isActive()).map(DocumentRecipientSet::getId).toList();
+
+        Map<Long, List<DocumentRecipient>> recipientsBySetId = inactiveSetIds.isEmpty()
+                ? Map.of()
+                : recipientRepository.findByRecipientSetIdInOrderByRecipientSetIdAscRecipientTypeAscUserIdAsc(inactiveSetIds)
+                        .stream()
+                        .collect(Collectors.groupingBy(DocumentRecipient::getRecipientSetId));
+
         for (DocumentRecipientSet set : sets) {
             if (set.isActive()) continue;
 
-            List<DocumentRecipient> recipients = recipientRepository.findByRecipientSetIdOrderByRecipientTypeAscUserIdAsc(set.getId());
+            List<DocumentRecipient> recipients = recipientsBySetId.getOrDefault(set.getId(), List.of());
             boolean matchesTo = userIds(recipients, RecipientType.TO).stream().anyMatch(toUserId::equals);
             if (!matchesTo) continue;
 
@@ -319,6 +329,56 @@ public class DocumentRecipientServiceImpl implements DocumentRecipientService {
     }
 
     @Override
+    public Map<Long, Optional<RecipientType>> activeRecipientTypesForUser(Collection<Long> documentIds, Long userId) {
+        if (documentIds == null || documentIds.isEmpty() || userId == null) return Map.of();
+        List<DocumentRecipient> matches = recipientRepository.findActiveForDocuments(documentIds)
+                .stream()
+                .filter(r -> userId.equals(r.getUserId()))
+                .toList();
+        Map<Long, Optional<RecipientType>> result = new HashMap<>();
+        documentIds.forEach(id -> result.put(id, Optional.empty()));
+        matches.forEach(r -> result.merge(r.getDocumentId(),
+                Optional.of(r.getRecipientType()),
+                (existing, incoming) -> existing.isPresent() ? existing : incoming));
+        return result;
+    }
+
+    @Override
+    public Map<Long, RecipientSummaryResponse> summaryBatchForViewer(Collection<Long> documentIds, Long viewerUserId) {
+        if (documentIds == null || documentIds.isEmpty()) return Map.of();
+
+        List<DocumentRecipient> allRecipients = recipientRepository.findActiveForDocuments(documentIds);
+        Map<Long, List<DocumentRecipient>> byDoc = allRecipients.stream()
+                .collect(Collectors.groupingBy(DocumentRecipient::getDocumentId));
+
+        Set<Long> userIds = allRecipients.stream().map(DocumentRecipient::getUserId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Map<Long, User> usersById = userIds.isEmpty()
+                ? Map.of()
+                : userRepository.findAllById(userIds).stream()
+                        .collect(Collectors.toMap(User::getId, Function.identity()));
+
+        boolean canViewHidden = permissionService.hasPermission(viewerUserId, AppPermission.VIEW_HIDDEN_RECIPIENTS);
+
+        Map<Long, RecipientSummaryResponse> result = new HashMap<>();
+        for (Long docId : documentIds) {
+            List<DocumentRecipient> recipients = byDoc.getOrDefault(docId, List.of());
+            boolean viewerIsBcc = recipients.stream()
+                    .anyMatch(r -> r.getRecipientType() == RecipientType.BCC && r.getUserId().equals(viewerUserId));
+            List<RecipientUserResponse> to = mapUsers(recipients, RecipientType.TO, usersById, viewerUserId, false, false);
+            List<RecipientUserResponse> cc = mapUsers(recipients, RecipientType.CC, usersById, viewerUserId, false, false);
+            List<RecipientUserResponse> bcc = canViewHidden
+                    ? mapUsers(recipients, RecipientType.BCC, usersById, viewerUserId, false, false)
+                    : viewerIsBcc
+                        ? mapUsers(recipients, RecipientType.BCC, usersById, viewerUserId, true, true)
+                        : List.of();
+            result.put(docId, RecipientSummaryResponse.builder()
+                    .to(to).cc(cc).bcc(bcc).compactText(compactText(to, cc, bcc)).build());
+        }
+        return result;
+    }
+
+    @Override
     public java.util.Map<String, java.util.List<Long>> getActiveRecipientsByType(Long documentId) {
         List<DocumentRecipient> recipients = activeRecipients(documentId);
         return Map.of(
@@ -394,11 +454,7 @@ public class DocumentRecipientServiceImpl implements DocumentRecipientService {
     }
 
     private void deactivateActiveSets(Long documentId) {
-        List<DocumentRecipientSet> activeSets = recipientSetRepository.findByDocumentIdAndActiveTrue(documentId);
-        for (DocumentRecipientSet activeSet : activeSets) {
-            activeSet.setActive(false);
-        }
-        recipientSetRepository.saveAll(activeSets);
+        recipientSetRepository.deactivateAllForDocument(documentId);
     }
 
     private void validateRecipients(Long toUserId, List<Long> ccUserIds, List<Long> bccUserIds) {

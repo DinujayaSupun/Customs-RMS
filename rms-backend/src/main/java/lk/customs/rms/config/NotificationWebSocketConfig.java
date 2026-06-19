@@ -1,7 +1,7 @@
 package lk.customs.rms.config;
 
 import lk.customs.rms.security.NotificationHandshakeInterceptor;
-import lk.customs.rms.service.NotificationWebSocketHandler;
+import lk.customs.rms.websocket.NotificationWebSocketHandler;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;

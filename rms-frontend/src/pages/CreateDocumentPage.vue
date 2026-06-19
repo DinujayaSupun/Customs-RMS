@@ -280,6 +280,10 @@ h2 { margin:0; }
   grid-template-columns: 1fr 1fr;
   gap:12px;
 }
+@media (max-width: 640px) {
+  .formGrid { grid-template-columns: 1fr; }
+  .span2 { grid-column: span 1; }
+}
 .span2 { grid-column: span 2; }
 
 .labelTop { font-size:12px; font-weight:800; color:#374151; margin-bottom:6px; }

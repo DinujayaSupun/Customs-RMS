@@ -31,13 +31,12 @@ public interface DocumentRecipientRepository extends JpaRepository<DocumentRecip
                                                           @Param("userId") Long userId);
 
     @Query("""
-            select r.documentId from DocumentRecipient r
+            select r from DocumentRecipient r
             join DocumentRecipientSet s on s.id = r.recipientSetId
             where s.active = true
-              and r.userId = :userId
-              and r.recipientType = :recipientType
+              and r.documentId in :documentIds
               and r.removedAt is null
+            order by r.documentId asc, r.recipientType asc, r.userId asc
             """)
-    List<Long> findActiveDocumentIdsForUserAndType(@Param("userId") Long userId,
-                                                   @Param("recipientType") RecipientType recipientType);
+    List<DocumentRecipient> findActiveForDocuments(@Param("documentIds") Collection<Long> documentIds);
 }

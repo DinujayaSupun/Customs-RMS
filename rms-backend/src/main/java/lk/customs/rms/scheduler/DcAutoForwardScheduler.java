@@ -1,4 +1,4 @@
-package lk.customs.rms.service;
+package lk.customs.rms.scheduler;
 
 import lk.customs.rms.entity.DcAutoForwardConfig;
 import lk.customs.rms.entity.Document;
@@ -11,6 +11,9 @@ import lk.customs.rms.repository.DocumentMovementRepository;
 import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.DocumentUserViewRepository;
 import lk.customs.rms.repository.UserRepository;
+import lk.customs.rms.service.AuditLogService;
+import lk.customs.rms.service.DcAutoForwardConfigService;
+import lk.customs.rms.service.DocumentRecipientService;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;

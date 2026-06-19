@@ -2,6 +2,9 @@ package lk.customs.rms;
 
 import lk.customs.rms.entity.AuditLog;
 import lk.customs.rms.repository.AuditLogRepository;
+import lk.customs.rms.repository.DocumentAttachmentRepository;
+import lk.customs.rms.repository.DocumentRepository;
+import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.service.impl.AuditLogServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,7 +27,13 @@ class AuditLogServiceImplTests {
     @BeforeEach
     void setUp() {
         auditLogRepository = mock(AuditLogRepository.class);
-        auditLogService = new AuditLogServiceImpl(auditLogRepository, objectMapper);
+        auditLogService = new AuditLogServiceImpl(
+                auditLogRepository,
+                objectMapper,
+                mock(UserRepository.class),
+                mock(DocumentRepository.class),
+                mock(DocumentAttachmentRepository.class)
+        );
     }
 
     @Test

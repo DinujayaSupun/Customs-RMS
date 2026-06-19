@@ -6,9 +6,11 @@ import lk.customs.rms.entity.DocumentRecipient;
 import lk.customs.rms.enums.RecipientSetReason;
 import lk.customs.rms.enums.RecipientType;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 public interface DocumentRecipientService {
     void createInitialSet(Document document, Long actorUserId, Long movementId);
@@ -56,4 +58,8 @@ public interface DocumentRecipientService {
     Optional<Long> activeRecipientSetId(Long documentId);
 
     Map<String, List<Long>> getActiveRecipientsByType(Long documentId);
+
+    Map<Long, Optional<RecipientType>> activeRecipientTypesForUser(Collection<Long> documentIds, Long userId);
+
+    Map<Long, RecipientSummaryResponse> summaryBatchForViewer(Collection<Long> documentIds, Long viewerUserId);
 }

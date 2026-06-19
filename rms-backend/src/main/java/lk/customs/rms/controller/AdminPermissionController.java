@@ -21,7 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
-@CrossOrigin
+
 @RequestMapping("/api/admin/permissions")
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminPermissionController {

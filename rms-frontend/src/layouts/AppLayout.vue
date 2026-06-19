@@ -1,6 +1,11 @@
 <template>
   <div class="app">
     <header class="header">
+      <button class="hamburger" type="button" aria-label="Open navigation menu" @click="openMobileDrawer">
+        <svg viewBox="0 0 24 24" class="hamburger-svg" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
+      </button>
       <div class="brand">
         <span class="brand-logo">
           <img src="/sri-lanka-customs-logo.svg" alt="Sri Lanka Customs logo" />
@@ -35,9 +40,10 @@
     </div>
 
     <div class="body">
+      <div v-if="isMobileDrawerOpen" class="drawer-backdrop" @click="closeMobileDrawer" aria-hidden="true"></div>
       <aside
         class="sidebar"
-        :class="{ 'sidebar-expanded': isSidebarExpanded }"
+        :class="{ 'sidebar-expanded': isSidebarExpanded || isMobileDrawerOpen, 'mobile-drawer': isMobileDrawerOpen }"
         ref="sidebarRef"
         @mouseenter="expandSidebar"
         @mouseleave="scheduleSidebarCollapse"
@@ -108,7 +114,7 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import { getMyWorkloadStats } from "../api/documents.api";
 import { createMyProfilePictureUrl } from "../api/auth.api";
 import { clearSession, getCurrentUser, hasPermission } from "../auth/currentUser";
@@ -137,11 +143,13 @@ function setPersistedSidebarExpanded(value) {
 }
 
 const router = useRouter();
+const route = useRoute();
 const userRef = ref(getCurrentUser());
 const avatarBroken = ref(false);
 const avatarUrl = ref("");
 const sidebarRef = ref(null);
 const isSidebarExpanded = ref(readPersistedSidebarExpanded());
+const isMobileDrawerOpen = ref(false);
 const backendUnavailable = ref(false);
 const { success, info } = useToast();
 
@@ -175,6 +183,18 @@ const initials = computed(() => {
   const parts = text.split(/\s+/).slice(0, 2);
   return parts.map((p) => p[0]?.toUpperCase() || "").join("") || "U";
 });
+
+function openMobileDrawer() {
+  isMobileDrawerOpen.value = true;
+  document.body.style.overflow = "hidden";
+}
+
+function closeMobileDrawer() {
+  isMobileDrawerOpen.value = false;
+  document.body.style.overflow = "";
+}
+
+watch(() => route.path, closeMobileDrawer);
 
 let avatarRequestId = 0;
 let sidebarCollapseTimer = null;
@@ -219,6 +239,7 @@ function handleSidebarNavPress() {
   clearSidebarCollapseTimer();
   setPersistedSidebarExpanded(true);
   isSidebarExpanded.value = true;
+  if (isMobileDrawerOpen.value) closeMobileDrawer();
 }
 
 function handleSidebarNavClick(event) {
@@ -326,6 +347,7 @@ onUnmounted(() => {
   window.removeEventListener("rms_auth_changed", onAuthChanged);
   window.removeEventListener("rms_backend_status_changed", onBackendStatusChanged);
   clearSidebarCollapseTimer();
+  document.body.style.overflow = "";
 });
 </script>
 
@@ -379,7 +401,7 @@ onUnmounted(() => {
 .brand-name { font-weight: 800; font-size: 14px; }
 .brand-sub { font-size: 12px; opacity: 0.9; }
 
-.user { display: flex; align-items: center; gap: 12px; }
+.user { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .user-role { font-size: 12px; opacity: 0.95; }
 
 .avatarWrap { display: flex; align-items: center; }
@@ -604,26 +626,83 @@ onUnmounted(() => {
   transform: translateY(-1px);
 }
 
-@media (max-width: 900px) {
-  .sidebar,
-  .sidebar-expanded {
-    width: var(--sidebar-expanded-width);
-    flex-basis: var(--sidebar-expanded-width);
+.hamburger {
+  display: none;
+  background: rgba(255,255,255,0.1);
+  border: none;
+  border-radius: 8px;
+  padding: 6px;
+  cursor: pointer;
+  color: #fff;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.hamburger-svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  display: block;
+}
+
+.drawer-backdrop {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .header {
+    height: auto;
+    min-height: 56px;
+    flex-wrap: wrap;
+    padding: 6px 12px;
+    gap: 6px;
   }
 
-  .sidebar-text {
-    opacity: 1;
-    transform: translateX(0);
-    display: inline;
+  .brand-sub {
+    display: none;
+  }
+
+  .user-role {
+    display: none;
+  }
+
+  .hamburger {
+    display: flex;
   }
 
   .sidebar {
-    padding: 16px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    z-index: 200;
+    width: var(--sidebar-expanded-width) !important;
+    flex-basis: var(--sidebar-expanded-width) !important;
+    transform: translateX(-100%);
+    transition: transform 0.28s ease;
+    box-shadow: none;
   }
 
-  .nav {
-    justify-content: flex-start;
-    padding: 8px;
+  .sidebar.mobile-drawer {
+    transform: translateX(0);
+    box-shadow: 12px 0 40px rgba(0, 0, 0, 0.35);
+  }
+
+  .drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 199;
+  }
+
+  .content {
+    width: 100%;
   }
 }
+
 </style>

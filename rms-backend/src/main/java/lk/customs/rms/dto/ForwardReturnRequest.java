@@ -1,6 +1,7 @@
 package lk.customs.rms.dto;
 
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -19,7 +20,9 @@ public class ForwardReturnRequest {
     // ✅ Optional remark to save before forward/return
     private String remarkText;
 
+    @Size(max = 50, message = "CC recipients cannot exceed 50")
     private List<Long> ccUserIds;
 
+    @Size(max = 50, message = "BCC recipients cannot exceed 50")
     private List<Long> bccUserIds;
 }
