@@ -96,6 +96,7 @@ public class PermissionServiceImpl implements PermissionService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public PermissionMatrixResponse getPermissionMatrix() {
         return buildMatrix();
     }

@@ -208,6 +208,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .build());
     }
 
+    @Transactional(readOnly = true)
     @Override
     public Page<DocumentResponse> getDocuments(int page, int size, String search, String status, String priority,
                                                String receivedFrom, String receivedTo, String sort, Long actorUserId) {
@@ -252,6 +253,7 @@ public class DocumentServiceImpl implements DocumentService {
         return toDocumentResponsePage(docs, actorUserId);
     }
 
+    @Transactional(readOnly = true)
     @Override
     public Page<DocumentResponse> getMyInboxDocuments(int page, int size, String search, String status, String priority,
                                                       String sort, RecipientType recipientType, Long actorUserId) {
@@ -395,6 +397,7 @@ public class DocumentServiceImpl implements DocumentService {
         });
     }
 
+    @Transactional(readOnly = true)
     @Override
     public Page<SentMessageResponse> getSentMessages(int page, int size, String search, String status, String priority, Long actorUserId) {
         permissionService.ensurePermission(actorUserId, AppPermission.VIEW_SENT_MESSAGES, "You are not allowed to view sent messages.");
@@ -621,6 +624,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .build());
     }
 
+    @Transactional(readOnly = true)
     @Override
     public MyWorkloadStatsResponse getMyWorkloadStats(Long actorUserId) {
         long assignedCount = documentRepository.countAssignedActiveByOwner(actorUserId, Status.ISSUED);

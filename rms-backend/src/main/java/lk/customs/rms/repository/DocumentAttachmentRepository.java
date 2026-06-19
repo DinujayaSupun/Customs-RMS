@@ -2,7 +2,9 @@ package lk.customs.rms.repository;
 
 import lk.customs.rms.entity.DocumentAttachment;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -21,4 +23,8 @@ public interface DocumentAttachmentRepository extends JpaRepository<DocumentAtta
     List<DocumentAttachment> findByDocumentIdInAndDeletedFalseAndIsLatestTrue(List<Long> documentIds);
 
     Optional<DocumentAttachment> findFirstByDocumentIdAndDeletedFalseAndIsLatestTrue(Long documentId);
+
+    @Modifying
+    @Query("UPDATE DocumentAttachment a SET a.isLatest = false WHERE a.documentId = :docId AND a.deleted = false")
+    void clearLatestFlag(@Param("docId") Long docId);
 }

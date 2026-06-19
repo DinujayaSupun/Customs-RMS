@@ -79,14 +79,7 @@ public class AttachmentServiceImpl implements AttachmentService {
 
         int nextVersion = attachmentRepository.findMaxVersionNo(documentId) + 1;
 
-        // Only one attachment is marked latest; version history remains available for file review.
-        var existing = attachmentRepository.findByDocumentIdAndDeletedFalseOrderByVersionNoDesc(documentId);
-        for (var a : existing) {
-            if (Boolean.TRUE.equals(a.getIsLatest())) {
-                a.setIsLatest(false);
-                attachmentRepository.save(a);
-            }
-        }
+        attachmentRepository.clearLatestFlag(documentId);
 
         String relativePath = fileStorageService.saveDocumentAttachment(documentId, nextVersion, file);
 
@@ -116,6 +109,7 @@ public class AttachmentServiceImpl implements AttachmentService {
         return toResponse(saved);
     }
 
+    @Transactional(readOnly = true)
     @Override
         public List<AttachmentResponse> listForDocument(Long documentId, Long actorUserId) {
                 Document doc = documentRepository.findByIdAndDeletedFalse(documentId)

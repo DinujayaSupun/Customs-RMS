@@ -24,6 +24,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @RestController
 
@@ -180,14 +183,18 @@ public class DocumentRemarkController {
             throw new BadRequestException("You are not allowed to view minutes unless the document is assigned to you in Report At.");
         }
 
-        return remarkRepository.findByDocumentIdOrderByRemarkedAtAsc(documentId)
-                .stream()
+        List<DocumentRemark> remarks = remarkRepository.findByDocumentIdOrderByRemarkedAtAsc(documentId);
+        Set<Long> userIds = remarks.stream().map(DocumentRemark::getRemarkedByUserId).collect(Collectors.toSet());
+        Map<Long, String> nameById = userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(u -> u.getId(), u -> u.getFullName()));
+
+        return remarks.stream()
                 .map(r -> RemarkResponse.builder()
                         .id(r.getId())
                         .documentId(r.getDocumentId())
                         .remarkText(r.getRemarkText())
                         .remarkedByUserId(r.getRemarkedByUserId())
-                        .remarkedByName(r.getRemarkedBy() != null ? r.getRemarkedBy().getFullName() : null)
+                        .remarkedByName(nameById.get(r.getRemarkedByUserId()))
                         .remarkedAt(r.getRemarkedAt())
                         .canEdit(canModifyRemark(doc, r, actorUserId))
                         .canDelete(canModifyRemark(doc, r, actorUserId))
