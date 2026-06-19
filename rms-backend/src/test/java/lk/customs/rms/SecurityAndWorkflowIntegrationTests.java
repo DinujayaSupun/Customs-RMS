@@ -447,6 +447,29 @@ class SecurityAndWorkflowIntegrationTests {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    void pageSizeConstraintRejectsValuesOver500() throws Exception {
+        String password = "PageSize123";
+        User user = createUser("ADMIN", "page-size-", password);
+        String token = loginAndGetToken(user.getUsername(), password);
+
+        mockMvc.perform(get("/api/documents").param("size", "501")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/documents/my-inbox").param("size", "501")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/documents/sent-messages").param("size", "501")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/documents").param("size", "500")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk());
+    }
+
     private User createUser(String roleName, String prefix, String rawPassword) {
         Role role = roleRepository.findByRoleName(roleName)
                 .orElseThrow(() -> new IllegalStateException("Role not found: " + roleName));

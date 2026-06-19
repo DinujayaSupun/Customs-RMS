@@ -895,6 +895,90 @@ class AdminManagementAndPermissionIntegrationTests {
                 .andExpect(jsonPath("$[0].actionType").value("CREATE"));
     }
 
+    @Test
+    void adminCanMergeUsersWithSameRoleTransferringActiveDocumentsToTarget() throws Exception {
+        String password = "Merge1234";
+        User admin = createUser("ADMIN", "merge-admin-", password);
+        User source = createUser("DC", "merge-source-", password);
+        User target = createUser("DC", "merge-target-", password);
+
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+        String sourceToken = loginAndGetToken(source.getUsername(), password);
+        String targetToken = loginAndGetToken(target.getUsername(), password);
+
+        long documentId = createDocument(source, sourceToken, "merge-doc");
+
+        mockMvc.perform(post("/api/admin/users/merge")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceUserId": %d,
+                                  "targetUserId": %d
+                                }
+                                """.formatted(source.getId(), target.getId())))
+                .andExpect(status().isOk());
+
+        // Document transferred to target
+        mockMvc.perform(get("/api/documents/{id}", documentId)
+                        .header("Authorization", bearer(targetToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentOwnerUserId").value(target.getId()));
+
+        // Source is deactivated
+        assertThat(userRepository.findById(source.getId()).orElseThrow().getIsActive()).isFalse();
+
+        // Same user → 400
+        mockMvc.perform(post("/api/admin/users/merge")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceUserId": %d,
+                                  "targetUserId": %d
+                                }
+                                """.formatted(target.getId(), target.getId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Source and target users must be different."));
+
+        // Different roles → 400
+        User sc = createUser("SC", "merge-sc-", password);
+        mockMvc.perform(post("/api/admin/users/merge")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceUserId": %d,
+                                  "targetUserId": %d
+                                }
+                                """.formatted(sc.getId(), target.getId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Users must have the same role to merge."));
+    }
+
+    @Test
+    void auditLogCsvExportReturnsCsvFileWithHeaderAndDataRows() throws Exception {
+        String password = "CsvExport123";
+        User admin = createUser("ADMIN", "csv-export-admin-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+
+        // Create a document via API — DocumentServiceImpl logs a DOCUMENT/CREATE entry
+        createDocument(admin, adminToken, "csv-export-doc");
+
+        MvcResult result = mockMvc.perform(get("/api/audit-logs/export")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String contentDisposition = result.getResponse().getHeader("Content-Disposition");
+        assertThat(contentDisposition).startsWith("attachment; filename=\"audit-logs-");
+        assertThat(contentDisposition).endsWith(".csv\"");
+
+        String body = result.getResponse().getContentAsString();
+        assertThat(body).startsWith("id,performedAt,actionType,entityType,entityId,performedByUserId,performedByUserName,message,detailsJson");
+        assertThat(body.lines().count()).isGreaterThan(1);
+    }
+
     private User createUser(String roleName, String prefix, String rawPassword) {
         Role role = roleRepository.findByRoleName(roleName)
                 .orElseThrow(() -> new IllegalStateException("Role not found: " + roleName));
