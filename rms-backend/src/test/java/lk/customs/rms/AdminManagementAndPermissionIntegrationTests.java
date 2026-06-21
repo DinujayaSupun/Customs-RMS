@@ -1203,6 +1203,97 @@ class AdminManagementAndPermissionIntegrationTests {
         return readJson(result).get("id").asLong();
     }
 
+    @Test
+    void adminUserCsvExportReturnsHeaderAndUserRowsAndRejectsNonAdmin() throws Exception {
+        String password = "UserCsv123";
+        User admin = createUser("ADMIN", "user-csv-admin-", password);
+        User dc = createUser("DC", "user-csv-dc-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+
+        MvcResult result = mockMvc.perform(get("/api/admin/users/export")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        assertThat(result.getResponse().getHeader("Content-Disposition")).contains("users-export.csv");
+        String body = result.getResponse().getContentAsString();
+        assertThat(body).startsWith("id,fullName,username,email,phone,department,role,active,createdAt");
+        assertThat(body.lines().count()).isGreaterThan(1);
+        assertThat(body).contains(dc.getUsername());
+
+        // The export exposes every user's contact details, so it must stay admin-only.
+        mockMvc.perform(get("/api/admin/users/export")
+                        .header("Authorization", bearer(dcToken)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void myWorkloadStatsCountsAssignedAndOpenedDocumentsForOwner() throws Exception {
+        String password = "Workload123";
+        User dc = createUser("DC", "workload-dc-", password);
+        User ddc = createUser("DDC", "workload-ddc-", password);
+
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+        String ddcToken = loginAndGetToken(ddc.getUsername(), password);
+
+        long documentId = createDocument(dc, dcToken, "workload-doc");
+        forwardDocument(documentId, dcToken, ddc.getId(), "PRIVATE", "assign to ddc");
+
+        // Assigned to ddc but not yet opened by ddc.
+        JsonNode before = readJson(mockMvc.perform(get("/api/documents/my-workload-stats")
+                        .header("Authorization", bearer(ddcToken)))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(before.get("assignedCount").asLong()).isEqualTo(1);
+        assertThat(before.get("openedCount").asLong()).isEqualTo(0);
+        assertThat(before.get("unopenedCount").asLong()).isEqualTo(1);
+
+        // Opening the document records a view, which moves it from unopened to opened.
+        mockMvc.perform(get("/api/documents/{id}", documentId)
+                        .header("Authorization", bearer(ddcToken)))
+                .andExpect(status().isOk());
+
+        JsonNode after = readJson(mockMvc.perform(get("/api/documents/my-workload-stats")
+                        .header("Authorization", bearer(ddcToken)))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(after.get("assignedCount").asLong()).isEqualTo(1);
+        assertThat(after.get("openedCount").asLong()).isEqualTo(1);
+        assertThat(after.get("unopenedCount").asLong()).isEqualTo(0);
+    }
+
+    @Test
+    void auditLogFilterOptionsReturnActionTypesAndPerformers() throws Exception {
+        String password = "FilterOpts123";
+        User admin = createUser("ADMIN", "filter-opts-admin-", password);
+        User dc = createUser("DC", "filter-opts-dc-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+
+        // Generate audit activity: a CREATE action performed by dc.
+        createDocument(dc, dcToken, "filter-opts-doc");
+
+        JsonNode options = readJson(mockMvc.perform(get("/api/audit-logs/filter-options")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn());
+
+        assertThat(options.get("actionTypes").isArray()).isTrue();
+        boolean hasCreate = false;
+        for (JsonNode a : options.get("actionTypes")) {
+            if ("CREATE".equals(a.asText())) hasCreate = true;
+        }
+        assertThat(hasCreate).as("action types should include CREATE after a document is created").isTrue();
+
+        assertThat(options.get("performers").isArray()).isTrue();
+        boolean hasDc = false;
+        for (JsonNode p : options.get("performers")) {
+            if (p.get("id").asLong() == dc.getId()) hasDc = true;
+        }
+        assertThat(hasDc).as("performers should include the user who created the document").isTrue();
+    }
+
     private User createUser(String roleName, String prefix, String rawPassword) {
         Role role = roleRepository.findByRoleName(roleName)
                 .orElseThrow(() -> new IllegalStateException("Role not found: " + roleName));

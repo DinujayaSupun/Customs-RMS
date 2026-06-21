@@ -204,6 +204,13 @@ from **Users**, and review **Permissions**.
 ## 8. Nginx — TLS, SPA, and the WebSocket proxy
 
 ```nginx
+# Rate-limit zone for the login endpoint. This directive lives in the http{} context, so put it
+# at the top of your conf.d/*.conf snippet (which is included inside http{}), NOT inside server{}.
+# It throttles brute-force password guessing before requests reach the app. 10 requests/minute/IP
+# is generous for real staff (who log in once or twice a day) but stops rapid guessing. If all
+# staff share one office egress IP, keep the rate per-minute (as here) so normal logins are unaffected.
+limit_req_zone $binary_remote_addr zone=login:10m rate=10r/m;
+
 server {
     listen 443 ssl http2;
     server_name rms.customs.gov.lk;
@@ -219,6 +226,18 @@ server {
     index index.html;
     location / {
         try_files $uri $uri/ /index.html;   # client-side routing fallback
+    }
+
+    # 2a) Login endpoint — rate-limited to slow brute-force. An exact-match (=) location wins over
+    #     the /api/ prefix below, so only login is throttled. burst=5 lets a real user mistype a few
+    #     times without being delayed, then the 10r/m rate kicks in.
+    location = /api/auth/login {
+        limit_req zone=login burst=5 nodelay;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 
     # 2) REST API
@@ -269,6 +288,10 @@ Because the browser origin is now `https://rms.customs.gov.lk`, that exact value
 - [ ] `backend.env` is `chmod 600`, owned by the service user; secrets never committed.
 - [ ] `app.seed.enabled` is off (guaranteed by `prod`); temp seed creds removed after bootstrap.
 - [ ] OS firewall exposes only 80/443; `3306` and `8080` stay on the private network.
+- [ ] Login endpoint is rate-limited at Nginx (`limit_req` on `/api/auth/login`, §8) to slow
+      brute-force. The app itself has no account-lockout; if your security policy requires true
+      lockout, add it at the application layer post-deploy (design carefully to avoid letting an
+      attacker lock out legitimate users by spamming their username).
 
 ---
 
