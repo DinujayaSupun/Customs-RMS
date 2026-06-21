@@ -979,6 +979,141 @@ class AdminManagementAndPermissionIntegrationTests {
         assertThat(body.lines().count()).isGreaterThan(1);
     }
 
+    @Test
+    void adminCanBulkDeactivateUsersAndTransferActiveDocumentsToFallbackDc() throws Exception {
+        String password = "BulkDeact123";
+        User admin = createUser("ADMIN", "bulk-deact-admin-", password);
+        User fallbackDc = createUser("DC", "bulk-deact-fallback-", password);
+        User userA = createUser("DC", "bulk-deact-a-", password);
+        User userB = createUser("DC", "bulk-deact-b-", password);
+
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+        String userAToken = loginAndGetToken(userA.getUsername(), password);
+        String fallbackToken = loginAndGetToken(fallbackDc.getUsername(), password);
+
+        long documentId = createDocument(userA, userAToken, "bulk-deact-doc");
+
+        mockMvc.perform(post("/api/admin/users/bulk-deactivate")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userIds": [%d, %d],
+                                  "fallbackDcUserId": %d
+                                }
+                                """.formatted(userA.getId(), userB.getId(), fallbackDc.getId())))
+                .andExpect(status().isOk());
+
+        assertThat(userRepository.findById(userA.getId()).orElseThrow().getIsActive()).isFalse();
+        assertThat(userRepository.findById(userB.getId()).orElseThrow().getIsActive()).isFalse();
+
+        // The deactivated owner's active document must move to the fallback DC so Report At stays valid.
+        mockMvc.perform(get("/api/documents/{id}", documentId)
+                        .header("Authorization", bearer(fallbackToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentOwnerUserId").value(fallbackDc.getId()));
+    }
+
+    @Test
+    void bulkDeactivateRejectsEmptyUserIdList() throws Exception {
+        String password = "BulkDeact123";
+        User admin = createUser("ADMIN", "bulk-deact-empty-admin-", password);
+        User fallbackDc = createUser("DC", "bulk-deact-empty-fallback-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+
+        mockMvc.perform(post("/api/admin/users/bulk-deactivate")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userIds": [],
+                                  "fallbackDcUserId": %d
+                                }
+                                """.formatted(fallbackDc.getId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.details", hasItem("userIds: Select at least one user to deactivate.")));
+    }
+
+    @Test
+    void bulkDeleteRequiresDeactivationFirstThenSoftDeletesAndScrubsPii() throws Exception {
+        String password = "BulkDel1234";
+        User admin = createUser("ADMIN", "bulk-del-admin-", password);
+        User fallbackDc = createUser("DC", "bulk-del-fallback-", password);
+        User userA = createUser("DC", "bulk-del-a-", password);
+        userA.setEmail("bulk-del-a@example.com");
+        userRepository.saveAndFlush(userA);
+
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+
+        // Active users cannot be deleted; they must be deactivated first.
+        mockMvc.perform(post("/api/admin/users/bulk-delete")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userIds": [%d]
+                                }
+                                """.formatted(userA.getId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Only deactivated users can be deleted."));
+
+        mockMvc.perform(post("/api/admin/users/bulk-deactivate")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userIds": [%d],
+                                  "fallbackDcUserId": %d
+                                }
+                                """.formatted(userA.getId(), fallbackDc.getId())))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/admin/users/bulk-delete")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userIds": [%d]
+                                }
+                                """.formatted(userA.getId())))
+                .andExpect(status().isOk());
+
+        User deleted = userRepository.findById(userA.getId()).orElseThrow();
+        assertThat(deleted.getIsDeleted()).isTrue();
+        assertThat(deleted.getEmail()).isNull();
+    }
+
+    @Test
+    void bulkUserOperationsRequireAdminRole() throws Exception {
+        String password = "BulkAuth123";
+        User dc = createUser("DC", "bulk-auth-dc-", password);
+        User fallbackDc = createUser("DC", "bulk-auth-fallback-", password);
+        User target = createUser("DC", "bulk-auth-target-", password);
+
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+
+        mockMvc.perform(post("/api/admin/users/bulk-deactivate")
+                        .header("Authorization", bearer(dcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userIds": [%d],
+                                  "fallbackDcUserId": %d
+                                }
+                                """.formatted(target.getId(), fallbackDc.getId())))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/admin/users/bulk-delete")
+                        .header("Authorization", bearer(dcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userIds": [%d]
+                                }
+                                """.formatted(target.getId())))
+                .andExpect(status().isForbidden());
+    }
+
     private User createUser(String roleName, String prefix, String rawPassword) {
         Role role = roleRepository.findByRoleName(roleName)
                 .orElseThrow(() -> new IllegalStateException("Role not found: " + roleName));
