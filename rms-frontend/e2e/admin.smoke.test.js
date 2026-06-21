@@ -51,8 +51,9 @@ test("permission update enables Approve button live for affected role when appro
     await userPage.goto(`/documents/${document.id}`);
     await expect(userPage).toHaveURL(new RegExp(`/documents/${document.id}$`));
 
+    // Approve is hidden (v-if), not rendered-disabled, until the role gains APPROVE_DOCUMENT.
     const approveBtn = userPage.getByRole("button", { name: "Approve" });
-    await expect(approveBtn).toBeDisabled();
+    await expect(approveBtn).toBeHidden();
 
     const adminLogin = await apiLogin(request, adminCreds);
     expect(adminLogin.status).toBe(200);

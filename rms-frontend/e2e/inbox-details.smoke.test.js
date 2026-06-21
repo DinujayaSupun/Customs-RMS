@@ -140,7 +140,8 @@ test("recipient can return a forwarded document from inbox popup to the latest s
   await row.getByRole("button", { name: "Forward document" }).click();
   await expect(page.getByText("Forward Document")).toBeVisible();
   await expect(page.locator(".forwardSelected").first()).toContainText(sender.fullName);
-  await expect(page.locator('input[placeholder*="Search user"]')).toHaveValue("");
+  // Scope to the main recipient search; the CC/BCC chip pickers also match "Search user...".
+  await expect(page.locator('input[placeholder*="name, role, department"]')).toHaveValue("");
 
   await page.getByRole("button", { name: "Return" }).click();
   await expect(page.getByText("Forward Document")).not.toBeVisible();
