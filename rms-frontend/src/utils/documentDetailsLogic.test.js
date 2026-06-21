@@ -55,12 +55,45 @@ describe("documentDetailsLogic", () => {
     expect(capabilities.canForward).toBe(false);
     expect(capabilities.canReturn).toBe(false);
     expect(capabilities.canApprove).toBe(false);
-    expect(capabilities.canReject).toBe(true);
+    // An APPROVED document is already decided, so reject is not offered (only reopen/issue) —
+    // this mirrors the backend, which blocks rejecting an approved document.
+    expect(capabilities.canReject).toBe(false);
     expect(capabilities.canIssue).toBe(true);
     expect(capabilities.canReopen).toBe(true);
     expect(capabilities.canUploadAttachments).toBe(true);
     expect(capabilities.canEditDetails).toBe(false);
     expect(capabilities.canTypeRemark).toBe(true);
+  });
+
+  it("hides both approve and reject once a document is decided (approved or rejected)", () => {
+    const perms = user(7, ["APPROVE_DOCUMENT", "REJECT_DOCUMENT", "REOPEN_DOCUMENT"]);
+    const base = {
+      currentOwnerUserId: 7,
+      receivedDate: "2026-04-20",
+      issuedAt: null,
+    };
+
+    const rejected = getDocumentDetailsCapabilities({
+      doc: { ...base, status: "REJECTED", completedAt: "2026-04-24T10:00:00Z" },
+      user: perms,
+      approveRejectButtonsEnabled: true,
+      forwardReturnAllowedStatuses: ["PENDING", "IN_PROGRESS", "RETURNED"],
+    });
+    // A rejected document must not offer Approve (backend blocks it) — only Reopen.
+    expect(rejected.canApprove).toBe(false);
+    expect(rejected.canReject).toBe(false);
+    expect(rejected.canReopen).toBe(true);
+
+    const approved = getDocumentDetailsCapabilities({
+      doc: { ...base, status: "APPROVED", completedAt: "2026-04-24T10:00:00Z" },
+      user: perms,
+      approveRejectButtonsEnabled: true,
+      forwardReturnAllowedStatuses: ["PENDING", "IN_PROGRESS", "RETURNED"],
+    });
+    // An approved document must not offer Reject (backend blocks it) — only Reopen/Issue.
+    expect(approved.canApprove).toBe(false);
+    expect(approved.canReject).toBe(false);
+    expect(approved.canReopen).toBe(true);
   });
 
   it("lets non-owners view remarks only with the dedicated permission and blocks acting", () => {

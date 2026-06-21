@@ -45,6 +45,9 @@ export function getDocumentDetailsCapabilities({
 }) {
   const owner = isOwner(doc, user);
   const issued = isIssued(doc);
+  // Once a decision is made (approved or rejected) the backend blocks BOTH approve and reject;
+  // the only way forward is reopen. Mirror that so neither button leaks through on a decided document.
+  const decided = ["APPROVED", "REJECTED"].includes(String(doc?.status || "").toUpperCase());
   const canViewAllHistory = hasPermission(user, "VIEW_ALL_HISTORY");
   const canViewRemarks = !!doc && (owner || hasPermission(user, "VIEW_REMARKS_WHEN_NOT_REPORT_AT"));
   const isEditLocked = !!doc && (!!doc.completedAt || issued);
@@ -67,16 +70,16 @@ export function getDocumentDetailsCapabilities({
   const canApprove = !!doc
     && approveRejectButtonsEnabled
     && !issued
+    && !decided
     && owner
-    && hasPermission(user, "APPROVE_DOCUMENT")
-    && doc.status !== "APPROVED";
+    && hasPermission(user, "APPROVE_DOCUMENT");
 
   const canReject = !!doc
     && approveRejectButtonsEnabled
     && !issued
+    && !decided
     && owner
-    && hasPermission(user, "REJECT_DOCUMENT")
-    && doc.status !== "REJECTED";
+    && hasPermission(user, "REJECT_DOCUMENT");
 
   const canIssue = !!doc
     && owner

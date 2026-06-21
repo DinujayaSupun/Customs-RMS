@@ -1551,7 +1551,10 @@ public class DocumentServiceImpl implements DocumentService {
     private String effectiveVisibility(Document doc) {
         String value = doc.getVisibility();
         if (value == null || value.isBlank()) {
-            return "PUBLIC";
+            // Fail closed: an unknown/missing visibility is treated as PRIVATE (the more restrictive
+            // option) so access control never accidentally exposes a document. All created documents
+            // set visibility explicitly, so this only guards legacy/hand-inserted rows.
+            return "PRIVATE";
         }
         return value.trim().toUpperCase();
     }
