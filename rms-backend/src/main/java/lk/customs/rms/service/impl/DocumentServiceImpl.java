@@ -1392,7 +1392,10 @@ public class DocumentServiceImpl implements DocumentService {
             return new UndoSendState(false, "DOCUMENT_UNAVAILABLE", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
         }
         if (movement.getActionType() != MovementActionType.FORWARD && movement.getActionType() != MovementActionType.RETURN) {
-            return new UndoSendState(false, "ALREADY_MOVED", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
+            // The latest action was not a forward/return (e.g. a freshly created document), so there is
+            // no "send" to undo. This is not the same as the document having moved on past a recipient,
+            // so report NO_SENT_MOVEMENT (which the UI shows nothing for) rather than ALREADY_MOVED.
+            return new UndoSendState(false, "NO_SENT_MOVEMENT", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);
         }
         if (!dcAutoForwardConfigService.getUndoSendAllowedActions().contains(movement.getActionType())) {
             return new UndoSendState(false, "ACTION_NOT_ALLOWED", expiresAt, receiverOpened, actionType, requiresReason, showExpiredInfo);

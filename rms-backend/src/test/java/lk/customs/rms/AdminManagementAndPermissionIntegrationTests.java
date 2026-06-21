@@ -1294,6 +1294,26 @@ class AdminManagementAndPermissionIntegrationTests {
         assertThat(hasDc).as("performers should include the user who created the document").isTrue();
     }
 
+    @Test
+    void createdDocumentDetailReportsNoSendToUndoNotAlreadyMoved() throws Exception {
+        String password = "UndoCreate123";
+        User dc = createUser("DC", "undo-create-dc-", password);
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+
+        long documentId = createDocument(dc, dcToken, "undo-create-doc");
+
+        MvcResult result = mockMvc.perform(get("/api/documents/{id}", documentId)
+                        .header("Authorization", bearer(dcToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canUndoSend").value(false))
+                .andReturn();
+
+        // A just-created document was never sent, so the detail must not claim it "already moved".
+        // It should report NO_SENT_MOVEMENT, which the UI renders as no undo-send notice at all.
+        String undoStatus = readJson(result).path("undoSendStatus").asText("");
+        assertThat(undoStatus).isEqualTo("NO_SENT_MOVEMENT");
+    }
+
     private User createUser(String roleName, String prefix, String rawPassword) {
         Role role = roleRepository.findByRoleName(roleName)
                 .orElseThrow(() -> new IllegalStateException("Role not found: " + roleName));
