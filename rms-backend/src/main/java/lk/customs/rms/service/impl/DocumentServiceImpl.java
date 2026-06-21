@@ -1031,7 +1031,18 @@ public class DocumentServiceImpl implements DocumentService {
         saveRemarkIfPresent(d, actionBy.getId(), request.getRemarkText(), "Remark added during return");
 
         Long from = d.getCurrentOwnerUserId();
-        Long requestedTo = request.getToUserId();
+        // Return is always sent back to whoever forwarded the document here. Derive that target from the
+        // movement history (the most recent forward/return addressed to the current owner) instead of
+        // trusting the client-supplied toUserId, so a direct API call cannot reroute the document to an
+        // arbitrary user.
+        Long requestedTo = movementRepository
+                .findFirstByDocumentIdAndToUserIdAndActionTypeInOrderByActionAtDescIdDesc(
+                        documentId, from, List.of(MovementActionType.FORWARD, MovementActionType.RETURN))
+                .map(DocumentMovement::getFromUserId)
+                .orElse(null);
+        if (requestedTo == null) {
+            throw new BadRequestException("This document was not sent to you, so it cannot be returned.");
+        }
         d.setCurrentOwnerUserId(requestedTo);
 
         DocumentMovement mv = DocumentMovement.create(documentId, from, requestedTo, actionBy.getId(), MovementActionType.RETURN);

@@ -540,7 +540,9 @@ class AdminManagementAndPermissionIntegrationTests {
         boolean originalReturn = readPermissionEnabled(role, AppPermission.RETURN_DOCUMENT);
 
         try {
-            long blockedDocumentId = createWorkflowOwnedDocument(admin, adminToken, actor, actorToken, "return-blocked");
+            // Admin forwards the document to the actor so there is a real prior sender to return to;
+            // return derives its target from the movement history, not the request body.
+            long blockedDocumentId = createOwnedDocumentForActor(admin, adminToken, actor.getId(), "return-blocked");
             updatePermission(adminToken, roleName, AppPermission.RETURN_DOCUMENT, false);
 
             mockMvc.perform(post("/api/documents/{id}/return", blockedDocumentId)
@@ -555,7 +557,7 @@ class AdminManagementAndPermissionIntegrationTests {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.message").value("You are not allowed to return documents."));
 
-            long allowedDocumentId = createWorkflowOwnedDocument(admin, adminToken, actor, actorToken, "return-allowed");
+            long allowedDocumentId = createOwnedDocumentForActor(admin, adminToken, actor.getId(), "return-allowed");
             updatePermission(adminToken, roleName, AppPermission.RETURN_DOCUMENT, true);
 
             mockMvc.perform(post("/api/documents/{id}/return", allowedDocumentId)
@@ -1312,6 +1314,58 @@ class AdminManagementAndPermissionIntegrationTests {
         // It should report NO_SENT_MOVEMENT, which the UI renders as no undo-send notice at all.
         String undoStatus = readJson(result).path("undoSendStatus").asText("");
         assertThat(undoStatus).isEqualTo("NO_SENT_MOVEMENT");
+    }
+
+    @Test
+    void returnAlwaysGoesToTheActualSenderIgnoringRequestedTarget() throws Exception {
+        String password = "ReturnTarget123";
+        User sender = createUser("DC", "return-sender-", password);
+        User recipient = createUser("DDC", "return-recipient-", password);
+        User stranger = createUser("DDC", "return-stranger-", password);
+
+        String senderToken = loginAndGetToken(sender.getUsername(), password);
+        String recipientToken = loginAndGetToken(recipient.getUsername(), password);
+
+        long documentId = createDocument(sender, senderToken, "return-target");
+        forwardDocument(documentId, senderToken, recipient.getId(), "PRIVATE", "forward for return target test");
+
+        // The recipient asks to return to an arbitrary stranger who never sent the document; the backend
+        // must ignore that and send it back to the actual sender instead.
+        mockMvc.perform(post("/api/documents/{id}/return", documentId)
+                        .header("Authorization", bearer(recipientToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "toUserId": %d
+                                }
+                                """.formatted(stranger.getId())))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/documents/{id}", documentId)
+                        .header("Authorization", bearer(senderToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentOwnerUserId").value(sender.getId()));
+    }
+
+    @Test
+    void returnIsRejectedForADocumentThatWasNeverSentToYou() throws Exception {
+        String password = "ReturnNone123";
+        User dc = createUser("DC", "return-none-", password);
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+
+        long documentId = createDocument(dc, dcToken, "return-none");
+
+        // dc created the document and never received it from anyone, so there is no sender to return to.
+        mockMvc.perform(post("/api/documents/{id}/return", documentId)
+                        .header("Authorization", bearer(dcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "toUserId": %d
+                                }
+                                """.formatted(dc.getId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("This document was not sent to you, so it cannot be returned."));
     }
 
     private User createUser(String roleName, String prefix, String rawPassword) {

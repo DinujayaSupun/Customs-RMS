@@ -107,7 +107,8 @@ public class DcAutoForwardScheduler {
 
         String forwardVisibility = doc.getVisibility();
         if (forwardVisibility == null || forwardVisibility.isBlank()) {
-            forwardVisibility = "PUBLIC";
+            // Fail closed: unknown visibility is treated as PRIVATE, consistent with effectiveVisibility().
+            forwardVisibility = "PRIVATE";
         } else {
             forwardVisibility = forwardVisibility.trim().toUpperCase();
         }
