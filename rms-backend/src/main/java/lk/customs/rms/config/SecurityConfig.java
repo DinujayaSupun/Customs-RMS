@@ -44,7 +44,8 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable())
             .cors(Customizer.withDefaults())
-            .headers(headers -> headers.frameOptions(frameOptions -> frameOptions.disable()))
+            // sameOrigin (not disable) keeps inline attachment/PDF preview working while blocking cross-origin framing (clickjacking).
+            .headers(headers -> headers.frameOptions(frameOptions -> frameOptions.sameOrigin()))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()

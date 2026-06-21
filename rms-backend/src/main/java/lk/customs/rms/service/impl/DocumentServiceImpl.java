@@ -154,6 +154,7 @@ public class DocumentServiceImpl implements DocumentService {
     // DOCUMENT CRUD
     // ==========================================================
 
+    @Transactional
     @Override
     public DocumentResponse createDocument(CreateDocumentRequest request, Long actorUserId) {
         permissionService.ensurePermission(actorUserId, AppPermission.CREATE_DOCUMENT, "You are not allowed to create documents.");
@@ -575,6 +576,7 @@ public class DocumentServiceImpl implements DocumentService {
             .orElse(null);
     }
 
+    @Transactional
     @Override
     public DocumentResponse getDocumentById(Long id, Long actorUserId) {
         Document d = requireDocument(id);
