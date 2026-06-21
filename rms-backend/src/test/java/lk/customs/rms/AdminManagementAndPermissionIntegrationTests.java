@@ -1114,6 +1114,95 @@ class AdminManagementAndPermissionIntegrationTests {
                 .andExpect(status().isForbidden());
     }
 
+    @Test
+    void auditLogSearchFiltersByDocumentReferenceNumericIdActionTypeAndPerformer() throws Exception {
+        String password = "AuditSearch123";
+        User admin = createUser("ADMIN", "audit-search-admin-", password);
+        User dc = createUser("DC", "audit-search-dc-", password);
+        User ddc = createUser("DDC", "audit-search-ddc-", password);
+
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+
+        String uniqueRef = "AUDITREF-" + UUID.randomUUID().toString().substring(0, 8);
+        long documentId = createDocumentWithExactRef(dcToken, uniqueRef);
+        forwardDocument(documentId, dcToken, ddc.getId(), "PRIVATE", "forward for audit search");
+
+        // A second document with a different reference must NOT match the ref filter below.
+        createDocumentWithExactRef(dcToken, "OTHERREF-" + UUID.randomUUID().toString().substring(0, 8));
+
+        // 1) Free-text document reference filter (exercises the join from audit log to documents).
+        JsonNode byRef = readJson(mockMvc.perform(get("/api/audit-logs")
+                        .param("document", uniqueRef)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(byRef.get("content")).isNotEmpty();
+        for (JsonNode log : byRef.get("content")) {
+            assertThat(log.get("entityId").asLong()).isEqualTo(documentId);
+        }
+
+        // 2) Numeric documentId filter returns the document's logs including the FORWARD movement.
+        // A numeric value is also matched against reference numbers, so documents whose ref contains
+        // those digits may also appear — assert our document's logs are present, not exclusivity.
+        JsonNode byId = readJson(mockMvc.perform(get("/api/audit-logs")
+                        .param("document", String.valueOf(documentId))
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn());
+        boolean hasForward = false;
+        boolean hasOurDocumentLog = false;
+        for (JsonNode log : byId.get("content")) {
+            if (log.get("entityId").asLong() == documentId) {
+                hasOurDocumentLog = true;
+                if ("FORWARD".equals(log.get("actionType").asText())) hasForward = true;
+            }
+        }
+        assertThat(hasOurDocumentLog).as("documentId filter should include our document's logs").isTrue();
+        assertThat(hasForward).as("documentId filter should include the FORWARD movement log").isTrue();
+
+        // 3) Action-type filter narrows to a single action.
+        JsonNode byAction = readJson(mockMvc.perform(get("/api/audit-logs")
+                        .param("document", String.valueOf(documentId))
+                        .param("actionType", "FORWARD")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(byAction.get("content")).isNotEmpty();
+        for (JsonNode log : byAction.get("content")) {
+            assertThat(log.get("actionType").asText()).isEqualTo("FORWARD");
+        }
+
+        // 4) Performer filter returns only that user's actions.
+        JsonNode byPerformer = readJson(mockMvc.perform(get("/api/audit-logs")
+                        .param("document", String.valueOf(documentId))
+                        .param("performedByUserId", String.valueOf(dc.getId()))
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn());
+        for (JsonNode log : byPerformer.get("content")) {
+            assertThat(log.get("performedByUserId").asLong()).isEqualTo(dc.getId());
+        }
+    }
+
+    private long createDocumentWithExactRef(String token, String refNo) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/documents")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "refNo": "%s",
+                                  "title": "Audit Search Document",
+                                  "receivedDate": "%s",
+                                  "companyName": "Integration Co",
+                                  "priority": "HIGH"
+                                }
+                                """.formatted(refNo, LocalDate.now().toString())))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return readJson(result).get("id").asLong();
+    }
+
     private User createUser(String roleName, String prefix, String rawPassword) {
         Role role = roleRepository.findByRoleName(roleName)
                 .orElseThrow(() -> new IllegalStateException("Role not found: " + roleName));
