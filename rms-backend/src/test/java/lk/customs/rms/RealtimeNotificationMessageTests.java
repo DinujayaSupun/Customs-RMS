@@ -48,6 +48,23 @@ class RealtimeNotificationMessageTests {
     }
 
     @Test
+    void documentCopiedMessageUsesDocumentCopiedTypeAndCopiedText() {
+        RealtimeNotificationMessage message = RealtimeNotificationMessage.documentCopied(
+                12L,
+                "REF-12",
+                "Import License Review",
+                5L,
+                "Sender User"
+        );
+
+        assertThat(message.type()).isEqualTo("DOCUMENT_COPIED");
+        assertThat(message.message()).isEqualTo("You were copied on a document: Import License Review");
+        assertThat(message.documentId()).isEqualTo(12L);
+        assertThat(message.fromUserId()).isEqualTo(5L);
+        assertThat(message.fromUserName()).isEqualTo("Sender User");
+    }
+
+    @Test
     void documentNotificationFallsBackToReferenceWhenTitleIsBlank() {
         RealtimeNotificationMessage message = RealtimeNotificationMessage.documentForwarded(
                 16L,

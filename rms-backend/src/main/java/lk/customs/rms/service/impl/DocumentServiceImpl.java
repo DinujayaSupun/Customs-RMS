@@ -346,7 +346,15 @@ public class DocumentServiceImpl implements DocumentService {
             String createdByName = createdBy == null ? null : createdBy.getFullName();
             String ownerName = owner == null ? null : owner.getFullName();
             boolean viewedByMe = viewedDocIds.contains(d.getId());
-            DocumentRemark latestRemark = canViewRemarks(d, actorUserId) ? latestRemarks.get(d.getId()) : null;
+            boolean isOwnerRow = d.getCurrentOwnerUserId() != null && d.getCurrentOwnerUserId().equals(actorUserId);
+            RecipientType recipientType = recipientTypes.getOrDefault(d.getId(), Optional.empty())
+                    .orElse(isOwnerRow ? RecipientType.TO : null);
+            // Minute visibility from already-batched recipient type + permissions (avoids a per-row query).
+            boolean canViewRemarksRow = isOwnerRow
+                    || actorPermissions.contains(AppPermission.VIEW_REMARKS_WHEN_NOT_REPORT_AT)
+                    || (recipientType == RecipientType.CC && actorPermissions.contains(AppPermission.CC_VIEW_MINUTES))
+                    || (recipientType == RecipientType.BCC && actorPermissions.contains(AppPermission.BCC_VIEW_MINUTES));
+            DocumentRemark latestRemark = canViewRemarksRow ? latestRemarks.get(d.getId()) : null;
             String latestRemarkPreview = latestRemark == null ? null : toRemarkPreview(latestRemark);
             DocumentMovement latestInbound = latestInboundByDoc.get(d.getId());
             Long inboxSenderUserId = resolveInboxSenderUserId(latestInbound);
@@ -360,9 +368,6 @@ public class DocumentServiceImpl implements DocumentService {
                 ? usersById.get(latestInbound.getFromUserId())
                 : null;
             RecipientSummaryResponse recipientSummary = recipientSummaries.get(d.getId());
-            Optional<RecipientType> recipientTypeOpt = recipientTypes.getOrDefault(d.getId(), Optional.empty());
-            RecipientType recipientType = recipientTypeOpt
-                    .orElse(d.getCurrentOwnerUserId().equals(actorUserId) ? RecipientType.TO : null);
 
             return DocumentResponse.from(withPreloadedRecipientCapabilities(DocumentResponse.mapping(d)
                 .createdByName(createdByName)
@@ -498,14 +503,13 @@ public class DocumentServiceImpl implements DocumentService {
 
         List<SentMessageResponse> sentRows = pageMovements.stream().map(movement -> {
             Document doc = docsById.get(movement.getDocumentId());
+            // This preview is the sender's own minute (sourced from their own remarks), so it is always
+            // shown to them — even if they are no longer a recipient and could not otherwise view minutes.
             String ownMinutePreview = toOwnSentMinutePreview(
                 movement,
                 inboundByDoc.getOrDefault(movement.getDocumentId(), List.of()),
                 ownRemarksByDoc.getOrDefault(movement.getDocumentId(), List.of())
             );
-            if (!canViewRemarks(doc, actorUserId)) {
-                ownMinutePreview = null;
-            }
             boolean autoForwarded = autoForwardLogsByDoc
                 .getOrDefault(movement.getDocumentId(), List.of())
                 .stream()
@@ -1009,6 +1013,21 @@ public class DocumentServiceImpl implements DocumentService {
             actionBy.getId(),
             actionBy.getFullName()
         );
+        // CC/BCC recipients are also told in real time that they were copied (distinct from the
+        // primary "assigned" notification the report-at recipient receives).
+        java.util.stream.Stream.concat(
+                        forwardRecipients.getOrDefault("cc", List.of()).stream(),
+                        forwardRecipients.getOrDefault("bcc", List.of()).stream())
+                .filter(java.util.Objects::nonNull)
+                .filter(copiedUserId -> !copiedUserId.equals(to))
+                .distinct()
+                .forEach(copiedUserId -> realtimeNotificationService.notifyDocumentCopied(
+                        copiedUserId,
+                        d.getId(),
+                        d.getRefNo(),
+                        d.getTitle(),
+                        actionBy.getId(),
+                        actionBy.getFullName()));
     }
 
     @Override

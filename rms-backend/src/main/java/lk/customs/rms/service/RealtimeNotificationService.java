@@ -29,6 +29,22 @@ public class RealtimeNotificationService {
         notificationWebSocketHandler.sendToUser(recipientUserId, message);
     }
 
+    public void notifyDocumentCopied(Long recipientUserId,
+                                     Long documentId,
+                                     String documentRefNo,
+                                     String documentTitle,
+                                     Long fromUserId,
+                                     String fromUserName) {
+        RealtimeNotificationMessage message = RealtimeNotificationMessage.documentCopied(
+                documentId,
+                documentRefNo,
+                documentTitle,
+                fromUserId,
+                fromUserName
+        );
+        notificationWebSocketHandler.sendToUser(recipientUserId, message);
+    }
+
     public void notifyDocumentReturned(Long recipientUserId,
                                        Long documentId,
                                        String documentRefNo,
