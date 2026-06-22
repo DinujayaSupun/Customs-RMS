@@ -108,6 +108,16 @@ FLUSH PRIVILEGES;
 - **Stricter shops:** generate the DDL from a staging DB and apply it via your migration tool,
   then keep `validate`.
 
+**Schema migrations between releases.** Because `prod` uses `validate`, any new column a release
+introduces must be added **before** the new code starts, or startup fails schema validation. For the
+optimistic-locking release, add the `version` column to an existing `documents` table first:
+
+```sql
+ALTER TABLE documents ADD COLUMN version BIGINT NOT NULL DEFAULT 0;
+```
+
+(A fresh database created via the bootstrap step above already includes it.)
+
 After the schema is stable you can drop `CREATE, ALTER, INDEX, REFERENCES` from the app DB
 user so the running app has data-only privileges.
 

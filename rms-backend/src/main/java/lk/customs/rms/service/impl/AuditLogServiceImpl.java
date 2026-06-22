@@ -314,11 +314,23 @@ public class AuditLogServiceImpl implements AuditLogService {
 
     private String csvCell(String value) {
         if (value == null) return "";
-        String escaped = value.replace("\"", "\"\"");
-        if (escaped.contains(",") || escaped.contains("\n") || escaped.contains("\"")) {
+        String guarded = neutralizeCsvFormula(value);
+        String escaped = guarded.replace("\"", "\"\"");
+        if (escaped.contains(",") || escaped.contains("\n") || escaped.contains("\r") || escaped.contains("\"")) {
             return "\"" + escaped + "\"";
         }
         return escaped;
+    }
+
+    // Prevent CSV formula injection: a cell starting with = + - @ (or tab/CR) can be executed as a
+    // formula when the file is opened in a spreadsheet, so prefix it with an apostrophe.
+    private String neutralizeCsvFormula(String value) {
+        if (value.isEmpty()) return value;
+        char first = value.charAt(0);
+        if (first == '=' || first == '+' || first == '-' || first == '@' || first == '\t' || first == '\r') {
+            return "'" + value;
+        }
+        return value;
     }
 
     private String toDetailsJson(Map<String, Object> details) {

@@ -5,6 +5,7 @@ import {
   markInboxDocumentViewed,
   resolveWorkflowAutoTarget,
   sortInboxDefaultDisplay,
+  sortInboxDocumentsBy,
 } from "./inboxLogic";
 
 describe("inboxLogic", () => {
@@ -17,6 +18,18 @@ describe("inboxLogic", () => {
 
     const sorted = sortInboxDefaultDisplay(rows);
     expect(sorted.map((row) => row.id)).toEqual([2, 3, 1]);
+  });
+
+  it("orders RETURNED documents after IN_PROGRESS but before APPROVED in the status sort", () => {
+    const rows = [
+      { id: 1, status: "APPROVED" },
+      { id: 2, status: "RETURNED" },
+      { id: 3, status: "IN_PROGRESS" },
+      { id: 4, status: "PENDING" },
+    ];
+
+    const sorted = sortInboxDocumentsBy(rows, "status_asc");
+    expect(sorted.map((row) => row.id)).toEqual([4, 3, 2, 1]);
   });
 
   it("suggests the most recent sender to the current user as the return target", () => {

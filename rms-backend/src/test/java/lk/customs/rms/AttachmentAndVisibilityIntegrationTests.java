@@ -19,6 +19,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -37,6 +38,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -540,6 +542,65 @@ class AttachmentAndVisibilityIntegrationTests {
         } finally {
             restoreRolePermissions(originalScPermissions);
         }
+    }
+
+    @Test
+    void documentWithMissingVisibilityIsTreatedAsPrivateForPublicOnlyViewer() throws Exception {
+        String password = "Visibility123";
+        User admin = createUser("ADMIN", "visibility-null-admin-", password);
+        User viewer = createUser("SC", "visibility-null-viewer-", password);
+
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+        String viewerToken = loginAndGetToken(viewer.getUsername(), password);
+
+        long documentId = createDocument(adminToken, "missing-visibility-doc");
+        // Simulate a legacy / hand-inserted row that has no visibility value at all.
+        setDocumentVisibility(documentId, null);
+
+        Map<Long, Boolean> originalScPermissions = snapshotRolePermissions("SC",
+                AppPermission.VIEW_PUBLIC_DOCUMENT,
+                AppPermission.VIEW_PRIVATE_DOCUMENT,
+                AppPermission.VIEW_OWN_CREATED_DOCUMENTS,
+                AppPermission.VIEW_ALL_DOCUMENTS
+        );
+
+        try {
+            setRolePermission("SC", AppPermission.VIEW_PUBLIC_DOCUMENT, true);
+            setRolePermission("SC", AppPermission.VIEW_PRIVATE_DOCUMENT, false);
+            setRolePermission("SC", AppPermission.VIEW_OWN_CREATED_DOCUMENTS, false);
+            setRolePermission("SC", AppPermission.VIEW_ALL_DOCUMENTS, false);
+
+            // Fail closed: a blank visibility must NOT be treated as PUBLIC, so a public-only viewer is denied.
+            mockMvc.perform(get("/api/documents/{id}", documentId)
+                            .header("Authorization", bearer(viewerToken)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("You are not allowed to view this private document."));
+        } finally {
+            restoreRolePermissions(originalScPermissions);
+        }
+    }
+
+    @Test
+    void concurrentStaleUpdateToSameDocumentIsRejectedByOptimisticLocking() throws Exception {
+        String password = "OptLock123";
+        User admin = createUser("ADMIN", "optlock-admin-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+
+        long documentId = createDocument(adminToken, "optlock-doc");
+
+        // Two actors load the same document independently (e.g. the owner and the auto-forward scheduler).
+        Document first = documentRepository.findById(documentId).orElseThrow();
+        Document second = documentRepository.findById(documentId).orElseThrow();
+
+        // The first writer wins and the @Version column is bumped.
+        first.setTitle("updated-by-first-writer");
+        documentRepository.saveAndFlush(first);
+
+        // The second writer still holds the stale version, so it must be rejected instead of silently
+        // overwriting the first writer's change.
+        second.setTitle("updated-by-second-writer");
+        assertThatThrownBy(() -> documentRepository.saveAndFlush(second))
+                .isInstanceOf(OptimisticLockingFailureException.class);
     }
 
     @Test

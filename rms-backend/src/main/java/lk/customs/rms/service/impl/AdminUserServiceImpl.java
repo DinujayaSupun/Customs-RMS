@@ -327,7 +327,15 @@ public class AdminUserServiceImpl implements AdminUserService {
 
     private String csv(Object value) {
         if (value == null) return "";
-        String s = String.valueOf(value).replace("\"", "\"\"");
+        String s = String.valueOf(value);
+        // Prevent CSV formula injection: neutralize a leading = + - @ (or tab/CR) before quoting.
+        if (!s.isEmpty()) {
+            char first = s.charAt(0);
+            if (first == '=' || first == '+' || first == '-' || first == '@' || first == '\t' || first == '\r') {
+                s = "'" + s;
+            }
+        }
+        s = s.replace("\"", "\"\"");
         return "\"" + s + "\"";
     }
 }

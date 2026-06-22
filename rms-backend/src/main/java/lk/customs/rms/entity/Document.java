@@ -25,6 +25,12 @@ public class Document {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    // Optimistic locking: concurrent updates to the same document (e.g. the auto-forward scheduler
+    // firing while the owner acts) are detected instead of silently overwriting each other.
+    @Version
+    @Column(name = "version")
+    private Long version;
+
     @Column(name="ref_no", unique = true, nullable = false)
     private String refNo;
 

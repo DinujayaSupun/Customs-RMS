@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -202,6 +203,21 @@ public class GlobalExceptionHandler {
                 .build();
 
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+    }
+
+    // 8b) Concurrent modification detected by optimistic locking -> 409 Conflict
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ApiError> handleOptimisticLock(OptimisticLockingFailureException ex, HttpServletRequest request) {
+        ApiError body = ApiError.builder()
+                .timestamp(LocalDateTime.now())
+                .status(HttpStatus.CONFLICT.value())
+                .error("Conflict")
+                .message("This document was changed by someone else. Please reload and try again.")
+                .path(request.getRequestURI())
+                .details(null)
+                .build();
+
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
     // 9) Any unexpected error -> 500 (clean + safe message, do not leak internals)
