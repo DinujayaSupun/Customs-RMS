@@ -437,7 +437,7 @@ class AttachmentAndVisibilityIntegrationTests {
 
         mockMvc.perform(get("/api/attachments/{attachmentId}/download", attachmentId)
                         .param("access_token", ownerToken))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
 
         MvcResult tokenResult = mockMvc.perform(post("/api/attachments/{attachmentId}/download-token", attachmentId)
                         .header("Authorization", bearer(ownerToken)))

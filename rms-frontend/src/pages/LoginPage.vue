@@ -97,6 +97,7 @@ import { useRouter, useRoute } from "vue-router";
 import { Eye, EyeOff } from "lucide-vue-next";
 import { login } from "../api/auth.api";
 import { setSession } from "../auth/currentUser";
+import { safeLoginRedirect } from "../router/authGuardLogic";
 
 const router = useRouter();
 const route = useRoute();
@@ -132,7 +133,7 @@ async function submit() {
     };
     window.sessionStorage.setItem("rms_pending_welcome", JSON.stringify(welcomePayload));
 
-    const redirect = route.query.redirect ? String(route.query.redirect) : "/inbox";
+    const redirect = safeLoginRedirect(route.query.redirect);
     router.replace(redirect);
   } catch (e) {
     error.value = e?.message || "Login failed.";

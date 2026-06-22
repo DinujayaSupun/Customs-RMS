@@ -1,5 +1,5 @@
 import axios from "axios";
-import { getAccessToken } from "../auth/currentUser";
+import { getAccessToken, clearSession } from "../auth/currentUser";
 import { setBackendStatus } from "../services/backendStatus";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
@@ -50,11 +50,26 @@ export function createAuthedHttp() {
       if (isBackendUnavailableError(error)) {
         setBackendStatus("unavailable");
       }
+      // A 401 means the token is missing/expired/invalid (not merely lacking a permission, which
+      // is 403). Clear the dead session and bounce to login so an expired token mid-session does
+      // not leave the user staring at failing requests. 403 is intentionally NOT handled here.
+      if (error?.response?.status === 401) {
+        handleUnauthorized();
+      }
       return Promise.reject(error);
     }
   );
 
   return http;
+}
+
+function handleUnauthorized() {
+  clearSession();
+  if (typeof window === "undefined") return;
+  const current = `${window.location.pathname}${window.location.search}`;
+  if (!window.location.pathname.startsWith("/login")) {
+    window.location.replace(`/login?redirect=${encodeURIComponent(current)}`);
+  }
 }
 
 export function getApiErrorMessage(error, { includeDetails = false } = {}) {

@@ -1,5 +1,6 @@
 package lk.customs.rms.controller;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lk.customs.rms.dto.ChangeMyPasswordRequest;
 import lk.customs.rms.dto.LoginRequest;
@@ -9,12 +10,14 @@ import lk.customs.rms.dto.UpdateMyProfileRequest;
 import lk.customs.rms.dto.UserSummaryResponse;
 import lk.customs.rms.entity.User;
 import lk.customs.rms.exception.BadRequestException;
+import lk.customs.rms.exception.TooManyRequestsException;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.service.AuditLogService;
 import lk.customs.rms.service.FileStorageService;
 import lk.customs.rms.service.PermissionService;
 import lk.customs.rms.security.CurrentUserService;
 import lk.customs.rms.security.JwtService;
+import lk.customs.rms.security.LoginAttemptService;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -46,6 +49,7 @@ public class AuthController {
     private final PermissionService permissionService;
     private final PasswordEncoder passwordEncoder;
     private final FileStorageService fileStorageService;
+    private final LoginAttemptService loginAttemptService;
 
     public AuthController(AuthenticationManager authenticationManager,
                           JwtService jwtService,
@@ -54,7 +58,8 @@ public class AuthController {
                           AuditLogService auditLogService,
                           PermissionService permissionService,
                           PasswordEncoder passwordEncoder,
-                          FileStorageService fileStorageService) {
+                          FileStorageService fileStorageService,
+                          LoginAttemptService loginAttemptService) {
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
         this.userRepository = userRepository;
@@ -63,15 +68,26 @@ public class AuthController {
         this.permissionService = permissionService;
         this.passwordEncoder = passwordEncoder;
         this.fileStorageService = fileStorageService;
+        this.loginAttemptService = loginAttemptService;
     }
 
     @PostMapping("/login")
-    public LoginResponse login(@Valid @RequestBody LoginRequest request) {
+    public LoginResponse login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
+        String attemptKey = "ip:" + clientIp(httpRequest);
+
+        // Application-layer brute-force throttle (defense-in-depth with the reverse-proxy rate limit).
+        if (loginAttemptService.isBlocked(attemptKey)) {
+            throw new TooManyRequestsException(
+                    "Too many failed login attempts. Please wait a few minutes and try again.",
+                    loginAttemptService.blockSeconds());
+        }
+
         try {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(request.getUsername(), request.getPassword())
             );
         } catch (BadCredentialsException ex) {
+            loginAttemptService.recordFailure(attemptKey);
             Long actorId = userRepository.findByUsernameIgnoreCase(request.getUsername())
                 .map(u -> u.getId())
                 .orElse(0L);
@@ -85,6 +101,9 @@ public class AuthController {
             );
             throw new BadRequestException("Invalid username or password.");
         }
+
+        // Successful credentials: clear the failure counter for this source.
+        loginAttemptService.reset(attemptKey);
 
         var user = userRepository.findByUsernameIgnoreCaseAndIsActiveTrue(request.getUsername())
                 .orElseThrow(() -> new BadRequestException("User not found."));
@@ -303,6 +322,20 @@ public class AuthController {
                         .permissions(permissionService.permissionNamesForUser(u))
                         .build())
                 .toList();
+    }
+
+    // Resolve the originating client IP. Behind the documented Nginx proxy the real address is the
+    // first entry of X-Forwarded-For; fall back to the socket address when there is no proxy.
+    private String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            int comma = forwarded.indexOf(',');
+            String first = comma > 0 ? forwarded.substring(0, comma) : forwarded;
+            if (!first.isBlank()) {
+                return first.trim();
+            }
+        }
+        return request.getRemoteAddr();
     }
 
     private String normalizeNullable(String value) {
