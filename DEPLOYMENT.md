@@ -231,6 +231,23 @@ server {
     # Must be ≥ the backend's 25 MB attachment limit, plus headroom.
     client_max_body_size 30m;
 
+    # Security headers (apply to every response via inheritance — the location blocks below define
+    # no add_header of their own, so these are inherited). `always` sends them on error responses too.
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+    # Content-Security-Policy — the XSS safety net. Tuned to what the SPA actually loads:
+    #   script-src 'self'            → Vite-bundled JS served from this origin only
+    #   style-src  ... 'unsafe-inline' + fonts.googleapis.com → Vue inline styles + the Manrope @import
+    #   font-src   ... fonts.gstatic.com → Google-hosted font files
+    #   img-src    'self' data: blob: → logos, plus profile-picture/attachment previews
+    #   connect-src 'self'           → REST + the wss:// WebSocket (same origin as this page)
+    #   frame-ancestors 'self'       → clickjacking protection for the page
+    # ROLL OUT SAFELY: deploy first as "Content-Security-Policy-Report-Only" (below), load the app,
+    # confirm the browser console shows no violations (login fonts, live notifications, image
+    # previews), THEN rename the header to "Content-Security-Policy" to enforce.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'" always;
+
     # 1) SPA static files
     root /var/www/customs-rms;          # contents of rms-frontend/dist
     index index.html;
@@ -286,6 +303,24 @@ sudo nginx -t && sudo systemctl reload nginx
 Because the browser origin is now `https://rms.customs.gov.lk`, that exact value **must** be in
 `APP_CORS_ALLOWED_ORIGINS`.
 
+**Tuning the CSP for your topology — two cases that need an edit:**
+
+- **API/WebSocket on a different origin.** The policy above assumes Nginx serves the SPA, `/api`,
+  and `/ws` from one origin (so `connect-src 'self'` covers them). If you split them (e.g. SPA at
+  `rms.customs.gov.lk`, API at `api.customs.gov.lk`), add both to `connect-src`, including the
+  `wss://` scheme for the socket:
+  `connect-src 'self' https://api.customs.gov.lk wss://api.customs.gov.lk`.
+- **App fails to load with `script-src 'self'`.** A Vite build can emit a tiny inline module-preload
+  script. If the console reports it blocked, the clean fix is to disable that inline polyfill rather
+  than weaken the policy with `'unsafe-inline'` — set in `vite.config.js`:
+  `build: { modulePreload: { polyfill: false } }`, then rebuild.
+
+> Optional hardening: the login page pulls the Manrope font from Google
+> ([LoginPage.vue](rms-frontend/src/pages/LoginPage.vue)). Self-hosting it removes the only
+> external request (better privacy — no client IP leak to Google — and lets you drop
+> `fonts.googleapis.com`/`fonts.gstatic.com` from the CSP). Not required, but recommended for a
+> government deployment.
+
 ---
 
 ## 9. Security hardening checklist
@@ -298,10 +333,12 @@ Because the browser origin is now `https://rms.customs.gov.lk`, that exact value
 - [ ] `backend.env` is `chmod 600`, owned by the service user; secrets never committed.
 - [ ] `app.seed.enabled` is off (guaranteed by `prod`); temp seed creds removed after bootstrap.
 - [ ] OS firewall exposes only 80/443; `3306` and `8080` stay on the private network.
-- [ ] Login endpoint is rate-limited at Nginx (`limit_req` on `/api/auth/login`, §8) to slow
-      brute-force. The app itself has no account-lockout; if your security policy requires true
-      lockout, add it at the application layer post-deploy (design carefully to avoid letting an
-      attacker lock out legitimate users by spamming their username).
+- [ ] Security response headers are set at Nginx (§8): `Content-Security-Policy` (enforcing, not
+      Report-Only, once verified), `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`.
+- [ ] Login brute-force is throttled at **two layers**: Nginx (`limit_req` on `/api/auth/login`, §8)
+      and the app itself (per-IP failure throttle → HTTP 429, env `LOGIN_MAX_FAILED_ATTEMPTS` /
+      `LOGIN_BLOCK_MINUTES`). Both key on IP, not username, to avoid letting an attacker lock out a
+      legitimate user. If your policy requires true per-account lockout, add it deliberately on top.
 
 ---
 
@@ -344,4 +381,6 @@ Because the browser origin is now `https://rms.customs.gov.lk`, that exact value
 | Attachment upload fails ~25 MB | Nginx `client_max_body_size` too low | Set it ≥ 30m (§8); backend caps files at 25 MB |
 | Everyone logged out after deploy | `JWT_SECRET` changed | Keep the secret stable across deploys |
 | Uploaded files vanish after redeploy | `APP_UPLOAD_DIR` on ephemeral storage | Point it at a persistent volume |
+| Blank page / missing fonts, images, or live notifications after enabling CSP | `Content-Security-Policy` too strict for this app's resources | Read the blocked directive in the browser console; roll out as `-Report-Only` first, then adjust per §8 (add a separate API origin to `connect-src`, or disable Vite's inline modulepreload) |
+| Login returns 429 "Too many failed login attempts" | App-layer throttle tripped after repeated failures from one IP | Expected for brute-force; wait `LOGIN_BLOCK_MINUTES`, or raise `LOGIN_MAX_FAILED_ATTEMPTS` if staff share one egress IP |
 ```
