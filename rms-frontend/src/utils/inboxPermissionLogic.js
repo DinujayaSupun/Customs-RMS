@@ -16,6 +16,7 @@ export function canForwardInboxDocument({
   availableForwardVisibilities = [],
 }) {
   if (!doc || inboxMode !== "received") return false;
+  if (doc.canWorkflow === false) return false;
 
   const ownerId = Number(doc.currentOwnerUserId ?? doc.currentOwnerId ?? doc.ownerUserId);
   const userId = Number(user?.id);
@@ -34,6 +35,7 @@ export function canReturnInboxDocument({
   forwardReturnAllowedStatuses = [],
 }) {
   if (!doc) return false;
+  if (doc.canWorkflow === false) return false;
 
   const ownerId = Number(doc.currentOwnerUserId ?? doc.currentOwnerId ?? doc.ownerUserId);
   const userId = Number(user?.id);

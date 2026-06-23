@@ -69,4 +69,27 @@ describe("inboxPermissionLogic", () => {
       }),
     ).toBe(false);
   });
+
+  it("blocks workflow when backend capability marks the row as non-workflow", () => {
+    const doc = { currentOwnerUserId: 42, status: "IN_PROGRESS", canWorkflow: false };
+    const user = { id: 42, permissions: ["FORWARD_DOCUMENT", "RETURN_DOCUMENT"] };
+
+    expect(
+      canForwardInboxDocument({
+        doc,
+        user,
+        inboxMode: "received",
+        forwardReturnAllowedStatuses: ["PENDING", "IN_PROGRESS", "RETURNED"],
+        availableForwardVisibilities: ["PUBLIC"],
+      }),
+    ).toBe(false);
+
+    expect(
+      canReturnInboxDocument({
+        doc,
+        user,
+        forwardReturnAllowedStatuses: ["PENDING", "IN_PROGRESS", "RETURNED"],
+      }),
+    ).toBe(false);
+  });
 });

@@ -327,8 +327,22 @@ const readableDetails = computed(() => {
 
   const map = {
     documentId: "Document ID",
+    refNo: "Document Ref",
+    title: "Title",
+    companyName: "Company",
+    status: "Status",
+    priority: "Priority",
+    visibility: "Visibility",
+    currentOwnerUserId: "Report At User ID",
+    currentOwnerName: "Report At",
+    createdByUserId: "Created By User ID",
+    createdByName: "Created By",
+    deletedByUserId: "Deleted By User ID",
+    deletedByName: "Deleted By",
+    deletedAt: "Deleted At",
+    deleteScope: "Delete Permission Source",
     attachmentId: "Attachment ID",
-  remarkId: "Minute ID",
+    remarkId: "Minute ID",
     fallbackDcUserId: "Fallback DC User ID",
     sourceUserId: "Source User ID",
     targetUserId: "Target User ID",
@@ -934,6 +948,8 @@ onUnmounted(() => {
 .modal {
   width: 100%;
   max-width: 960px;
+  min-width: 0;
+  box-sizing: border-box;
   max-height: 90vh;
   overflow: auto;
   background: #fff;
@@ -946,19 +962,32 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: flex-start;
   gap: 10px;
+  min-width: 0;
   padding: 14px 16px;
   border-bottom: 1px solid #e5e7eb;
+}
+
+.modalHead > div:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .modalTitle {
   font-size: 15px;
   font-weight: 800;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .modalSub {
   font-size: 12px;
   color: #6b7280;
   margin-top: 2px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .modalBody {
@@ -967,8 +996,9 @@ onUnmounted(() => {
 
 .kv {
   display: grid;
-  grid-template-columns: 140px 1fr;
+  grid-template-columns: minmax(0, 140px) minmax(0, 1fr);
   gap: 8px;
+  min-width: 0;
   margin-bottom: 8px;
 }
 
@@ -977,14 +1007,20 @@ onUnmounted(() => {
 }
 
 .k {
+  min-width: 0;
   color: #6b7280;
   font-size: 12px;
   font-weight: 700;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .v {
+  min-width: 0;
   color: #111827;
   font-size: 13px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .detailsBlock {

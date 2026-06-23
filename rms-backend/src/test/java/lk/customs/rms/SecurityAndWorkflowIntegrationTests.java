@@ -109,7 +109,7 @@ class SecurityAndWorkflowIntegrationTests {
                 .andExpect(jsonPath("$.message").value("Invalid username or password."));
 
         mockMvc.perform(get("/api/documents"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
 
         mockMvc.perform(get("/api/auth/me")
                         .header("Authorization", bearer(token)))
@@ -143,7 +143,7 @@ class SecurityAndWorkflowIntegrationTests {
 
         mockMvc.perform(get("/api/auth/me/profile-picture")
                         .param("access_token", token))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
 
         mockMvc.perform(get("/api/auth/me/profile-picture")
                         .header("Authorization", bearer(token)))
@@ -174,13 +174,48 @@ class SecurityAndWorkflowIntegrationTests {
 
         mockMvc.perform(get("/api/documents")
                         .param("access_token", token))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
 
         mockMvc.perform(post("/api/documents")
                         .param("access_token", token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(documentPayload("blocked-by-query-token", "Blocked", LocalDate.now().toString(), "LOW")))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void repeatedFailedLoginsFromSameIpAreThrottledWith429() throws Exception {
+        String password = "Throttle1234";
+        User user = createUser("ADMIN", "throttle-", password);
+        // Unique source IP so this test's failures do not pollute the default address other tests share.
+        String sourceIp = "203.0.113.77";
+
+        // The throttle allows 10 failed attempts; each returns 400 (invalid credentials).
+        for (int i = 0; i < 10; i++) {
+            mockMvc.perform(post("/api/auth/login")
+                            .header("X-Forwarded-For", sourceIp)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "username": "%s",
+                                      "password": "WrongPassword%d"
+                                    }
+                                    """.formatted(user.getUsername(), i)))
+                    .andExpect(status().isBadRequest());
+        }
+
+        // The 11th request from the same IP is blocked with 429 BEFORE credentials are checked —
+        // even the correct password is rejected while the source is throttled.
+        mockMvc.perform(post("/api/auth/login")
+                        .header("X-Forwarded-For", sourceIp)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "username": "%s",
+                                  "password": "%s"
+                                }
+                                """.formatted(user.getUsername(), password)))
+                .andExpect(status().isTooManyRequests());
     }
 
     @Test
@@ -445,6 +480,29 @@ class SecurityAndWorkflowIntegrationTests {
         mockMvc.perform(get("/api/attachments/{attachmentId}/download", attachmentId)
                         .header("Authorization", bearer(outsiderToken)))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void pageSizeConstraintRejectsValuesOver500() throws Exception {
+        String password = "PageSize123";
+        User user = createUser("ADMIN", "page-size-", password);
+        String token = loginAndGetToken(user.getUsername(), password);
+
+        mockMvc.perform(get("/api/documents").param("size", "501")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/documents/my-inbox").param("size", "501")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/documents/sent-messages").param("size", "501")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/documents").param("size", "500")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk());
     }
 
     private User createUser(String roleName, String prefix, String rawPassword) {

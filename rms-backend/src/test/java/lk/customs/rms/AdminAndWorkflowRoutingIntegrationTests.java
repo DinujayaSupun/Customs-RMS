@@ -614,6 +614,35 @@ class AdminAndWorkflowRoutingIntegrationTests {
                 .andExpect(jsonPath("$.message").value("Reopen requires a reason (remarkText must not be empty)."));
     }
 
+    @Test
+    void documentAuditHistoryReturnsForwardEventAfterForwarding() throws Exception {
+        String password = "AuditHist123";
+        User admin = createUser("ADMIN", "audit-hist-admin-", password);
+        User ddc = createUser("DDC", "audit-hist-ddc-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+
+        long documentId = createDocument(admin, adminToken, "audit-hist");
+        forwardDocument(documentId, adminToken, ddc.getId());
+
+        MvcResult result = mockMvc.perform(get("/api/documents/{id}/audit-logs", documentId)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode logs = readJson(result);
+        assertThat(logs.isArray()).isTrue();
+        assertThat(logs.size()).isGreaterThan(0);
+
+        boolean hasForwardEntry = false;
+        for (JsonNode log : logs) {
+            if ("FORWARD".equals(log.path("actionType").asText())) {
+                hasForwardEntry = true;
+                break;
+            }
+        }
+        assertThat(hasForwardEntry).as("audit log should contain a FORWARD entry for document %d", documentId).isTrue();
+    }
+
     private User createUser(String roleName, String prefix, String rawPassword) {
         Role role = roleRepository.findByRoleName(roleName)
                 .orElseThrow(() -> new IllegalStateException("Role not found: " + roleName));

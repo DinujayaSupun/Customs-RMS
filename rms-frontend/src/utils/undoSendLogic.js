@@ -4,6 +4,7 @@ export function getUndoSendInfo(row = {}) {
   const undoActor = formatUndoActor(row);
   const isReceiverUndoNotice = String(row.undoSendActionType || "").toUpperCase() === "UNDO_SEND";
 
+  // Receiver-side undo records are informational only; they should never show another Undo button.
   if (undoActor && isReceiverUndoNotice) {
     return {
       canUndo: false,

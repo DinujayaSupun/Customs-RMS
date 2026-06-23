@@ -1,7 +1,7 @@
 package lk.customs.rms;
 
 import lk.customs.rms.dto.RealtimeNotificationMessage;
-import lk.customs.rms.service.NotificationWebSocketHandler;
+import lk.customs.rms.websocket.NotificationWebSocketHandler;
 import lk.customs.rms.service.RealtimeNotificationService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;

@@ -40,6 +40,34 @@ public record RealtimeNotificationMessage(
         );
     }
 
+    public static RealtimeNotificationMessage documentCopied(
+            Long documentId,
+            String documentRefNo,
+            String documentTitle,
+            Long fromUserId,
+            String fromUserName
+    ) {
+        String documentText = (documentTitle == null || documentTitle.isBlank())
+                ? null
+                : documentTitle;
+        if (documentText == null) {
+            documentText = (documentRefNo == null || documentRefNo.isBlank())
+                ? "Document #" + documentId
+                : documentRefNo;
+        }
+
+        return new RealtimeNotificationMessage(
+                "DOCUMENT_COPIED",
+                "You were copied on a document: " + documentText,
+                documentId,
+                documentRefNo,
+                documentTitle,
+                fromUserId,
+                fromUserName,
+                LocalDateTime.now()
+        );
+    }
+
     public static RealtimeNotificationMessage documentReturned(
             Long documentId,
             String documentRefNo,

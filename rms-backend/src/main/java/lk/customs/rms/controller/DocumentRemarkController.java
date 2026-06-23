@@ -16,6 +16,7 @@ import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.security.CurrentUserService;
 import lk.customs.rms.service.AuditLogService;
+import lk.customs.rms.service.DocumentRecipientService;
 import lk.customs.rms.service.PermissionService;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -23,9 +24,12 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @RestController
-@CrossOrigin
+
 @RequestMapping("/api/documents/{documentId}/remarks")
 public class DocumentRemarkController {
 
@@ -36,6 +40,7 @@ public class DocumentRemarkController {
     private final AuditLogService auditLogService;
         private final CurrentUserService currentUserService;
         private final PermissionService permissionService;
+        private final DocumentRecipientService documentRecipientService;
 
     public DocumentRemarkController(
             DocumentRepository documentRepository,
@@ -44,7 +49,8 @@ public class DocumentRemarkController {
             UserRepository userRepository,
                         AuditLogService auditLogService,
                         CurrentUserService currentUserService,
-                        PermissionService permissionService
+                        PermissionService permissionService,
+                        DocumentRecipientService documentRecipientService
     ) {
         this.documentRepository = documentRepository;
         this.movementRepository = movementRepository;
@@ -53,6 +59,7 @@ public class DocumentRemarkController {
         this.auditLogService = auditLogService;
                 this.currentUserService = currentUserService;
                 this.permissionService = permissionService;
+                this.documentRecipientService = documentRecipientService;
     }
 
     // ✅ ADD REMARK (ONLY CURRENT OWNER)
@@ -172,24 +179,22 @@ public class DocumentRemarkController {
         Document doc = requireDocument(documentId);
 
         Long actorUserId = currentUserService.requireUserId(authentication);
-        boolean canViewRemarks = doc.getCurrentOwnerUserId() != null
-                && doc.getCurrentOwnerUserId().equals(actorUserId);
-        if (!canViewRemarks) {
-            permissionService.ensurePermission(
-                    actorUserId,
-                    AppPermission.VIEW_REMARKS_WHEN_NOT_REPORT_AT,
-                    "You are not allowed to view minutes unless the document is assigned to you in Report At."
-            );
+        if (!documentRecipientService.canViewMinutes(doc, actorUserId)) {
+            throw new BadRequestException("You are not allowed to view minutes unless the document is assigned to you in Report At.");
         }
 
-        return remarkRepository.findByDocumentIdOrderByRemarkedAtAsc(documentId)
-                .stream()
+        List<DocumentRemark> remarks = remarkRepository.findByDocumentIdOrderByRemarkedAtAsc(documentId);
+        Set<Long> userIds = remarks.stream().map(DocumentRemark::getRemarkedByUserId).collect(Collectors.toSet());
+        Map<Long, String> nameById = userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(u -> u.getId(), u -> u.getFullName()));
+
+        return remarks.stream()
                 .map(r -> RemarkResponse.builder()
                         .id(r.getId())
                         .documentId(r.getDocumentId())
                         .remarkText(r.getRemarkText())
                         .remarkedByUserId(r.getRemarkedByUserId())
-                        .remarkedByName(r.getRemarkedBy() != null ? r.getRemarkedBy().getFullName() : null)
+                        .remarkedByName(nameById.get(r.getRemarkedByUserId()))
                         .remarkedAt(r.getRemarkedAt())
                         .canEdit(canModifyRemark(doc, r, actorUserId))
                         .canDelete(canModifyRemark(doc, r, actorUserId))

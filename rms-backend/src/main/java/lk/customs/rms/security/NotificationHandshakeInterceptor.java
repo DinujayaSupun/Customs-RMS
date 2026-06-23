@@ -30,6 +30,7 @@ public class NotificationHandshakeInterceptor implements HandshakeInterceptor {
             return false;
         }
 
+        // Browsers cannot set custom headers for WebSocket handshakes, so the frontend passes JWT as a query parameter.
         String token = servletRequest.getServletRequest().getParameter("token");
         if (token == null || token.isBlank()) {
             setUnauthorized(response);
@@ -44,6 +45,7 @@ public class NotificationHandshakeInterceptor implements HandshakeInterceptor {
                 return false;
             }
 
+            // The handler uses these attributes to route messages to all sessions for the authenticated user.
             attributes.put("uid", userId);
             attributes.put("username", username);
             return true;

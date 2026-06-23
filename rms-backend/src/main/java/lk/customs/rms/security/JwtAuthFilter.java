@@ -86,6 +86,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return false;
         }
 
+        // Query-token auth is intentionally limited to generated download URLs for browser previews.
         String contextPath = request.getContextPath();
         String requestUri = request.getRequestURI();
         String path = requestUri;

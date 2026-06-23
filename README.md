@@ -5,63 +5,101 @@ Document Records Management System for Sri Lanka Customs.
 ![Java](https://img.shields.io/badge/Java-17-blue?logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.2-brightgreen?logo=springboot)
 ![Vue](https://img.shields.io/badge/Vue-3-41b883?logo=vuedotjs)
+![Vite](https://img.shields.io/badge/Vite-7-646cff?logo=vite)
 ![MySQL](https://img.shields.io/badge/MySQL-8-orange?logo=mysql)
 
-## Overview
+Customs RMS is an internal workflow system for receiving, routing, reviewing, and completing
+customs documents. Officers forward documents to one another, add minutes/remarks, attach files,
+make approval decisions, and track every action through an audit trail — with role-based access
+control and real-time notifications.
 
-Customs RMS is an internal workflow system for receiving, routing, reviewing, and completing customs documents. It supports role-based visibility, document movement between officers, remarks/minutes, attachments, audit logs, inbox/sent-message views, and admin permission management.
+## Contents
 
-## Tech Stack
+- [Key features](#key-features)
+- [Tech stack](#tech-stack)
+- [Roles and the permission model](#roles-and-the-permission-model)
+- [Project structure](#project-structure)
+- [Architecture](#architecture)
+- [Backend API areas](#backend-api-areas)
+- [Prerequisites](#prerequisites)
+- [Local development](#local-development)
+- [Environment variables](#environment-variables)
+- [Seeded roles and default users](#seeded-roles-and-default-users)
+- [Authentication and file downloads](#authentication-and-file-downloads)
+- [Real-time notifications](#real-time-notifications)
+- [Testing](#testing)
+- [Continuous integration](#continuous-integration)
+- [Deployment](#deployment)
+- [Further documentation](#further-documentation)
+
+## Key features
+
+- **JWT authentication** with Spring Security, plus short-lived scoped tokens for browser downloads.
+- **Role and permission matrix** — granular, admin-configurable permissions per role.
+- **Document lifecycle** — create, list, filter, view, edit, delete, and PUBLIC/PRIVATE visibility.
+- **Workflow actions** — forward, return, approve, reject, mark done (issue), and reopen.
+- **Forward to multiple recipients** — a primary "Report At" owner plus **CC** and **BCC** recipients,
+  each with their own view/attachment/minute permissions.
+- **Minutes / remarks** timeline per document.
+- **Attachments** — upload, download, versioning, and soft-delete, stored outside the web root.
+- **Undo Send** — a short window to recall a forward/return before the recipient opens it.
+- **Inbox and Sent** views, plus per-user **workload stats** (assigned / opened / unopened).
+- **Real-time notifications** over WebSocket (document forwarded/returned, live permission updates).
+- **Audit log** of every action, with filtering and CSV export.
+- **Admin user management** — create, edit, activate, deactivate, reset password, merge, bulk
+  deactivate/delete, and CSV export.
+- **DC auto-forward scheduler** — reassigns timed-out, unopened documents to a configured officer.
+- **Profile management** — personal details, password change, and profile picture.
+
+## Tech stack
 
 | Layer | Technology |
 |-------|------------|
-| Backend | Spring Boot 4.0.2, Java 17, Spring Security, Spring Data JPA |
-| Frontend | Vue 3, Vite, Vue Router |
-| Database | MySQL 8 |
-| Auth | JWT access tokens plus short-lived scoped download tokens |
-| Build/Test | Maven Wrapper, npm, Vitest, Playwright |
+| Backend | Spring Boot 4.0.2, Java 17, Spring Security, Spring Data JPA (Hibernate) |
+| Real-time | Spring WebSocket (`/ws/notifications`) |
+| Frontend | Vue 3 (`<script setup>`), Vite, Vue Router, axios, lucide icons, Tailwind CSS + PostCSS |
+| Database | MySQL 8 (production) · H2 in MySQL-compatibility mode (tests) |
+| Auth | JWT access tokens + short-lived scoped download tokens (BCrypt password hashing) |
+| Build / test | Maven Wrapper, npm, JUnit 5, Vitest, Playwright |
 
-## Project Structure
+All backend database queries are written in portable JPQL, so the schema runs on any
+Hibernate-supported database (verified on both MySQL and H2).
+
+## Roles and the permission model
+
+Seven roles model the Customs hierarchy:
+
+| Role | Meaning |
+|------|---------|
+| `ADMIN` | System administrator (user and permission management) |
+| `DC` | Director of Customs |
+| `DDC` | Deputy Director of Customs |
+| `SDDC` | Senior Deputy Director of Customs |
+| `SC` | Superintendent of Customs |
+| `ASC` | Assistant Superintendent of Customs |
+| `PMA` | Personal Management Assistant |
+
+Access is **permission-based**, not hard-coded to roles. An admin toggles a matrix of permissions
+(for example `CREATE_DOCUMENT`, `FORWARD_DOCUMENT`, `APPROVE_DOCUMENT`, `VIEW_LOGS`, plus CC/BCC
+view and attachment permissions) per role from the Permissions page. Changes take effect live —
+affected users receive a WebSocket update and the UI re-evaluates their capabilities without a
+re-login. The backend enforces every permission server-side regardless of what the UI shows.
+
+## Project structure
 
 ```text
 Customs-RMS/
 |-- .github/workflows/         # CI pipeline
 |-- package.json               # Root dev orchestration scripts
 |-- scripts/                   # Local development helper scripts
-|-- rms-backend/               # Spring Boot REST API
+|-- rms-backend/               # Spring Boot REST API + WebSocket
 |-- rms-frontend/              # Vue 3 SPA
-|-- README.md
-`-- note.txt
+|-- DEPLOYMENT.md              # Production deployment guide
+|-- RELEASE_CHECKLIST.md       # Pre-release verification checklist
+`-- README.md
 ```
 
-## Main Features
-
-- JWT authentication with Spring Security.
-- Role and permission matrix authorization.
-- Document create, list, details, edit, archive, and visibility flows.
-- Workflow actions: forward, return, approve, reject, done/issue, and reopen.
-- Public/private forwarding visibility rules.
-- Document remarks/minutes timeline.
-- Attachment upload, download, versioning, and delete.
-- Short-lived signed download URLs for browser-rendered files and profile pictures.
-- Inbox and sent messages views.
-- Undo Send workflow controls.
-- Audit logs with filtering and CSV export.
-- Admin user management: create, edit, activate, deactivate, reset password, merge, and export.
-- Profile management: personal details, password change, and profile picture.
-- DC auto-forward scheduler for unattended assignments.
-
-## System Modules
-
-| Module | Path | Purpose |
-|--------|------|---------|
-| Backend API | `rms-backend/` | Spring Boot REST API, authentication, workflow rules, file upload, audit logging |
-| Frontend UI | `rms-frontend/` | Vue 3 single-page application used by Customs RMS users |
-| Root scripts | `package.json` | One-command local development orchestration |
-| Dev scripts | `scripts/` | Port checks and local environment startup helpers |
-| CI | `.github/workflows/ci.yml` | Backend and frontend automated test workflow |
-
-## Request Flow Architecture
+## Architecture
 
 Most user actions follow the same path through the system:
 
@@ -69,100 +107,85 @@ Most user actions follow the same path through the system:
 Vue page -> frontend API wrapper -> Spring controller -> service -> repository -> database table
 ```
 
-Example document list flow:
+Example — the document list:
 
 ```text
 rms-frontend/src/pages/DocumentsPage.vue
   -> rms-frontend/src/api/documents.api.js
-  -> rms-backend/src/main/java/lk/customs/rms/controller/DocumentController.java
-  -> rms-backend/src/main/java/lk/customs/rms/service/DocumentService.java
-  -> rms-backend/src/main/java/lk/customs/rms/service/impl/DocumentServiceImpl.java
-  -> rms-backend/src/main/java/lk/customs/rms/repository/DocumentRepository.java
+  -> rms-backend/.../controller/DocumentController.java
+  -> rms-backend/.../service/impl/DocumentServiceImpl.java
+  -> rms-backend/.../repository/DocumentRepository.java
   -> documents table
 ```
 
-The same pattern applies to most modules:
+The same pattern applies across modules:
 
-| Area | Frontend Entry | API Wrapper | Backend Controller | Service | Repository/Table |
-|------|----------------|-------------|--------------------|---------|------------------|
-| Login/profile | `LoginPage.vue`, `ProfilePage.vue`, `AppLayout.vue` | `auth.api.js` | `AuthController` | Spring Security services, `FileStorageService` | `UserRepository`, `users` |
+| Area | Frontend entry | API wrapper | Controller | Service | Repository / table |
+|------|----------------|-------------|------------|---------|--------------------|
+| Login / profile | `LoginPage.vue`, `ProfilePage.vue` | `auth.api.js` | `AuthController` | Spring Security, `FileStorageService` | `UserRepository`, `users` |
 | Documents | `DocumentsPage.vue`, `DocumentDetailsPage.vue` | `documents.api.js` | `DocumentController` | `DocumentServiceImpl` | `DocumentRepository`, `documents` |
-| Inbox | `InboxPage.vue` | `documents.api.js` | `DocumentController` | `DocumentServiceImpl` | `documents`, `document_movements`, `document_user_views` |
-| Minutes/remarks | `DocumentDetailsPage.vue`, `InboxPage.vue` | `documents.api.js` | `DocumentRemarkController` | `DocumentServiceImpl` for workflow minutes | `DocumentRemarkRepository`, `document_remarks` |
-| Movements/history | `DocumentDetailsPage.vue`, `InboxPage.vue` | `documents.api.js` | `DocumentMovementController` | Direct repository mapping with permission checks | `DocumentMovementRepository`, `document_movements` |
-| Attachments | `DocumentDetailsPage.vue`, `DocumentsPage.vue`, `InboxPage.vue` | `documents.api.js` | `DocumentAttachmentController` | `AttachmentServiceImpl`, `FileStorageService` | `DocumentAttachmentRepository`, upload folder |
-| Audit logs | `LogsPage.vue` | `logs.api.js` | `LogsController`, `AuditLogController` | `AuditLogServiceImpl` | `AuditLogRepository`, `audit_logs` |
+| Inbox / workflow | `InboxPage.vue` | `documents.api.js` | `DocumentController` | `DocumentServiceImpl`, `DocumentRecipientServiceImpl` | `documents`, `document_movements`, `document_recipient_sets` |
+| Minutes / remarks | `DocumentDetailsPage.vue`, `InboxPage.vue` | `documents.api.js` | `DocumentRemarkController` | — | `DocumentRemarkRepository`, `document_remarks` |
+| Movements / history | `DocumentDetailsPage.vue` | `documents.api.js` | `DocumentMovementController` | — | `DocumentMovementRepository`, `document_movements` |
+| Attachments | `DocumentDetailsPage.vue`, `InboxPage.vue` | `documents.api.js` | `DocumentAttachmentController` | `AttachmentServiceImpl`, `FileStorageService` | `DocumentAttachmentRepository`, upload folder |
+| Audit logs | `LogsPage.vue` | `logs.api.js` | `LogsController` | `AuditLogServiceImpl` | `AuditLogRepository`, `audit_logs` |
 | Admin users | `UsersPage.vue` | `auth.api.js` | `AdminUserController` | `AdminUserServiceImpl` | `UserRepository`, `RoleRepository` |
 | Permissions | `PermissionsPage.vue` | `permissions.api.js` | `AdminPermissionController` | `PermissionServiceImpl`, `DcAutoForwardConfigServiceImpl` | `RolePermissionRepository`, `dc_auto_forward_config` |
+| Notifications | `App.vue`, `services/realtimeNotifications.js` | WebSocket | `NotificationWebSocketHandler` | `RealtimeNotificationService` | in-memory session registry |
 
-Responsibilities are split like this:
+Layer responsibilities:
 
-- Pages own screen state, form state, and user interactions.
-- Frontend API wrappers own HTTP paths and request/response calls.
-- Controllers own route definitions, authentication lookup, and request validation boundaries.
-- Services own business rules, permissions, workflow transitions, audit logging, and file handling.
-- Repositories own database reads/writes.
-- DTOs define the API shape sent to the frontend.
+- **Pages** own screen state, forms, and user interactions.
+- **API wrappers** own HTTP paths and request/response calls.
+- **Controllers** are thin HTTP adapters: routing, auth lookup, and request validation.
+- **Services** own business rules, permissions, workflow transitions, audit logging, and files.
+- **Repositories** own database reads/writes (portable JPQL).
+- **DTOs** define the API shape sent to the frontend (entities are never exposed directly).
 
-When adding a feature, start by identifying the user workflow, then follow the flow above. A new document action usually needs a Vue button, an API wrapper function, a controller route, service permission/business logic, repository access, audit logging, and focused tests.
+When adding a feature, follow the flow above: a new document action usually needs a Vue control,
+an API wrapper function, a controller route, service permission/business logic, repository access,
+audit logging, and focused tests.
 
-## Backend API Areas
+## Backend API areas
 
-- `/api/health`
-- `/api/auth`
-- `/api/documents` (also supports legacy `/api/reports`)
-- `/api/documents/my-inbox`
-- `/api/documents/my-workload-stats`
-- `/api/documents/{id}/remarks`
-- `/api/documents/{id}/movements`
-- `/api/documents/{id}/attachments`
-- `/api/attachments/{id}`
-- `/api/audit-logs`
-- `/api/admin/users`
-- `/api/admin/permissions`
+| Path | Purpose |
+|------|---------|
+| `/api/health` | Liveness check |
+| `/api/auth` | Login, current user, profile, password, profile picture |
+| `/api/documents` | List/create/view/edit/delete documents (legacy `/api/reports` still redirects) |
+| `/api/documents/my-inbox`, `/sent-messages` | Inbox and sent views |
+| `/api/documents/my-workload-stats` | Per-user assigned/opened/unopened counts |
+| `/api/documents/{id}/forward` · `/return` · `/approve` · `/reject` · `/issue` · `/reopen` · `/undo-send` | Workflow actions |
+| `/api/documents/{id}/recipients` · `/remarks` · `/movements` · `/attachments` | Recipients, minutes, history, files |
+| `/api/attachments/{id}` | Download / delete an attachment |
+| `/api/audit-logs` | Audit log search, filter options, CSV export |
+| `/api/admin/users` | Admin user management (incl. merge, bulk ops, CSV export) |
+| `/api/admin/permissions` | Permission matrix and DC auto-forward config |
+| `/ws/notifications` | Authenticated WebSocket for real-time notifications |
 
 ## Prerequisites
 
 - Java 17+
-- Node.js 18+ (Node 20 recommended for CI alignment)
+- Node.js 20+ (matches CI)
 - MySQL 8
 - npm
 
-The backend uses the Maven Wrapper in `rms-backend/mvnw.cmd`, so a separate Maven install is not required for normal local commands.
+The backend uses the Maven Wrapper (`rms-backend/mvnw.cmd`), so a separate Maven install is not
+required for normal local commands.
 
-## Environment Variables
+## Local development
 
-The backend reads these values from `.env` during local development or from server environment variables in production.
-
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `DB_USERNAME` | Yes | MySQL username |
-| `DB_PASSWORD` | Yes | MySQL password |
-| `JWT_SECRET` | Yes | Base64 encoded secret used to sign JWT tokens |
-| `APP_UPLOAD_DIR` | Recommended | External folder for document/profile uploads. Defaults to `C:/customs_uploads` |
-| `DC_AUTO_FORWARD_POLL_MS` | Optional | DC auto-forward scheduler interval. Defaults to `60000` |
-| `SPRING_PROFILES_ACTIVE` | Optional | Spring profile, for example `dev` locally |
-| `APP_SEED_ENABLED` | Local only | Enables default user seeding. Keep disabled in production |
-| `APP_SEED_DEFAULT_PASSWORD` | Local only | Password for local seeded non-admin users |
-| `APP_SEED_ADMIN_PASSWORD` | Local only | Password for local seeded admin user |
-
-Do not commit `.env`, production passwords, or production JWT secrets.
-
-Generate a local JWT secret:
-
-```powershell
-[Convert]::ToBase64String((1..64 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 } | ForEach-Object { [byte]$_ }))
-```
-
-## Local Development
-
-### 1. Create local environment file
+### 1. Create your local environment file
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Edit `.env` with your local database credentials and JWT secret.
+Edit `.env` with your local MySQL credentials and a JWT secret. Generate a secret with:
+
+```powershell
+[Convert]::ToBase64String((1..64 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 } | ForEach-Object { [byte]$_ }))
+```
 
 ### 2. Install root dependencies
 
@@ -182,226 +205,120 @@ Default URLs:
 - Backend: `http://localhost:8080`
 - API base: `http://localhost:8080/api`
 
-`dev:all` now checks ports `8080` and `5173` before starting. If a port is already occupied, startup stops and prints the PID/process name instead of killing anything.
+`dev:all` checks ports `8080` and `5173` first; if a port is busy it stops and prints the owning
+process instead of killing anything.
 
-### Dev Port Utilities
+**Port helpers:** `npm run dev:check-ports` (check) · `npm run dev:free-ports` (free, with
+confirmation) · `npm run dev:free-ports:force` (free without asking).
 
-```powershell
-npm run dev:check-ports
-```
-
-Checks whether ports `8080` and `5173` are available.
+**Run one side only:**
 
 ```powershell
-npm run dev:free-ports
+cd rms-frontend; npm install; npm run dev      # frontend at :5173
+cd rms-backend;  .\mvnw.cmd spring-boot:run     # backend at :8080
 ```
 
-Shows the processes using the dev ports and asks you to type `YES` before stopping them.
+## Environment variables
 
-```powershell
-npm run dev:free-ports:force
-```
+The backend reads these from `.env` locally, or from server environment variables in production.
 
-Stops processes on the dev ports without asking. Use only when you are sure the listed ports belong to this project.
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `DB_USERNAME` | Yes | MySQL username |
+| `DB_PASSWORD` | Yes | MySQL password |
+| `JWT_SECRET` | Yes | Base64 secret used to sign JWTs (startup fails if missing) |
+| `APP_UPLOAD_DIR` | Recommended | External folder for uploads. Defaults to `C:/customs_uploads` |
+| `APP_CORS_ALLOWED_ORIGINS` | Production | Comma-separated allowed origins for HTTP **and** WebSocket. Defaults to localhost |
+| `SPRING_PROFILES_ACTIVE` | Optional | Spring profile (`dev` locally, `prod` in production) |
+| `JWT_EXPIRATION_MS` | Optional | Token lifetime. Defaults to `28800000` (8h) |
+| `DC_AUTO_FORWARD_POLL_MS` | Optional | Auto-forward scheduler interval. Defaults to `60000` |
+| `APP_SEED_ENABLED` | Local only | Enables default user seeding. **Keep `false` in production** |
+| `APP_SEED_DEFAULT_PASSWORD` / `APP_SEED_ADMIN_PASSWORD` | Local only | Passwords for seeded users |
 
-### Start Frontend Only
+The frontend is built with `VITE_API_BASE_URL` (the backend's public base URL) baked in at build
+time. Never commit `.env`, production passwords, or production JWT secrets.
 
-```powershell
-cd rms-frontend
-npm install
-npm run dev
-```
+## Seeded roles and default users
 
-Frontend default URL: `http://localhost:5173`
+Roles (`ADMIN`, `DC`, `DDC`, `SDDC`, `SC`, `ASC`, `PMA`) and the permission matrix are seeded on
+startup. Default **users** are seeded only under the `local`/`dev`/`e2e` profiles when
+`APP_SEED_ENABLED=true` — never in `prod`. When enabled, usernames `dc`, `ddc`, `sc`, `asc`, `pma`,
+and `admin` are created if missing, using `APP_SEED_DEFAULT_PASSWORD` / `APP_SEED_ADMIN_PASSWORD`.
 
-### Start Backend Only
+> Production has no seeded users by design. See [DEPLOYMENT.md](DEPLOYMENT.md) for first-admin setup.
 
-```powershell
-cd rms-backend
-.\mvnw.cmd spring-boot:run
-```
-
-Backend default URL: `http://localhost:8080`
-
-## Seeded Roles and Optional Default Users
-
-Roles:
-
-- `ADMIN`
-- `DC`
-- `DDC`
-- `SDDC`
-- `SC`
-- `ASC`
-- `PMA`
-
-Default user seeding is only active for local/dev profile usage when `APP_SEED_ENABLED=true`.
-
-When enabled, these usernames are created if missing:
-
-- `dc`
-- `ddc`
-- `sc`
-- `asc`
-- `pma`
-- `admin`
-
-Passwords come from local-only env values:
-
-- `APP_SEED_DEFAULT_PASSWORD`
-- `APP_SEED_ADMIN_PASSWORD`
-
-## Authentication And File Downloads
+## Authentication and file downloads
 
 Normal API requests use the JWT access token in the `Authorization: Bearer <token>` header.
 
-Browser-rendered downloads, such as profile pictures and attachments opened in an `<img>`, `<iframe>`, or new tab, use short-lived scoped download tokens:
+Browser-rendered downloads (profile pictures and attachments opened in an `<img>`, `<iframe>`, or
+new tab) use **short-lived scoped download tokens** instead:
 
 - `POST /api/auth/me/profile-picture-token`
 - `POST /api/attachments/{attachmentId}/download-token`
 
-The returned URL contains `download_token`, not the main JWT access token. This avoids exposing the long-lived access token in browser URLs, logs, or referrers.
+The returned URL carries a `download_token` (valid ~120s, scoped to that one resource), not the
+main access token — so the long-lived JWT never appears in browser URLs, logs, or referrers.
+
+## Real-time notifications
+
+The frontend opens an authenticated WebSocket to `/ws/notifications` (the JWT is passed as a query
+parameter, since browsers can't set WebSocket headers). The backend pushes events such as
+`DOCUMENT_FORWARDED`, `DOCUMENT_RETURNED`, and `PERMISSIONS_UPDATED`, which drive in-app toasts,
+browser notifications, and live permission refreshes. The WebSocket's allowed origins come from the
+same `APP_CORS_ALLOWED_ORIGINS` setting as HTTP CORS.
 
 ## Testing
 
-### Backend compile and test compile
+| Suite | Count | Command |
+|-------|-------|---------|
+| Backend (JUnit 5, H2) | 163 | `cd rms-backend; .\mvnw.cmd test` |
+| Frontend unit (Vitest) | 79 | `npm --prefix rms-frontend run test:unit` |
+| Frontend E2E (Playwright) | 19 | `cd rms-frontend; npm run test:e2e` |
+
+Backend integration tests use the `test` profile with an in-memory H2 database in MySQL
+compatibility mode, so they need no local MySQL. The Playwright E2E suite starts the real backend
+against MySQL and needs these env vars:
 
 ```powershell
-cd rms-backend
-.\mvnw.cmd compile
-.\mvnw.cmd test-compile
+$env:RMS_E2E_ADMIN_USER="admin"; $env:RMS_E2E_ADMIN_PASS="your_admin_password"
+$env:RMS_E2E_DC_USER="dc";       $env:RMS_E2E_DC_PASS="your_dc_password"
 ```
 
-### Backend focused unit tests
+## Continuous integration
 
-```powershell
-cd rms-backend
-.\mvnw.cmd test "-Dtest=AuditLogServiceImplTests"
-.\mvnw.cmd test "-Dtest=DocumentResponseMappingTests"
-.\mvnw.cmd test "-Dtest=ResponseBatchMappingTests"
-```
+`.github/workflows/ci.yml` runs on every push and PR:
 
-### Backend integration tests
+- **Backend tests** against the in-memory H2 database.
+- **Frontend unit + Playwright E2E** against an ephemeral MySQL service container (E2E data does
+  not persist after the job).
 
-```powershell
-cd rms-backend
-.\mvnw.cmd test
-```
+## Deployment
 
-Integration tests use the `test` Spring profile with an in-memory H2 database in MySQL compatibility mode. They do not require a local MySQL username or password. E2E runs still use MySQL because they start the application closer to production.
+Customs RMS deploys as two artifacts behind a reverse proxy (Nginx recommended):
 
-### Frontend unit tests
-
-```powershell
-npm --prefix rms-frontend run test:unit
-```
-
-### Frontend E2E smoke tests
-
-```powershell
-cd rms-frontend
-setx RMS_E2E_ADMIN_USER "admin"
-setx RMS_E2E_ADMIN_PASS "your_admin_password"
-setx RMS_E2E_DC_USER "dc"
-setx RMS_E2E_DC_PASS "your_dc_password"
-npm run test:e2e
-```
-
-## CI
-
-GitHub Actions workflow is at `.github/workflows/ci.yml` and runs:
-
-- backend tests with the in-memory test database
-- frontend Playwright smoke tests
-
-CI uses an ephemeral MySQL service container only for the frontend E2E smoke job, so temporary E2E data created during a run does not persist after the job ends.
-
-## Build For Production
-
-Backend:
-
-```powershell
-cd rms-backend
-.\mvnw.cmd clean package -DskipTests
-java -jar target/rms-backend-0.0.1-SNAPSHOT.jar
-```
-
-Frontend:
-
-```powershell
-cd rms-frontend
-npm install
-npm run build
-```
-
-Frontend output: `rms-frontend/dist/`
-
-## Hosting / Production Deployment
-
-For production, host the system as two applications:
-
-- Backend: Spring Boot API running on port `8080`
-- Frontend: static Vue build from `rms-frontend/dist/`, served by Nginx, Apache, IIS, or another web server
-
-Recommended production layout:
+- **Backend** — the Spring Boot JAR (`rms-backend-0.0.1-SNAPSHOT.jar`) on port `8080`.
+- **Frontend** — the static Vite build (`rms-frontend/dist/`) served by the web server.
 
 ```text
-Internet / Intranet Users
-        |
-        v
-Web Server / Reverse Proxy
-        |
-        |-- /           -> Vue frontend static files
-        |-- /api/       -> Spring Boot backend on localhost:8080/api/
-        `-- /actuator/  -> Optional health endpoints, restrict if exposed
+Users -> Nginx (TLS) -> /        -> Vue static files
+                        /api/     -> backend :8080
+                        /ws/      -> backend :8080  (WebSocket upgrade)
+                                     -> MySQL + upload directory
 ```
 
-### Production Steps
+Three settings cause silent production failures if missed: **`APP_CORS_ALLOWED_ORIGINS`** (your
+real domain — governs both the API and the WebSocket), **`VITE_API_BASE_URL`** (set before building
+the frontend), and **`SPRING_PROFILES_ACTIVE=prod`** (switches to schema `validate` and disables
+seeding). The reverse proxy must also forward the WebSocket upgrade headers for `/ws/`.
 
-1. Prepare a server with Java 17+, Node.js, MySQL 8, and a web server such as Nginx.
-2. Create the production MySQL database/user.
-3. Set production environment variables: `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, and `APP_UPLOAD_DIR`.
-4. Keep `APP_SEED_ENABLED=false` in production.
-5. Build the backend with `.\mvnw.cmd clean package -DskipTests`.
-6. Run the backend JAR as a managed service.
-7. Build the frontend with `npm install` and `npm run build`.
-8. Copy `rms-frontend/dist/` to the web server's public directory.
-9. Configure the web server to serve the frontend and proxy `/api/` to `http://127.0.0.1:8080/api/`.
-10. Add HTTPS with a valid certificate before production use.
+**The full, step-by-step guide is in [DEPLOYMENT.md](DEPLOYMENT.md)** — environment setup, database,
+systemd + Nginx config (including the WebSocket block and a login rate-limit), first-admin
+bootstrap, security hardening, rollback, and troubleshooting. Verify each release against
+[RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) before going live.
 
-Example Nginx configuration:
+## Further documentation
 
-```nginx
-server {
-  listen 80;
-  server_name your-domain.example;
-
-  root /var/www/customs-rms/dist;
-  index index.html;
-
-  location / {
-    try_files $uri $uri/ /index.html;
-  }
-
-  location /api/ {
-    proxy_pass http://127.0.0.1:8080/api/;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-  }
-}
-```
-
-## Production Checklist
-
-- Use a strong Base64 `JWT_SECRET`.
-- Use a dedicated MySQL user with only the permissions needed by the app.
-- Store uploads outside the repository using `APP_UPLOAD_DIR`.
-- Back up the database and upload directory regularly.
-- Disable local seed users in production.
-- Serve the frontend over HTTPS.
-- Restrict server access with firewall rules.
-- Keep `.env` and production credentials private.
-- Run backend as a managed service so it restarts automatically after reboot.
-- Test login, document upload/download, forwarding, audit logs, and admin user management before release.
+- [DEPLOYMENT.md](DEPLOYMENT.md) — production deployment guide.
+- [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) — pre-release verification checklist.
+- [rms-backend/README.md](rms-backend/README.md) — backend configuration and secrets handling.

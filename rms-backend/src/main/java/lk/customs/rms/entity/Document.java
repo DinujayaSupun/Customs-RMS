@@ -10,7 +10,13 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "documents")
+@Table(name = "documents", indexes = {
+    @Index(name = "idx_documents_owner_status_deleted_updated", columnList = "current_owner_user_id,status,is_deleted,updated_at"),
+    @Index(name = "idx_documents_deleted_updated_id", columnList = "is_deleted,updated_at,id"),
+    @Index(name = "idx_documents_created_by_deleted", columnList = "created_by_user_id,is_deleted"),
+    @Index(name = "idx_documents_received_date", columnList = "received_date"),
+    @Index(name = "idx_documents_visibility_deleted", columnList = "visibility,is_deleted")
+})
 @Getter
 @Setter
 public class Document {
@@ -18,6 +24,12 @@ public class Document {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    // Optimistic locking: concurrent updates to the same document (e.g. the auto-forward scheduler
+    // firing while the owner acts) are detected instead of silently overwriting each other.
+    @Version
+    @Column(name = "version")
+    private Long version;
 
     @Column(name="ref_no", unique = true, nullable = false)
     private String refNo;

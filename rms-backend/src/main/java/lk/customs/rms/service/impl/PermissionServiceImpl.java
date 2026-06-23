@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -77,6 +78,25 @@ public class PermissionServiceImpl implements PermissionService {
     }
 
     @Override
+    public Set<AppPermission> getPermissionsForUser(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BadRequestException("User not found: " + userId));
+        if (user.getRole() == null) return EnumSet.noneOf(AppPermission.class);
+        Set<AppPermission> result = EnumSet.noneOf(AppPermission.class);
+        rolePermissionRepository
+                .findByRole_RoleNameIgnoreCaseOrderByPermissionNameAsc(user.getRole().getRoleName())
+                .stream()
+                .filter(rp -> Boolean.TRUE.equals(rp.getEnabled()))
+                .forEach(rp -> {
+                    try {
+                        result.add(AppPermission.valueOf(rp.getPermissionName().toUpperCase(Locale.ROOT)));
+                    } catch (IllegalArgumentException ignored) {}
+                });
+        return result;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public PermissionMatrixResponse getPermissionMatrix() {
         return buildMatrix();
     }
@@ -125,6 +145,7 @@ public class PermissionServiceImpl implements PermissionService {
             }
         }
 
+        // Return explicit disabled rows for missing role/permission pairs so the admin grid is complete.
         List<RolePermissionEntryResponse> savedEntries = rolePermissionRepository.findAllByOrderByRole_RoleNameAscPermissionNameAsc()
                 .stream()
                 .map(rp -> RolePermissionEntryResponse.builder()

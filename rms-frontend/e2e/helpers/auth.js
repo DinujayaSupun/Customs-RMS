@@ -1,13 +1,19 @@
 import { expect } from "@playwright/test";
 
+function requireEnv(name) {
+  const val = process.env[name];
+  if (!val) throw new Error(`E2E env var ${name} is not set. Add it to your .env file.`);
+  return val;
+}
+
 export const adminCreds = {
   username: process.env.RMS_E2E_ADMIN_USER || "admin",
-  password: process.env.RMS_E2E_ADMIN_PASS || "E2eAdmin123",
+  password: requireEnv("RMS_E2E_ADMIN_PASS"),
 };
 
 export const dcCreds = {
   username: process.env.RMS_E2E_DC_USER || "dc",
-  password: process.env.RMS_E2E_DC_PASS || "E2eDefault123",
+  password: requireEnv("RMS_E2E_DC_PASS"),
 };
 
 export const apiBaseUrl = process.env.RMS_E2E_API_BASE_URL || "http://localhost:8081/api";

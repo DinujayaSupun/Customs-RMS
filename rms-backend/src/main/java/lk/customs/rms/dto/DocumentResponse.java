@@ -47,6 +47,17 @@ public class DocumentResponse {
     private LocalDateTime latestRemarkAt;
     private Boolean viewedByMe;
     private Boolean canUndoSend;
+    private Boolean canDelete;
+    private String recipientType;
+    private RecipientSummaryResponse recipientSummary;
+    private String recipientSummaryText;
+    private Boolean canManageRecipients;
+    private Boolean canWorkflow;
+    private Boolean canViewAttachments;
+    private Boolean canUploadAttachment;
+    private Boolean canDeleteOwnAttachment;
+    private Boolean canViewTimeline;
+    private Boolean canViewMinutes;
     private String undoSendStatus;
     private LocalDateTime undoSendExpiresAt;
     private Boolean undoSendReceiverOpened;
@@ -93,6 +104,17 @@ public class DocumentResponse {
                 .latestRemarkAt(mapping.latestRemarkAt)
                 .viewedByMe(mapping.viewedByMe)
                 .canUndoSend(mapping.canUndoSend)
+                .canDelete(mapping.canDelete)
+                .recipientType(mapping.recipientType)
+                .recipientSummary(mapping.recipientSummary)
+                .recipientSummaryText(mapping.recipientSummary == null ? null : mapping.recipientSummary.getCompactText())
+                .canManageRecipients(mapping.canManageRecipients)
+                .canWorkflow(mapping.canWorkflow)
+                .canViewAttachments(mapping.canViewAttachments)
+                .canUploadAttachment(mapping.canUploadAttachment)
+                .canDeleteOwnAttachment(mapping.canDeleteOwnAttachment)
+                .canViewTimeline(mapping.canViewTimeline)
+                .canViewMinutes(mapping.canViewMinutes)
                 .undoSendStatus(mapping.undoSendStatus)
                 .undoSendExpiresAt(mapping.undoSendExpiresAt)
                 .undoSendReceiverOpened(mapping.undoSendReceiverOpened)
@@ -134,6 +156,24 @@ public class DocumentResponse {
         private LocalDateTime latestRemarkAt;
         @Builder.Default
         private Boolean canUndoSend = false;
+        @Builder.Default
+        private Boolean canDelete = false;
+        private String recipientType;
+        private RecipientSummaryResponse recipientSummary;
+        @Builder.Default
+        private Boolean canManageRecipients = false;
+        @Builder.Default
+        private Boolean canWorkflow = false;
+        @Builder.Default
+        private Boolean canViewAttachments = false;
+        @Builder.Default
+        private Boolean canUploadAttachment = false;
+        @Builder.Default
+        private Boolean canDeleteOwnAttachment = false;
+        @Builder.Default
+        private Boolean canViewTimeline = false;
+        @Builder.Default
+        private Boolean canViewMinutes = false;
         private String undoSendStatus;
         private LocalDateTime undoSendExpiresAt;
         @Builder.Default

@@ -17,6 +17,29 @@ public interface DocumentMovementRepository extends JpaRepository<DocumentMoveme
     List<DocumentMovement> findByActionTypeAndActionByUserIdOrderByActionAtDescIdDesc(MovementActionType actionType, Long actionByUserId);
     List<DocumentMovement> findByActionTypeInAndActionByUserIdOrderByActionAtDescIdDesc(Collection<MovementActionType> actionTypes, Long actionByUserId);
     List<DocumentMovement> findByActionTypeAndFromUserIdOrderByActionAtDescIdDesc(MovementActionType actionType, Long fromUserId);
+    @Query("""
+           select m
+           from DocumentMovement m
+           join Document d on d.id = m.documentId
+           where d.deleted = false
+             and (
+               (m.actionType in :sentActions and m.actionByUserId = :actorUserId)
+               or (m.actionType = :undoAction and m.fromUserId = :actorUserId)
+             )
+             and (:search is null or :search = ''
+               or lower(d.refNo) like lower(concat('%', :search, '%'))
+               or lower(d.title) like lower(concat('%', :search, '%'))
+               or lower(d.companyName) like lower(concat('%', :search, '%')))
+             and (:status is null or d.status = :status)
+             and (:priority is null or d.priority = :priority)
+           """)
+    Page<DocumentMovement> findSentPageForActor(@Param("actorUserId") Long actorUserId,
+                                                @Param("sentActions") Collection<MovementActionType> sentActions,
+                                                @Param("undoAction") MovementActionType undoAction,
+                                                @Param("search") String search,
+                                                @Param("status") lk.customs.rms.enums.Status status,
+                                                @Param("priority") lk.customs.rms.enums.Priority priority,
+                                                Pageable pageable);
     Optional<DocumentMovement> findFirstByDocumentIdOrderByActionAtDescIdDesc(Long documentId);
     List<DocumentMovement> findByDocumentIdInAndToUserIdAndActionTypeInOrderByDocumentIdAscActionAtAsc(
             List<Long> documentIds,
@@ -65,4 +88,14 @@ public interface DocumentMovementRepository extends JpaRepository<DocumentMoveme
         boolean existsPrivateForwardTrailForUser(@Param("documentId") Long documentId,
                                                                                          @Param("userId") Long userId,
                                                                                          @Param("forwardAction") MovementActionType forwardAction);
+
+    @Query("""
+            select m from DocumentMovement m
+            where m.documentId in :documentIds
+              and m.id = (
+                  select max(m2.id) from DocumentMovement m2
+                  where m2.documentId = m.documentId
+              )
+            """)
+    List<DocumentMovement> findLatestByDocumentIds(@Param("documentIds") Collection<Long> documentIds);
 }

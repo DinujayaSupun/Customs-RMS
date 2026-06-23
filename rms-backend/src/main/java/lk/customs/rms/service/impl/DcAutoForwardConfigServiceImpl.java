@@ -22,6 +22,7 @@ import java.util.Set;
 @Service
 public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigService {
 
+    // Workflow settings are global for the installation, so they are stored as a singleton row.
     private static final Long SINGLETON_ID = 1L;
     private static final List<Status> DEFAULT_FORWARD_RETURN_ALLOWED_STATUSES =
             List.of(Status.PENDING, Status.IN_PROGRESS, Status.RETURNED);
@@ -128,6 +129,7 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
     public DcAutoForwardConfig getOrCreateEntity() {
         return configRepository.findById(SINGLETON_ID)
                 .orElseGet(() -> {
+                    // Defaults keep existing workflow behavior available even before an admin opens settings.
                     DcAutoForwardConfig config = new DcAutoForwardConfig();
                     config.setId(SINGLETON_ID);
                     config.setEnabled(false);

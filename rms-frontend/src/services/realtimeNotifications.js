@@ -15,6 +15,7 @@ function clearReconnectTimer() {
 function scheduleReconnect() {
   if (manuallyClosed) return;
   clearReconnectTimer();
+  // Keep reconnect simple and bounded; auth failures are handled by the next guarded API request.
   reconnectTimer = window.setTimeout(() => {
     connectRealtimeNotifications();
   }, 3000);
@@ -32,6 +33,7 @@ function resolveSocketUrl() {
 
   const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
   const wsBase = toWebSocketBaseUrl(apiBase);
+  // The backend handshake reads the token from the query string because browser WebSocket headers are limited.
   return `${wsBase}/ws/notifications?token=${encodeURIComponent(token)}`;
 }
 
@@ -53,6 +55,7 @@ export function connectRealtimeNotifications() {
   socket.onmessage = (event) => {
     try {
       const payload = JSON.parse(event.data);
+      // Fan out to independent subscribers; one broken component should not stop notifications globally.
       for (const listener of listeners) {
         try {
           listener(payload);

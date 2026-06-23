@@ -145,7 +145,7 @@
           </div>
         </div>
 
-        <div class="tableWrap">
+        <div v-if="loading || permissions.length === 0" class="tableWrap">
           <table class="table">
             <thead>
               <tr>
@@ -163,6 +163,7 @@
               <tr v-else v-for="permission in permissions" :key="permission">
                 <td :title="permission">
                   <div class="permTitle">{{ friendlyLabel(permission) }}</div>
+                  <div v-if="permDescription(permission)" class="permDesc">{{ permDescription(permission) }}</div>
                   <div class="permCode truncateText">{{ permission }}</div>
                 </td>
                 <td v-for="roleName in roles" :key="`${permission}-${roleName}`" class="checkCell">
@@ -178,6 +179,47 @@
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div v-else class="permissionGroupList">
+          <div v-for="group in permissionGroups" :key="group.key" class="permissionGroup">
+            <div class="permissionGroupHead">
+              <div>
+                <h3>{{ group.title }}</h3>
+                <p>{{ group.description }}</p>
+              </div>
+            </div>
+
+            <div class="tableWrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Permission</th>
+                    <th v-for="roleName in roles" :key="`${group.key}-head-${roleName}`">{{ roleName }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="permission in group.permissions" :key="`${group.key}-${permission}`">
+                    <td :title="permission">
+                      <div class="permTitle">{{ friendlyLabel(permission) }}</div>
+                      <div v-if="permDescription(permission)" class="permDesc">{{ permDescription(permission) }}</div>
+                      <div class="permCode truncateText">{{ permission }}</div>
+                    </td>
+                    <td v-for="roleName in roles" :key="`${group.key}-${permission}-${roleName}`" class="checkCell">
+                      <label class="toggleWrap">
+                        <input
+                          type="checkbox"
+                          :checked="isEnabled(roleName, permission)"
+                          @change="setEnabled(roleName, permission, $event.target.checked)"
+                        />
+                        <span>{{ isEnabled(roleName, permission) ? "Yes" : "No" }}</span>
+                      </label>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -229,6 +271,78 @@ const undoSendShowExpiredInfo = ref(true);
 const eligibleReceivers = computed(() =>
   allUsers.value.filter((u) => ["DDC", "SDDC"].includes(String(u.role || "").toUpperCase()))
 );
+
+const permissionGroupDefinitions = [
+  {
+    key: "copied",
+    title: "CC / BCC Recipients",
+    description: "Control what copied users can see or do when they are not the Report At user.",
+    match: (permission) => /^(CC|BCC)_/.test(permission) || [
+      "MANAGE_DOCUMENT_RECIPIENTS",
+      "MANAGE_ANY_DOCUMENT_RECIPIENTS",
+      "VIEW_HIDDEN_RECIPIENTS",
+    ].includes(permission),
+  },
+  {
+    key: "workflow",
+    title: "Workflow",
+    description: "Permissions for routing, decisions, minutes, and document lifecycle actions.",
+    match: (permission) => [
+      "FORWARD_DOCUMENT",
+      "RETURN_DOCUMENT",
+      "APPROVE_DOCUMENT",
+      "REJECT_DOCUMENT",
+      "ISSUE_DOCUMENT",
+      "REOPEN_DOCUMENT",
+      "ADD_REMARK",
+      "VIEW_REMARKS_WHEN_NOT_REPORT_AT",
+      "VIEW_ALL_HISTORY",
+      "FORWARD_PUBLIC",
+      "FORWARD_PRIVATE",
+      "CHANGE_DOCUMENT_VISIBILITY",
+    ].includes(permission),
+  },
+  {
+    key: "documents",
+    title: "Documents And Files",
+    description: "Create, update, delete, and attachment permissions for normal document handling.",
+    match: (permission) => /DOCUMENT|ATTACHMENT/.test(permission),
+  },
+  {
+    key: "admin",
+    title: "Administration",
+    description: "Admin screens, logs, user management, and system-level controls.",
+    match: (permission) => /ADMIN|USER|ROLE|LOG|PERMISSION/.test(permission),
+  },
+];
+
+const permissionGroups = computed(() => {
+  const assigned = new Set();
+  const groups = [];
+
+  for (const definition of permissionGroupDefinitions) {
+    const matched = permissions.value.filter((permission) => {
+      const normalized = String(permission || "").toUpperCase();
+      return !assigned.has(normalized) && definition.match(normalized);
+    });
+    matched.forEach((permission) => assigned.add(String(permission || "").toUpperCase()));
+    if (matched.length > 0) {
+      groups.push({ ...definition, permissions: matched });
+    }
+  }
+
+  const remaining = permissions.value.filter((permission) => !assigned.has(String(permission || "").toUpperCase()));
+  if (remaining.length > 0) {
+    groups.push({
+      key: "other",
+      title: "Other",
+      description: "Additional permissions returned by the backend.",
+      permissions: remaining,
+    });
+  }
+
+  return groups;
+});
 
 function cellKey(roleName, permission) {
   return `${roleName}::${permission}`;
@@ -282,22 +396,98 @@ function onUndoToggle(key, enabled) {
   markConfigDirty();
 }
 
+const PERMISSION_LABELS = {
+  CREATE_DOCUMENT:                 "Create Document",
+  DELETE_DOCUMENT:                 "Delete Own Document",
+  DELETE_ANY_DOCUMENT:             "Delete Any Document",
+  VIEW_PUBLIC_DOCUMENT:            "View Public Documents",
+  VIEW_PRIVATE_DOCUMENT:           "View Private Documents",
+  VIEW_OWN_CREATED_DOCUMENTS:      "View Own Created Documents",
+  VIEW_ALL_DOCUMENTS:              "View All Documents",
+  EDIT_DOCUMENT_DETAILS:           "Edit Document Details",
+  ADD_REMARK:                      "Add Minute",
+  VIEW_REMARKS_WHEN_NOT_REPORT_AT: "View Minutes When Not Assigned",
+  FORWARD_DOCUMENT:                "Forward Document",
+  FORWARD_PUBLIC:                  "Forward with Public Visibility",
+  FORWARD_PRIVATE:                 "Forward with Private Visibility",
+  CHANGE_DOCUMENT_VISIBILITY:      "Change Forward Visibility",
+  RETURN_DOCUMENT:                 "Return Document",
+  APPROVE_DOCUMENT:                "Approve Document",
+  REJECT_DOCUMENT:                 "Reject Document",
+  ISSUE_DOCUMENT:                  "Mark as Done",
+  REOPEN_DOCUMENT:                 "Reopen Document",
+  UPLOAD_ATTACHMENT:               "Upload Attachment",
+  DELETE_ATTACHMENT:               "Delete Any Attachment",
+  MANAGE_DOCUMENT_RECIPIENTS:      "Manage Recipients",
+  MANAGE_ANY_DOCUMENT_RECIPIENTS:  "Manage Any Document's Recipients",
+  VIEW_HIDDEN_RECIPIENTS:          "View BCC Recipients",
+  CC_VIEW_DOCUMENT:                "CC: View Document",
+  CC_VIEW_ATTACHMENTS:             "CC: View Attachments",
+  CC_UPLOAD_ATTACHMENTS:           "CC: Upload Attachments",
+  CC_DELETE_OWN_ATTACHMENTS:       "CC: Delete Own Attachments",
+  CC_VIEW_TIMELINE:                "CC: View Movement Timeline",
+  CC_VIEW_MINUTES:                 "CC: View Minutes",
+  BCC_VIEW_DOCUMENT:               "BCC: View Document",
+  BCC_VIEW_ATTACHMENTS:            "BCC: View Attachments",
+  BCC_UPLOAD_ATTACHMENTS:          "BCC: Upload Attachments",
+  BCC_DELETE_OWN_ATTACHMENTS:      "BCC: Delete Own Attachments",
+  BCC_VIEW_TIMELINE:               "BCC: View Movement Timeline",
+  BCC_VIEW_MINUTES:                "BCC: View Minutes",
+  VIEW_ALL_HISTORY:                "View Full Movement History",
+  VIEW_LOGS:                       "View System Logs",
+  VIEW_SENT_MESSAGES:              "View Sent Documents",
+};
+
+const PERMISSION_DESCRIPTIONS = {
+  CREATE_DOCUMENT:                 "Can register a new document in the system.",
+  DELETE_DOCUMENT:                 "Can delete a document that is currently assigned to them in Report At.",
+  DELETE_ANY_DOCUMENT:             "Can delete any document in the system regardless of who it is assigned to.",
+  VIEW_PUBLIC_DOCUMENT:            "Can open documents that were forwarded with Public visibility.",
+  VIEW_PRIVATE_DOCUMENT:           "Can open Private documents, but only if this user was personally involved in the private routing chain (as a sender or recipient). Does not grant blanket access to all private documents.",
+  VIEW_OWN_CREATED_DOCUMENTS:      "Can view documents they personally created, even after forwarding them away.",
+  VIEW_ALL_DOCUMENTS:              "Can see every document in the system regardless of assignment or visibility.",
+  EDIT_DOCUMENT_DETAILS:           "Can update Ref No, Title, Company, Received Date, and Priority while the document is assigned to them.",
+  ADD_REMARK:                      "Can write and save minutes on documents currently assigned to them in Report At.",
+  VIEW_REMARKS_WHEN_NOT_REPORT_AT: "Can read minutes on a document even when they are not the current Report At user.",
+  FORWARD_DOCUMENT:                "Can route a document to another user. Requires Forward Public or Forward Private as well.",
+  FORWARD_PUBLIC:                  "Can forward a document with Public visibility so it appears in the recipient's normal inbox.",
+  FORWARD_PRIVATE:                 "Can forward a document with Private visibility. The document becomes invisible to everyone except the current owner, users who were personally part of the private routing chain, and the original creator (if they have View Own Created Documents).",
+  CHANGE_DOCUMENT_VISIBILITY:      "Can switch whether a forward movement is Public or Private when forwarding.",
+  RETURN_DOCUMENT:                 "Can send a document back to the officer who previously forwarded it.",
+  APPROVE_DOCUMENT:                "Can mark a document as Approved when it is assigned to them in Report At.",
+  REJECT_DOCUMENT:                 "Can mark a document as Rejected when it is assigned to them in Report At.",
+  ISSUE_DOCUMENT:                  "Can close a document by marking it Done. Requires prior Approval when Approve/Reject buttons are enabled.",
+  REOPEN_DOCUMENT:                 "Can reopen a document that was previously Approved, Rejected, or marked Done.",
+  UPLOAD_ATTACHMENT:               "Can upload files to a document while it is assigned to them in Report At.",
+  DELETE_ATTACHMENT:               "Can remove any file from a document they have access to.",
+  MANAGE_DOCUMENT_RECIPIENTS:      "Can add or remove CC and BCC users on documents currently assigned to them in Report At.",
+  MANAGE_ANY_DOCUMENT_RECIPIENTS:  "Can add or remove CC and BCC users on any document in the system regardless of assignment.",
+  VIEW_HIDDEN_RECIPIENTS:          "Can see the list of BCC users on a document. BCC users are normally invisible to others.",
+  CC_VIEW_DOCUMENT:                "Users added as CC can open and read the document and its details.",
+  CC_VIEW_ATTACHMENTS:             "Users added as CC can view and download the document's files.",
+  CC_UPLOAD_ATTACHMENTS:           "Users added as CC can upload new files to the document.",
+  CC_DELETE_OWN_ATTACHMENTS:       "Users added as CC can delete files they personally uploaded.",
+  CC_VIEW_TIMELINE:                "Users added as CC can see the full movement history of the document.",
+  CC_VIEW_MINUTES:                 "Users added as CC can read minutes saved on the document.",
+  BCC_VIEW_DOCUMENT:               "Users added as BCC can open and read the document. Their presence is hidden from other users.",
+  BCC_VIEW_ATTACHMENTS:            "Users added as BCC can view and download the document's files.",
+  BCC_UPLOAD_ATTACHMENTS:          "Users added as BCC can upload new files to the document.",
+  BCC_DELETE_OWN_ATTACHMENTS:      "Users added as BCC can delete files they personally uploaded.",
+  BCC_VIEW_TIMELINE:               "Users added as BCC can see the full movement history of the document.",
+  BCC_VIEW_MINUTES:                "Users added as BCC can read minutes saved on the document.",
+  VIEW_ALL_HISTORY:                "Can see the complete movement timeline on any document they can open.",
+  VIEW_LOGS:                       "Can access the system audit log showing all user activity.",
+  VIEW_SENT_MESSAGES:              "Can see the list of documents they have forwarded or returned.",
+};
+
 function friendlyLabel(permission) {
   const normalized = String(permission || "").toUpperCase();
-  if (normalized === "ISSUE_DOCUMENT") {
-    return "Done Document";
-  }
-  if (normalized === "ADD_REMARK") {
-    return "Add Minute";
-  }
-  if (normalized === "VIEW_REMARKS_WHEN_NOT_REPORT_AT") {
-    return "View Minutes When Not Report At";
-  }
-  return String(permission || "")
-    .toLowerCase()
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+  return PERMISSION_LABELS[normalized]
+    || String(permission || "").toLowerCase().split("_").map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
+}
+
+function permDescription(permission) {
+  return PERMISSION_DESCRIPTIONS[String(permission || "").toUpperCase()] || "";
 }
 
 function displayStatus(statusName) {
@@ -404,6 +594,7 @@ async function save() {
     const entries = [];
     for (const permission of permissions.value) {
       for (const roleName of roles.value) {
+        // Send the full matrix so unchecked permissions are persisted as explicit disabled rows.
         entries.push({
           roleName,
           permission,
@@ -546,6 +737,39 @@ h2 {
   color: #6b7280;
 }
 
+.permissionGroupList {
+  display:grid;
+  gap:14px;
+}
+
+.permissionGroup {
+  border:1px solid #dbeafe;
+  border-radius:14px;
+  background:#fff;
+  overflow:hidden;
+}
+
+.permissionGroupHead {
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  padding:14px;
+  border-bottom:1px solid #e5edf8;
+  background:#f8fbff;
+}
+
+.permissionGroupHead h3 {
+  margin:0;
+  color:#1e3a8a;
+  font-size:15px;
+}
+
+.permissionGroupHead p {
+  margin:4px 0 0;
+  color:#64748b;
+  font-size:12px;
+}
+
 .configGrid {
   margin-top: 12px;
   display: grid;
@@ -623,7 +847,7 @@ h2 {
 .table th { font-size:12px; text-transform:uppercase; letter-spacing:0.04em; color:#6b7280; background:#f9fafb; }
 .table th:first-child,
 .table td:first-child {
-  width: 280px;
+  width: 340px;
 }
 .table th:not(:first-child),
 .table td.checkCell {
@@ -637,7 +861,8 @@ h2 {
 }
 
 .permTitle { font-weight:700; color:#111827; }
-.permCode { font-size:11px; color:#6b7280; margin-top:4px; }
+.permDesc { font-size:11px; color:#374151; margin-top:3px; line-height:1.4; }
+.permCode { font-size:10px; color:#9ca3af; margin-top:4px; }
 .checkCell { text-align:center; }
 .toggleWrap { display:inline-flex; align-items:center; gap:8px; font-size:13px; color:#374151; }
 

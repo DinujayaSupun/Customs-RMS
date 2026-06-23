@@ -10,9 +10,14 @@ Use this checklist before each company release.
    - `DB_PASSWORD`
    - `JWT_SECRET`
    - `APP_UPLOAD_DIR`
-3. Start backend and frontend with release configuration.
-4. Verify backend health endpoint:
+   - `APP_CORS_ALLOWED_ORIGINS` — real frontend domain(s), comma-separated. Required for both
+     API calls and WebSocket real-time notifications; defaults to localhost if unset.
+3. Build the frontend with `VITE_API_BASE_URL` pointing at the production backend URL.
+4. Start backend and frontend with release configuration.
+5. Verify backend health endpoint:
    - `GET /api/health` returns `200`.
+6. Verify real-time notifications connect (forward a document; recipient sees a live toast)
+   — confirms the WebSocket origin is allowed.
 
 ## 2) Critical Smoke Flow (Must Pass)
 

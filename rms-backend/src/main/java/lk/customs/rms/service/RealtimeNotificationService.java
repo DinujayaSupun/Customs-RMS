@@ -1,6 +1,7 @@
 package lk.customs.rms.service;
 
 import lk.customs.rms.dto.RealtimeNotificationMessage;
+import lk.customs.rms.websocket.NotificationWebSocketHandler;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -19,6 +20,22 @@ public class RealtimeNotificationService {
                                         Long fromUserId,
                                         String fromUserName) {
         RealtimeNotificationMessage message = RealtimeNotificationMessage.documentForwarded(
+                documentId,
+                documentRefNo,
+                documentTitle,
+                fromUserId,
+                fromUserName
+        );
+        notificationWebSocketHandler.sendToUser(recipientUserId, message);
+    }
+
+    public void notifyDocumentCopied(Long recipientUserId,
+                                     Long documentId,
+                                     String documentRefNo,
+                                     String documentTitle,
+                                     Long fromUserId,
+                                     String fromUserName) {
+        RealtimeNotificationMessage message = RealtimeNotificationMessage.documentCopied(
                 documentId,
                 documentRefNo,
                 documentTitle,

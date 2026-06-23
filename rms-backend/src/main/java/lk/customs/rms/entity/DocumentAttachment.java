@@ -7,7 +7,10 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "document_attachments")
+@Table(name = "document_attachments", indexes = {
+    @Index(name = "idx_attachments_document_latest_deleted", columnList = "document_id,is_latest,is_deleted"),
+    @Index(name = "idx_attachments_document_version_deleted", columnList = "document_id,version_no,is_deleted")
+})
 @Getter
 @Setter
 public class DocumentAttachment {

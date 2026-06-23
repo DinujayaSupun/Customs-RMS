@@ -45,6 +45,17 @@ public interface UserRepository extends JpaRepository<User, Long> {
 		""")
 	List<User> findByIsActiveTrueAndRole_RoleNameNotOrderByFullNameAsc(@Param("roleName") String roleName);
 
+	// Admin merge-users flow only. Customs staff headcount is expected to stay small
+	// (< 1000). If headcount grows significantly, add Pageable and update callers.
+	@Query("""
+		select u from User u
+		where u.isActive = true
+		  and u.isDeleted = false
+		  and u.role is not null
+		order by u.fullName asc, u.role.roleName asc, u.id asc
+		""")
+	List<User> findDuplicateCandidateUsers();
+
 	Optional<User> findByUsernameIgnoreCase(String username);
 
 	@Query("""

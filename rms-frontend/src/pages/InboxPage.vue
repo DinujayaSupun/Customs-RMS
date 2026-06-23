@@ -88,6 +88,30 @@
           >
             Opened
           </button>
+          <button
+            v-if="inboxMode === 'received'"
+            class="chip"
+            :class="{ chipActive: viewFilter === 'to' }"
+            @click="viewFilter = 'to'"
+          >
+            To
+          </button>
+          <button
+            v-if="inboxMode === 'received'"
+            class="chip"
+            :class="{ chipActive: viewFilter === 'cc' }"
+            @click="viewFilter = 'cc'"
+          >
+            CC
+          </button>
+          <button
+            v-if="inboxMode === 'received'"
+            class="chip"
+            :class="{ chipActive: viewFilter === 'bcc' }"
+            @click="viewFilter = 'bcc'"
+          >
+            BCC
+          </button>
           <button class="chip" :class="{ chipActive: viewFilter === 'urgent' }" @click="viewFilter = 'urgent'">Urgent</button>
         </div>
       </div>
@@ -98,7 +122,7 @@
         <div class="inboxHead">
           <div class="inboxTitleWrap">
             <span class="inboxTitle">{{ inboxMode === 'received' ? 'Received Messages' : 'Sent Messages' }}</span>
-            <span class="inboxMeta">{{ rows.length }} item{{ rows.length === 1 ? '' : 's' }}</span>
+            <span class="inboxMeta">{{ totalElements }} item{{ totalElements === 1 ? '' : 's' }}</span>
           </div>
           <div class="tableHintWrap">
             <span class="tableHintLabel">Inbox Info</span>
@@ -188,6 +212,10 @@
                   <span :title="inboxReceivedPreview(d).minuteLine ? null : inboxReceivedPreview(d).minuteTooltip">
                     {{ inboxReceivedPreview(d).senderLine }}
                   </span>
+                  <template v-if="recipientSummaryText(d)">
+                    <span> • </span>
+                    <span class="recipientMetaLine" :title="recipientSummaryText(d)">{{ recipientSummaryText(d) }}</span>
+                  </template>
                   <template v-if="inboxReceivedPreview(d).minuteLine">
                     <br />
                     <span :title="inboxReceivedPreview(d).minuteTooltip">{{ inboxReceivedPreview(d).minuteLine }}</span>
@@ -238,15 +266,19 @@
             </div>
           </article>
         </div>
+        <div class="pager">
+          <button class="btn btn-sm" :disabled="loading || page === 0" @click="goPrevPage">Previous</button>
+          <span>Page {{ page + 1 }} of {{ totalPagesDisplay }}</span>
+          <button class="btn btn-sm" :disabled="loading || last" @click="goNextPage">Next</button>
+        </div>
       </div>
 
       <div v-if="previewOpen" class="overlay" @click.self="closePreview">
         <div class="modal previewModal fullPreviewModal">
           <div class="modalHead">
-            <div>
+            <div class="modalTitleBlock">
               <div class="modalEyebrow">Full Screen Preview</div>
               <div class="modalTitle">{{ previewDoc?.refNo || '-' }} - {{ previewDoc?.title || 'Untitled document' }}</div>
-              <div class="modalSub">{{ previewDoc?.refNo || '-' }} - {{ previewDoc?.title || 'Untitled document' }}</div>
             </div>
             <div class="previewHeaderActions">
               <div v-if="previewAttachmentsSorted.length > 1" class="fullPreviewToolbar">
@@ -351,7 +383,7 @@
       <div v-if="forwardOpen" class="overlay">
         <div class="modal forwardModal">
           <div class="modalHead">
-            <div>
+            <div class="modalTitleBlock">
               <div class="modalEyebrow">Workflow Shortcut</div>
               <div class="modalTitle">Forward Document</div>
               <div class="modalSub">{{ forwardDoc?.refNo || '-' }} - {{ forwardDoc?.title || 'Untitled document' }}</div>
@@ -465,9 +497,11 @@
                   :disabled="forwardBusy || !canChooseWorkflowTarget"
                   placeholder="Search user by name, role, department, or ID..."
                   spellcheck="false"
-                  @focus="forwardSearchFocused = true"
-                  @blur="forwardSearchFocused = false"
-                  @keydown.escape="forwardSearchFocused = false"
+                  @focus="openForwardSearch"
+                  @click="openForwardSearch"
+                  @input="openForwardSearch"
+                  @blur="closeForwardSearch"
+                  @keydown.escape="closeForwardSearch"
                 />
 
                 <div v-if="showForwardSearchDropdown" class="forwardSearchDropdown">
@@ -508,6 +542,30 @@
                 </option>
               </select>
             </div>
+
+            <div class="formRow">
+              <label class="label">CC</label>
+              <RecipientChipPicker
+                v-model="forwardCcUserIds"
+                :users="users"
+                :exclude-user-ids="[currentUser?.id, forwardToUserId]"
+                :other-selected-ids="forwardBccUserIds"
+                :disabled="forwardBusy || !canForwardSelectedDoc"
+                placeholder="No CC users selected"
+              />
+            </div>
+
+            <div class="formRow">
+              <label class="label">BCC</label>
+              <RecipientChipPicker
+                v-model="forwardBccUserIds"
+                :users="users"
+                :exclude-user-ids="[currentUser?.id, forwardToUserId]"
+                :other-selected-ids="forwardCcUserIds"
+                :disabled="forwardBusy || !canForwardSelectedDoc"
+                placeholder="No BCC users selected"
+              />
+            </div>
           </div>
 
           <div class="modalFoot">
@@ -531,7 +589,9 @@ import { useRouter } from "vue-router";
 import { File, FileText, FileSpreadsheet, Image, Archive, Eye, Send } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
+import RecipientChipPicker from "../components/RecipientChipPicker.vue";
 import { useToast } from "../composables/useToast";
+import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import { listUsers } from "../api/auth.api";
 import { getAttachmentViewerState, resolveAttachmentTypeFromName } from "../utils/attachmentViewerLogic";
 import { formatDateSafe, formatDateTimeSafe } from "../utils/dateFormat";
@@ -554,6 +614,7 @@ import { buildInboxReceivedPreview, findPreferredReturnTargetId, markInboxDocume
 import { canForwardInboxDocument, canReturnInboxDocument } from "../utils/inboxPermissionLogic";
 import { getWorkflowSenderSuccessMessage } from "../utils/workflowNotificationLogic";
 import { getUndoSendInfo, needsUndoReason } from "../utils/undoSendLogic";
+import { compactRecipientSummary, fullRecipientSummary } from "../utils/recipientSummaryLogic";
 
 const router = useRouter();
 const toast = useToast();
@@ -572,6 +633,16 @@ const inboxMode = ref("received");
 const authTick = ref(0);
 const users = ref([]);
 const forwardReturnAllowedStatuses = ref(["PENDING", "IN_PROGRESS", "RETURNED"]);
+const page = ref(0);
+const pageSize = ref(25);
+const last = ref(true);
+const totalElements = ref(0);
+const totalPages = ref(1);
+const totalPagesDisplay = computed(() => Math.max(totalPages.value || 1, 1));
+const backendRecipientFilter = computed(() => {
+  const filter = String(viewFilter.value || "").toUpperCase();
+  return ["TO", "CC", "BCC"].includes(filter) ? filter : undefined;
+});
 
 const previewOpen = ref(false);
 const previewDoc = ref(null);
@@ -591,6 +662,8 @@ const forwardVisibility = ref("PUBLIC");
 const forwardToUserId = ref(null);
 const forwardUserSearch = ref("");
 const forwardSearchFocused = ref(false);
+const forwardCcUserIds = ref([]);
+const forwardBccUserIds = ref([]);
 const forwardAttachments = ref([]);
 const forwardAttachmentsLoading = ref(false);
 const forwardAttachmentsError = ref("");
@@ -640,6 +713,10 @@ const availableForwardVisibilities = computed(() => {
 const forwardTargets = computed(() => {
   const all = users.value.filter((u) => Number(u.id) !== Number(currentUser.value?.id));
   return all;
+});
+const copiedRecipientTargets = computed(() => {
+  const blocked = new Set([Number(currentUser.value?.id), Number(forwardToUserId.value)].filter(Number.isFinite));
+  return users.value.filter((u) => !blocked.has(Number(u.id)));
 });
 
 const canForwardSelectedDoc = computed(() => canForwardRow(forwardDoc.value));
@@ -737,11 +814,17 @@ const previewIsOwner = computed(() => {
 
 const previewCanViewRemarks = computed(() => {
   if (!previewDoc.value || !currentUser.value) return false;
+  if (previewDoc.value.canViewMinutes !== undefined && previewDoc.value.canViewMinutes !== null) {
+    return !!previewDoc.value.canViewMinutes;
+  }
   return previewIsOwner.value || hasPermission(currentUser.value, "VIEW_REMARKS_WHEN_NOT_REPORT_AT");
 });
 
 const previewCanSeeOperational = computed(() => {
   if (!previewDoc.value || !currentUser.value) return false;
+  if (previewDoc.value.canViewTimeline !== undefined && previewDoc.value.canViewTimeline !== null) {
+    return !!previewDoc.value.canViewTimeline;
+  }
   return hasPermission(currentUser.value, "VIEW_ALL_HISTORY") || previewIsOwner.value;
 });
 
@@ -817,11 +900,22 @@ function inboxReceivedPreview(doc) {
   return buildInboxReceivedPreview(doc, displayMinuteTime, currentUser.value?.id);
 }
 
+function recipientSummaryText(doc) {
+  return compactRecipientSummary(doc?.recipientSummary);
+}
+
+function sentRecipientSummaryText(doc) {
+  return fullRecipientSummary(doc?.recipientSummary);
+}
+
 function undoSendInfo(doc) {
   return getUndoSendInfo(doc);
 }
 
 function sentToLabel(doc) {
+  const recipientText = sentRecipientSummaryText(doc);
+  if (recipientText) return recipientText.replace(/^To:\s*/i, "");
+
   const name = String(doc?.toUserName || "").trim();
   return name || "Unknown user";
 }
@@ -923,25 +1017,18 @@ function sortDocuments(list) {
 }
 
 function applyFilters(list) {
-  const qq = q.value.trim().toLowerCase();
   return list.filter((d) => {
-    const matchQ =
-      !qq ||
-      String(d.refNo ?? "").toLowerCase().includes(qq) ||
-      String(d.title ?? "").toLowerCase().includes(qq) ||
-      String(d.companyName ?? "").toLowerCase().includes(qq) ||
-      String(d.toUserName ?? "").toLowerCase().includes(qq);
-
-    const matchStatus = !status.value || d.status === status.value;
-    const matchPriority = !priority.value || d.priority === priority.value;
     const matchView = (() => {
       if (inboxMode.value === "received" && viewFilter.value === "unopened") return !isViewedByMe(d);
       if (inboxMode.value === "received" && viewFilter.value === "opened") return isViewedByMe(d);
+      if (inboxMode.value === "received" && viewFilter.value === "to") return String(d.recipientType || "").toUpperCase() === "TO";
+      if (inboxMode.value === "received" && viewFilter.value === "cc") return String(d.recipientType || "").toUpperCase() === "CC";
+      if (inboxMode.value === "received" && viewFilter.value === "bcc") return String(d.recipientType || "").toUpperCase() === "BCC";
       if (viewFilter.value === "urgent") return String(d.priority || "").toUpperCase() === "URGENT";
       return true;
     })();
 
-    return matchQ && matchStatus && matchPriority && matchView;
+    return matchView;
   });
 }
 
@@ -954,8 +1041,14 @@ function applyNow() {
   rows.value = sortDocuments(filtered);
 }
 
-watch([q, status, priority, sortBy, viewFilter], () => {
-  applyNow();
+useDebouncedWatch(q, () => {
+  page.value = 0;
+  load();
+});
+
+watch([status, priority, sortBy, viewFilter], () => {
+  page.value = 0;
+  load();
 });
 
 watch(sortBy, (value, previous) => {
@@ -1014,20 +1107,20 @@ async function loadReceived() {
   loading.value = true;
   error.value = "";
   try {
-    const pageSize = 200;
-    const maxPages = 20;
-    const all = [];
-    for (let page = 0; page < maxPages; page += 1) {
-      const data = await listMyInboxDocuments({ page, size: pageSize });
-      const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
-      all.push(...list);
-
-      if (Array.isArray(data) || list.length < pageSize || page >= ((data?.totalPages ?? 1) - 1)) {
-        break;
-      }
-    }
-
-    allRows.value = all;
+    const data = await listMyInboxDocuments({
+      page: page.value,
+      size: pageSize.value,
+      search: q.value || undefined,
+      status: status.value || undefined,
+      priority: viewFilter.value === "urgent" ? "URGENT" : (priority.value || undefined),
+      sort: sortBy.value,
+      recipientType: backendRecipientFilter.value,
+    });
+    const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
+    allRows.value = list;
+    last.value = Array.isArray(data) ? true : !!data?.last;
+    totalElements.value = Array.isArray(data) ? list.length : Number(data?.totalElements ?? list.length);
+    totalPages.value = Array.isArray(data) ? 1 : Number(data?.totalPages ?? 1);
     applyNow();
   } catch (e) {
     error.value = e?.message ?? "Failed to load inbox";
@@ -1049,21 +1142,18 @@ async function loadSent() {
       return;
     }
 
-    const pageSize = 300;
-    const maxPages = 20;
-    const all = [];
-
-    for (let page = 0; page < maxPages; page += 1) {
-      const data = await listSentMessages({ page, size: pageSize });
-      const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
-      all.push(...list);
-
-      if (Array.isArray(data) || list.length < pageSize || page >= ((data?.totalPages ?? 1) - 1)) {
-        break;
-      }
-    }
-
-    allRows.value = all;
+    const data = await listSentMessages({
+      page: page.value,
+      size: pageSize.value,
+      search: q.value || undefined,
+      status: status.value || undefined,
+      priority: viewFilter.value === "urgent" ? "URGENT" : (priority.value || undefined),
+    });
+    const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
+    allRows.value = list;
+    last.value = Array.isArray(data) ? true : !!data?.last;
+    totalElements.value = Array.isArray(data) ? list.length : Number(data?.totalElements ?? list.length);
+    totalPages.value = Array.isArray(data) ? 1 : Number(data?.totalPages ?? 1);
     applyNow();
   } catch (e) {
     error.value = e?.message ?? "Failed to load sent messages";
@@ -1072,6 +1162,18 @@ async function loadSent() {
   } finally {
     loading.value = false;
   }
+}
+
+function goPrevPage() {
+  if (page.value === 0 || loading.value) return;
+  page.value -= 1;
+  load();
+}
+
+function goNextPage() {
+  if (last.value || loading.value) return;
+  page.value += 1;
+  load();
 }
 
 async function loadUsers() {
@@ -1140,6 +1242,7 @@ function setMode(mode) {
 
   inboxMode.value = mode;
   viewFilter.value = "all";
+  page.value = 0;
   sortTouched.value = false;
   error.value = "";
   load();
@@ -1244,6 +1347,8 @@ function resetForwardForm() {
   forwardToUserId.value = null;
   forwardUserSearch.value = "";
   forwardSearchFocused.value = false;
+  forwardCcUserIds.value = [];
+  forwardBccUserIds.value = [];
   forwardMovements.value = [];
   autoSelectedForwardTargetId.value = null;
   forwardAttachments.value = [];
@@ -1317,6 +1422,21 @@ function selectForwardUser(user) {
   autoSelectedForwardTargetId.value = null;
 }
 
+function uniqueNumericIds(values) {
+  return [...new Set((values || [])
+    .map(Number)
+    .filter((value) => Number.isFinite(value) && value > 0))];
+}
+
+function openForwardSearch() {
+  if (forwardBusy.value || !canChooseWorkflowTarget.value) return;
+  forwardSearchFocused.value = true;
+}
+
+function closeForwardSearch() {
+  forwardSearchFocused.value = false;
+}
+
 function clearForwardSearch() {
   forwardUserSearch.value = "";
   forwardToUserId.value = null;
@@ -1348,11 +1468,20 @@ async function submitForward() {
     error.value = "You do not have permission for selected forward visibility.";
     return;
   }
+  const ccUserIds = uniqueNumericIds(forwardCcUserIds.value);
+  const bccUserIds = uniqueNumericIds(forwardBccUserIds.value);
+  const copiedOverlap = ccUserIds.find((id) => bccUserIds.includes(id));
+  if (copiedOverlap) {
+    error.value = "The same user cannot be both CC and BCC.";
+    return;
+  }
 
   forwardBusy.value = true;
   try {
     await forwardDocument(documentId, {
       toUserId: Number(forwardToUserId.value),
+      ccUserIds,
+      bccUserIds,
       forwardVisibility: selectedVisibility,
       remarkText: forwardRemark.value.trim() || null,
     });
@@ -1884,8 +2013,11 @@ h2 { margin:0; line-height:1.15; }
 
 .modal {
   width:min(760px, 100%);
+  max-width:calc(100vw - 32px);
+  min-width:0;
   max-height:calc(100vh - 32px);
   overflow:auto;
+  box-sizing:border-box;
   border-radius:18px;
   background:#ffffff;
   border:1px solid #e5e7eb;
@@ -1893,13 +2025,16 @@ h2 { margin:0; line-height:1.15; }
 }
 
 .forwardModal {
-  width:min(900px, 100%);
+  width:min(900px, calc(100vw - 32px));
 }
 
 .fullPreviewModal {
   width:calc(100vw - 28px);
+  max-width:calc(100vw - 28px);
+  min-width:0;
   height:calc(100vh - 28px);
   max-height:calc(100vh - 28px);
+  overflow:hidden;
   display:flex;
   flex-direction:column;
   border-radius:16px;
@@ -1910,11 +2045,18 @@ h2 { margin:0; line-height:1.15; }
   align-items:center;
   justify-content:space-between;
   gap:16px;
+  min-width:0;
   padding:18px 20px;
   border-bottom:1px solid #eef2f7;
   background:
     radial-gradient(80% 110% at 100% 0%, rgba(37, 99, 235, 0.1), transparent 55%),
     linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.modalTitleBlock {
+  flex:1 1 auto;
+  min-width:0;
+  max-width:100%;
 }
 
 .modalEyebrow {
@@ -1931,12 +2073,18 @@ h2 { margin:0; line-height:1.15; }
   font-size:19px;
   font-weight:900;
   letter-spacing:-0.02em;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .modalSub {
   color:#64748b;
   font-size:13px;
   margin-top:4px;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .modalClose {
@@ -1950,6 +2098,9 @@ h2 { margin:0; line-height:1.15; }
   gap:10px;
   flex-wrap:wrap;
   justify-content:flex-end;
+  flex:0 1 auto;
+  min-width:0;
+  max-width:100%;
 }
 
 .modalBody {
@@ -1981,6 +2132,8 @@ h2 { margin:0; line-height:1.15; }
   grid-template-columns:34px minmax(0, 360px) 34px;
   gap:8px;
   width:min(520px, 45vw);
+  max-width:100%;
+  min-width:0;
   padding:7px;
   border:1px solid rgba(191, 219, 254, 0.88);
   border-radius:13px;
@@ -1991,6 +2144,7 @@ h2 { margin:0; line-height:1.15; }
 
 .fullPreviewSelect {
   min-width:0;
+  max-width:100%;
   height:34px;
   border:1px solid #dbe3ef;
   border-radius:10px;
@@ -2032,6 +2186,12 @@ h2 { margin:0; line-height:1.15; }
   color:#cbd5e1;
 }
 
+.fullPreviewEmpty span {
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+
 .fullPreviewEmpty b {
   color:#ffffff;
   font-size:18px;
@@ -2039,6 +2199,7 @@ h2 { margin:0; line-height:1.15; }
 
 .fullPreviewSide {
   min-width:0;
+  box-sizing:border-box;
   overflow:auto;
   border:1px solid #e2e8f0;
   border-radius:16px;
@@ -2065,7 +2226,7 @@ h2 { margin:0; line-height:1.15; }
 
 .previewGrid {
   display:grid;
-  grid-template-columns:1fr 1fr;
+  grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
   gap:0;
   overflow:hidden;
   border:1px solid #e5e7eb;
@@ -2074,11 +2235,14 @@ h2 { margin:0; line-height:1.15; }
 }
 
 .previewGrid > div {
+  min-width:0;
   padding:12px 14px;
   border-right:1px solid #eef2f7;
   border-bottom:1px solid #eef2f7;
   color:#111827;
   font-size:13px;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .previewGrid > div:nth-child(2n) {
@@ -2134,12 +2298,18 @@ h2 { margin:0; line-height:1.15; }
 
 .opsRow {
   display:grid;
-  grid-template-columns:130px 1fr;
+  grid-template-columns:minmax(0, 130px) minmax(0, 1fr);
   align-items:start;
   padding:7px 0;
   border-bottom:1px solid #e5edf8;
   color:#111827;
   font-size:13px;
+}
+
+.opsRow > span {
+  min-width:0;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .opsRow:last-child {
@@ -2152,8 +2322,9 @@ h2 { margin:0; line-height:1.15; }
 
 .forwardDocPreview {
   display:grid;
-  grid-template-columns:250px 1fr;
+  grid-template-columns:minmax(0, 250px) minmax(0, 1fr);
   gap:16px;
+  min-width:0;
   align-items:stretch;
   margin-bottom:16px;
   padding:12px;
@@ -2166,6 +2337,7 @@ h2 { margin:0; line-height:1.15; }
 
 .forwardFileBox {
   position:relative;
+  min-width:0;
   min-height:260px;
   overflow:hidden;
   border:1px solid #e2e8f0;
@@ -2183,6 +2355,7 @@ h2 { margin:0; line-height:1.15; }
   display:grid;
   grid-template-columns:30px 1fr 30px;
   gap:6px;
+  min-width:0;
   padding:6px;
   border:1px solid rgba(191, 219, 254, 0.9);
   border-radius:12px;
@@ -2193,6 +2366,7 @@ h2 { margin:0; line-height:1.15; }
 
 .forwardAttachmentSelect {
   min-width:0;
+  max-width:100%;
   height:30px;
   border:1px solid #dbe3ef;
   border-radius:9px;
@@ -2249,6 +2423,12 @@ h2 { margin:0; line-height:1.15; }
   font-size:12px;
 }
 
+.forwardFileEmpty span {
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+
 .forwardFileSwitcher + .forwardFileEmpty {
   padding-bottom:58px;
 }
@@ -2260,6 +2440,7 @@ h2 { margin:0; line-height:1.15; }
 
 .forwardDocSummary {
   min-width:0;
+  max-width:100%;
   display:flex;
   flex-direction:column;
   gap:12px;
@@ -2272,12 +2453,20 @@ h2 { margin:0; line-height:1.15; }
   align-items:flex-start;
 }
 
+.summaryTop > div:first-child {
+  min-width:0;
+  max-width:100%;
+}
+
 .summaryRef {
   color:#1d4ed8;
   font-size:12px;
   font-weight:900;
   letter-spacing:0.06em;
   text-transform:uppercase;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .summaryTitle {
@@ -2286,6 +2475,9 @@ h2 { margin:0; line-height:1.15; }
   font-size:18px;
   font-weight:900;
   line-height:1.2;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .summaryPills {
@@ -2297,7 +2489,7 @@ h2 { margin:0; line-height:1.15; }
 
 .summaryGrid {
   display:grid;
-  grid-template-columns:1fr 1fr;
+  grid-template-columns:minmax(0, 1fr) minmax(0, 1fr);
   gap:0;
   overflow:hidden;
   border:1px solid #e5e7eb;
@@ -2313,7 +2505,9 @@ h2 { margin:0; line-height:1.15; }
   color:#111827;
   font-size:13px;
   overflow:hidden;
-  text-overflow:ellipsis;
+  text-overflow:clip;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .summaryGrid > div:nth-child(2n) {
@@ -2327,6 +2521,13 @@ h2 { margin:0; line-height:1.15; }
 .formRow .input {
   width:100%;
   box-sizing:border-box;
+}
+
+.recipientMultiSelect {
+  height:auto;
+  min-height:84px;
+  padding-top:8px;
+  padding-bottom:8px;
 }
 
 .textarea {
@@ -2349,6 +2550,8 @@ h2 { margin:0; line-height:1.15; }
 
 .forwardSearchWrap {
   position:relative;
+  min-width:0;
+  max-width:100%;
 }
 
 .forwardSearchDropdown {
@@ -2357,7 +2560,9 @@ h2 { margin:0; line-height:1.15; }
   left:0;
   right:0;
   z-index:10;
+  max-width:100%;
   max-height:240px;
+  box-sizing:border-box;
   overflow:auto;
   border:1px solid #dbe3ef;
   border-radius:14px;
@@ -2367,6 +2572,8 @@ h2 { margin:0; line-height:1.15; }
 
 .forwardSearchOption {
   width:100%;
+  max-width:100%;
+  min-width:0;
   display:flex;
   flex-direction:column;
   align-items:flex-start;
@@ -2377,6 +2584,8 @@ h2 { margin:0; line-height:1.15; }
   padding:10px 12px;
   text-align:left;
   cursor:pointer;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .forwardSearchOption:hover,
@@ -2388,6 +2597,9 @@ h2 { margin:0; line-height:1.15; }
   color:#0f172a;
   font-size:13px;
   font-weight:800;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .forwardUserMeta,
@@ -2395,6 +2607,9 @@ h2 { margin:0; line-height:1.15; }
 .forwardSelected span {
   color:#64748b;
   font-size:12px;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .forwardSearchEmpty {
@@ -2414,6 +2629,10 @@ h2 { margin:0; line-height:1.15; }
   background:#f8fbff;
   color:#0f172a;
   font-size:13px;
+  min-width:0;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .forwardSelected.muted {

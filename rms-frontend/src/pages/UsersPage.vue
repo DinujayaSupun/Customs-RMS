@@ -125,7 +125,25 @@
               </div>
               <div class="field">
                 <label>Password</label>
-                <input v-model="createForm.password" class="input" type="password" placeholder="Temporary password" />
+                <div class="passwordField">
+                  <input
+                    v-model="createForm.password"
+                    class="input passwordInput"
+                    :type="showCreatePassword ? 'text' : 'password'"
+                    placeholder="Temporary password"
+                    autocomplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    class="passwordToggle"
+                    :aria-label="showCreatePassword ? 'Hide temporary password' : 'Show temporary password'"
+                    :aria-pressed="showCreatePassword"
+                    @click="showCreatePassword = !showCreatePassword"
+                  >
+                    <EyeOff v-if="showCreatePassword" class="passwordIcon" aria-hidden="true" />
+                    <Eye v-else class="passwordIcon" aria-hidden="true" />
+                  </button>
+                </div>
               </div>
               <div class="createActions">
                 <button class="btn" @click="resetCreateForm" :disabled="saving">Clear</button>
@@ -370,7 +388,25 @@
         <div class="modalBody formStack">
           <div class="field">
             <label>New Password</label>
-            <input v-model="resetPasswordValue" class="input" type="password" placeholder="Enter new password" />
+            <div class="passwordField">
+              <input
+                v-model="resetPasswordValue"
+                class="input passwordInput"
+                :type="showResetPassword ? 'text' : 'password'"
+                placeholder="Enter new password"
+                autocomplete="new-password"
+              />
+              <button
+                type="button"
+                class="passwordToggle"
+                :aria-label="showResetPassword ? 'Hide new password' : 'Show new password'"
+                :aria-pressed="showResetPassword"
+                @click="showResetPassword = !showResetPassword"
+              >
+                <EyeOff v-if="showResetPassword" class="passwordIcon" aria-hidden="true" />
+                <Eye v-else class="passwordIcon" aria-hidden="true" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -538,6 +574,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
+import { Eye, EyeOff } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
 import { getCurrentUser } from "../auth/currentUser";
 import { formatUserLabel } from "../auth/userLabel";
@@ -606,6 +643,8 @@ const editForm = ref({
 const resetPasswordModalOpen = ref(false);
 const resetPasswordUser = ref(null);
 const resetPasswordValue = ref("");
+const showResetPassword = ref(false);
+const showCreatePassword = ref(false);
 
 const createForm = ref({
   fullName: "",
@@ -697,6 +736,7 @@ function resetCreateForm() {
     role: "",
     password: "",
   };
+  showCreatePassword.value = false;
 }
 
 function toggleCreatePanel() {
@@ -747,17 +787,14 @@ async function load() {
       active: active.value === "" ? undefined : active.value,
     };
 
-    const [data, summaryData] = await Promise.all([
-      adminListUsers({
-        page: page.value,
-        size: size.value,
-        ...params,
-      }),
-      loadSummaryUsers(params),
-    ]);
+    const data = await adminListUsers({
+      page: page.value,
+      size: size.value,
+      ...params,
+    });
 
     rows.value = data?.content ?? [];
-    summaryRows.value = summaryData;
+    summaryRows.value = rows.value;
     last.value = !!data?.last;
     selectedUserIds.value = selectedUserIds.value.filter((id) =>
       summaryRows.value.some((u) => Number(u.id) === Number(id) && isSelectableUser(u))
@@ -771,28 +808,6 @@ async function load() {
   } finally {
     loading.value = false;
   }
-}
-
-async function loadSummaryUsers(baseParams) {
-  const pageSize = 200;
-  const maxPages = 100;
-  const all = [];
-
-  for (let currentPage = 0; currentPage < maxPages; currentPage += 1) {
-    const data = await adminListUsers({
-      page: currentPage,
-      size: pageSize,
-      ...baseParams,
-    });
-    const list = Array.isArray(data?.content) ? data.content : [];
-    all.push(...list);
-
-    if (data?.last || list.length < pageSize) {
-      break;
-    }
-  }
-
-  return all;
 }
 
 async function loadDuplicates() {
@@ -871,6 +886,7 @@ async function saveEditUser() {
 function openResetPasswordModal(u) {
   resetPasswordUser.value = u;
   resetPasswordValue.value = "";
+  showResetPassword.value = false;
   resetPasswordModalOpen.value = true;
 }
 
@@ -878,6 +894,7 @@ function closeResetPasswordModal() {
   resetPasswordModalOpen.value = false;
   resetPasswordUser.value = null;
   resetPasswordValue.value = "";
+  showResetPassword.value = false;
 }
 
 async function confirmResetPassword() {
@@ -906,6 +923,7 @@ async function deactivateUser(u) {
     return;
   }
 
+  // Deactivation needs a fallback DC because active Report At assignments cannot point to inactive users.
   deactivateTargetUser.value = u;
   deactivateFallbackDcUserId.value = activeDcs[0]?.id ?? null;
   deactivateModalOpen.value = true;
@@ -987,6 +1005,7 @@ function openBulkActionModal() {
 }
 
 function selectAllEligibleRows() {
+  // Bulk selection is limited to rows that the current bulk mode is allowed to modify.
   selectedUserIds.value = Array.from(new Set(eligibleUsers.value.map((u) => Number(u.id))));
 }
 
@@ -1163,6 +1182,7 @@ async function downloadCsv() {
     const body = rowsData.map((u) => [u.id, u.fullName, u.username, u.email || "", u.phone || "", u.department || "", u.role, u.active, u.createdAt]);
     const csv = [header, ...body].map((line) => line.map((v) => `"${String(v ?? "").replaceAll('"', '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    // Object URL keeps export client-side; revoke immediately after triggering the download.
     const href = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = href;
@@ -1625,6 +1645,46 @@ h2 {
   box-shadow:0 0 0 3px rgba(37, 99, 235, 0.14);
 }
 
+.passwordField {
+  position:relative;
+}
+
+.passwordInput {
+  padding-right:44px;
+}
+
+.passwordToggle {
+  position:absolute;
+  top:50%;
+  right:6px;
+  width:32px;
+  height:32px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  transform:translateY(-50%);
+  border:0;
+  border-radius:8px;
+  background:transparent;
+  color:#64748b;
+  cursor:pointer;
+}
+
+.passwordToggle:hover {
+  background:#eff6ff;
+  color:#1d4ed8;
+}
+
+.passwordToggle:focus-visible {
+  outline:2px solid #2563eb;
+  outline-offset:2px;
+}
+
+.passwordIcon {
+  width:18px;
+  height:18px;
+}
+
 .btn {
   padding:10px 12px;
   border-radius:10px;
@@ -1782,6 +1842,8 @@ h2 {
 .modal {
   width:100%;
   max-width:620px;
+  min-width:0;
+  box-sizing:border-box;
   background:#fff;
   border-radius:14px;
   overflow:hidden;
@@ -1793,21 +1855,35 @@ h2 {
   display:flex;
   align-items:flex-start;
   justify-content:space-between;
+  gap:12px;
+  min-width:0;
   padding:14px 16px;
   border-bottom:1px solid #eee;
   background:linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.modalHead > div:first-child {
+  flex:1 1 auto;
+  min-width:0;
+  max-width:100%;
 }
 
 .modalTitle {
   font-size:15px;
   font-weight:800;
   color:#0f172a;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .modalSub {
   font-size:12px;
   color:#6b7280;
   margin-top:2px;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .modalBody {
@@ -1836,6 +1912,8 @@ h2 {
 .noticeLine {
   color:#334155;
   font-size:13px;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .deleteNotice {
@@ -1846,6 +1924,8 @@ h2 {
   border-radius:12px;
   font-size:13px;
   line-height:1.5;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .adminWarning {
@@ -1856,6 +1936,8 @@ h2 {
   border-radius:12px;
   font-size:13px;
   line-height:1.5;
+  overflow-wrap:anywhere;
+  word-break:break-word;
 }
 
 .modalFoot {

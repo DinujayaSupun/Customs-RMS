@@ -115,6 +115,42 @@ class AdminManagementAndPermissionIntegrationTests {
     }
 
     @Test
+    void duplicateCandidatesIncludeOnlyActiveNotDeletedUsersWithRoles() throws Exception {
+        String password = "Admin1234";
+        User admin = createUser("ADMIN", "dup-admin-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+
+        String duplicateName = "Duplicate Candidate " + UUID.randomUUID();
+        User activeOne = createUser("SC", "dup-active-a-", password);
+        activeOne.setFullName(duplicateName);
+        userRepository.saveAndFlush(activeOne);
+
+        User activeTwo = createUser("SC", "dup-active-b-", password);
+        activeTwo.setFullName(duplicateName);
+        userRepository.saveAndFlush(activeTwo);
+
+        User differentRole = createUser("PMA", "dup-different-role-", password);
+        differentRole.setFullName(duplicateName);
+        userRepository.saveAndFlush(differentRole);
+
+        User inactive = createUser("SC", "dup-inactive-", password);
+        inactive.setFullName(duplicateName);
+        inactive.setIsActive(false);
+        userRepository.saveAndFlush(inactive);
+
+        User deleted = createUser("SC", "dup-deleted-", password);
+        deleted.setFullName(duplicateName);
+        deleted.setIsDeleted(true);
+        userRepository.saveAndFlush(deleted);
+
+        mockMvc.perform(get("/api/admin/users/duplicates")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.fullName == '%s' && @.role == 'SC')].users.length()".formatted(duplicateName)).value(hasItem(2)))
+                .andExpect(jsonPath("$[?(@.fullName == '%s' && @.role == 'PMA')]".formatted(duplicateName)).isEmpty());
+    }
+
+    @Test
     void adminCanDeactivateUserTransferOwnershipAndResetPassword() throws Exception {
         String adminPassword = "Admin1234";
         String userPassword = "Member1234";
@@ -504,7 +540,9 @@ class AdminManagementAndPermissionIntegrationTests {
         boolean originalReturn = readPermissionEnabled(role, AppPermission.RETURN_DOCUMENT);
 
         try {
-            long blockedDocumentId = createWorkflowOwnedDocument(admin, adminToken, actor, actorToken, "return-blocked");
+            // Admin forwards the document to the actor so there is a real prior sender to return to;
+            // return derives its target from the movement history, not the request body.
+            long blockedDocumentId = createOwnedDocumentForActor(admin, adminToken, actor.getId(), "return-blocked");
             updatePermission(adminToken, roleName, AppPermission.RETURN_DOCUMENT, false);
 
             mockMvc.perform(post("/api/documents/{id}/return", blockedDocumentId)
@@ -519,7 +557,7 @@ class AdminManagementAndPermissionIntegrationTests {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.message").value("You are not allowed to return documents."));
 
-            long allowedDocumentId = createWorkflowOwnedDocument(admin, adminToken, actor, actorToken, "return-allowed");
+            long allowedDocumentId = createOwnedDocumentForActor(admin, adminToken, actor.getId(), "return-allowed");
             updatePermission(adminToken, roleName, AppPermission.RETURN_DOCUMENT, true);
 
             mockMvc.perform(post("/api/documents/{id}/return", allowedDocumentId)
@@ -857,6 +895,477 @@ class AdminManagementAndPermissionIntegrationTests {
                         .header("Authorization", bearer(historyViewerToken)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].actionType").value("CREATE"));
+    }
+
+    @Test
+    void adminCanMergeUsersWithSameRoleTransferringActiveDocumentsToTarget() throws Exception {
+        String password = "Merge1234";
+        User admin = createUser("ADMIN", "merge-admin-", password);
+        User source = createUser("DC", "merge-source-", password);
+        User target = createUser("DC", "merge-target-", password);
+
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+        String sourceToken = loginAndGetToken(source.getUsername(), password);
+        String targetToken = loginAndGetToken(target.getUsername(), password);
+
+        long documentId = createDocument(source, sourceToken, "merge-doc");
+
+        mockMvc.perform(post("/api/admin/users/merge")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceUserId": %d,
+                                  "targetUserId": %d
+                                }
+                                """.formatted(source.getId(), target.getId())))
+                .andExpect(status().isOk());
+
+        // Document transferred to target
+        mockMvc.perform(get("/api/documents/{id}", documentId)
+                        .header("Authorization", bearer(targetToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentOwnerUserId").value(target.getId()));
+
+        // Source is deactivated
+        assertThat(userRepository.findById(source.getId()).orElseThrow().getIsActive()).isFalse();
+
+        // Same user → 400
+        mockMvc.perform(post("/api/admin/users/merge")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceUserId": %d,
+                                  "targetUserId": %d
+                                }
+                                """.formatted(target.getId(), target.getId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Source and target users must be different."));
+
+        // Different roles → 400
+        User sc = createUser("SC", "merge-sc-", password);
+        mockMvc.perform(post("/api/admin/users/merge")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceUserId": %d,
+                                  "targetUserId": %d
+                                }
+                                """.formatted(sc.getId(), target.getId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Users must have the same role to merge."));
+    }
+
+    @Test
+    void auditLogCsvExportReturnsCsvFileWithHeaderAndDataRows() throws Exception {
+        String password = "CsvExport123";
+        User admin = createUser("ADMIN", "csv-export-admin-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+
+        // Create a document via API — DocumentServiceImpl logs a DOCUMENT/CREATE entry
+        createDocument(admin, adminToken, "csv-export-doc");
+
+        MvcResult result = mockMvc.perform(get("/api/audit-logs/export")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        String contentDisposition = result.getResponse().getHeader("Content-Disposition");
+        assertThat(contentDisposition).startsWith("attachment; filename=\"audit-logs-");
+        assertThat(contentDisposition).endsWith(".csv\"");
+
+        String body = result.getResponse().getContentAsString();
+        assertThat(body).startsWith("id,performedAt,actionType,entityType,entityId,performedByUserId,performedByUserName,message,detailsJson");
+        assertThat(body.lines().count()).isGreaterThan(1);
+    }
+
+    @Test
+    void adminCanBulkDeactivateUsersAndTransferActiveDocumentsToFallbackDc() throws Exception {
+        String password = "BulkDeact123";
+        User admin = createUser("ADMIN", "bulk-deact-admin-", password);
+        User fallbackDc = createUser("DC", "bulk-deact-fallback-", password);
+        User userA = createUser("DC", "bulk-deact-a-", password);
+        User userB = createUser("DC", "bulk-deact-b-", password);
+
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+        String userAToken = loginAndGetToken(userA.getUsername(), password);
+        String fallbackToken = loginAndGetToken(fallbackDc.getUsername(), password);
+
+        long documentId = createDocument(userA, userAToken, "bulk-deact-doc");
+
+        mockMvc.perform(post("/api/admin/users/bulk-deactivate")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userIds": [%d, %d],
+                                  "fallbackDcUserId": %d
+                                }
+                                """.formatted(userA.getId(), userB.getId(), fallbackDc.getId())))
+                .andExpect(status().isOk());
+
+        assertThat(userRepository.findById(userA.getId()).orElseThrow().getIsActive()).isFalse();
+        assertThat(userRepository.findById(userB.getId()).orElseThrow().getIsActive()).isFalse();
+
+        // The deactivated owner's active document must move to the fallback DC so Report At stays valid.
+        mockMvc.perform(get("/api/documents/{id}", documentId)
+                        .header("Authorization", bearer(fallbackToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentOwnerUserId").value(fallbackDc.getId()));
+    }
+
+    @Test
+    void bulkDeactivateRejectsEmptyUserIdList() throws Exception {
+        String password = "BulkDeact123";
+        User admin = createUser("ADMIN", "bulk-deact-empty-admin-", password);
+        User fallbackDc = createUser("DC", "bulk-deact-empty-fallback-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+
+        mockMvc.perform(post("/api/admin/users/bulk-deactivate")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userIds": [],
+                                  "fallbackDcUserId": %d
+                                }
+                                """.formatted(fallbackDc.getId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.details", hasItem("userIds: Select at least one user to deactivate.")));
+    }
+
+    @Test
+    void bulkDeleteRequiresDeactivationFirstThenSoftDeletesAndScrubsPii() throws Exception {
+        String password = "BulkDel1234";
+        User admin = createUser("ADMIN", "bulk-del-admin-", password);
+        User fallbackDc = createUser("DC", "bulk-del-fallback-", password);
+        User userA = createUser("DC", "bulk-del-a-", password);
+        userA.setEmail("bulk-del-a@example.com");
+        userRepository.saveAndFlush(userA);
+
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+
+        // Active users cannot be deleted; they must be deactivated first.
+        mockMvc.perform(post("/api/admin/users/bulk-delete")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userIds": [%d]
+                                }
+                                """.formatted(userA.getId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Only deactivated users can be deleted."));
+
+        mockMvc.perform(post("/api/admin/users/bulk-deactivate")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userIds": [%d],
+                                  "fallbackDcUserId": %d
+                                }
+                                """.formatted(userA.getId(), fallbackDc.getId())))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/admin/users/bulk-delete")
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userIds": [%d]
+                                }
+                                """.formatted(userA.getId())))
+                .andExpect(status().isOk());
+
+        User deleted = userRepository.findById(userA.getId()).orElseThrow();
+        assertThat(deleted.getIsDeleted()).isTrue();
+        assertThat(deleted.getEmail()).isNull();
+    }
+
+    @Test
+    void bulkUserOperationsRequireAdminRole() throws Exception {
+        String password = "BulkAuth123";
+        User dc = createUser("DC", "bulk-auth-dc-", password);
+        User fallbackDc = createUser("DC", "bulk-auth-fallback-", password);
+        User target = createUser("DC", "bulk-auth-target-", password);
+
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+
+        mockMvc.perform(post("/api/admin/users/bulk-deactivate")
+                        .header("Authorization", bearer(dcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userIds": [%d],
+                                  "fallbackDcUserId": %d
+                                }
+                                """.formatted(target.getId(), fallbackDc.getId())))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/admin/users/bulk-delete")
+                        .header("Authorization", bearer(dcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "userIds": [%d]
+                                }
+                                """.formatted(target.getId())))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void auditLogSearchFiltersByDocumentReferenceNumericIdActionTypeAndPerformer() throws Exception {
+        String password = "AuditSearch123";
+        User admin = createUser("ADMIN", "audit-search-admin-", password);
+        User dc = createUser("DC", "audit-search-dc-", password);
+        User ddc = createUser("DDC", "audit-search-ddc-", password);
+
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+
+        String uniqueRef = "AUDITREF-" + UUID.randomUUID().toString().substring(0, 8);
+        long documentId = createDocumentWithExactRef(dcToken, uniqueRef);
+        forwardDocument(documentId, dcToken, ddc.getId(), "PRIVATE", "forward for audit search");
+
+        // A second document with a different reference must NOT match the ref filter below.
+        createDocumentWithExactRef(dcToken, "OTHERREF-" + UUID.randomUUID().toString().substring(0, 8));
+
+        // 1) Free-text document reference filter (exercises the join from audit log to documents).
+        JsonNode byRef = readJson(mockMvc.perform(get("/api/audit-logs")
+                        .param("document", uniqueRef)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(byRef.get("content")).isNotEmpty();
+        for (JsonNode log : byRef.get("content")) {
+            assertThat(log.get("entityId").asLong()).isEqualTo(documentId);
+        }
+
+        // 2) Numeric documentId filter returns the document's logs including the FORWARD movement.
+        // A numeric value is also matched against reference numbers, so documents whose ref contains
+        // those digits may also appear — assert our document's logs are present, not exclusivity.
+        JsonNode byId = readJson(mockMvc.perform(get("/api/audit-logs")
+                        .param("document", String.valueOf(documentId))
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn());
+        boolean hasForward = false;
+        boolean hasOurDocumentLog = false;
+        for (JsonNode log : byId.get("content")) {
+            if (log.get("entityId").asLong() == documentId) {
+                hasOurDocumentLog = true;
+                if ("FORWARD".equals(log.get("actionType").asText())) hasForward = true;
+            }
+        }
+        assertThat(hasOurDocumentLog).as("documentId filter should include our document's logs").isTrue();
+        assertThat(hasForward).as("documentId filter should include the FORWARD movement log").isTrue();
+
+        // 3) Action-type filter narrows to a single action.
+        JsonNode byAction = readJson(mockMvc.perform(get("/api/audit-logs")
+                        .param("document", String.valueOf(documentId))
+                        .param("actionType", "FORWARD")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(byAction.get("content")).isNotEmpty();
+        for (JsonNode log : byAction.get("content")) {
+            assertThat(log.get("actionType").asText()).isEqualTo("FORWARD");
+        }
+
+        // 4) Performer filter returns only that user's actions.
+        JsonNode byPerformer = readJson(mockMvc.perform(get("/api/audit-logs")
+                        .param("document", String.valueOf(documentId))
+                        .param("performedByUserId", String.valueOf(dc.getId()))
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn());
+        for (JsonNode log : byPerformer.get("content")) {
+            assertThat(log.get("performedByUserId").asLong()).isEqualTo(dc.getId());
+        }
+    }
+
+    private long createDocumentWithExactRef(String token, String refNo) throws Exception {
+        MvcResult result = mockMvc.perform(post("/api/documents")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "refNo": "%s",
+                                  "title": "Audit Search Document",
+                                  "receivedDate": "%s",
+                                  "companyName": "Integration Co",
+                                  "priority": "HIGH"
+                                }
+                                """.formatted(refNo, LocalDate.now().toString())))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return readJson(result).get("id").asLong();
+    }
+
+    @Test
+    void adminUserCsvExportReturnsHeaderAndUserRowsAndRejectsNonAdmin() throws Exception {
+        String password = "UserCsv123";
+        User admin = createUser("ADMIN", "user-csv-admin-", password);
+        User dc = createUser("DC", "user-csv-dc-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+
+        MvcResult result = mockMvc.perform(get("/api/admin/users/export")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        assertThat(result.getResponse().getHeader("Content-Disposition")).contains("users-export.csv");
+        String body = result.getResponse().getContentAsString();
+        assertThat(body).startsWith("id,fullName,username,email,phone,department,role,active,createdAt");
+        assertThat(body.lines().count()).isGreaterThan(1);
+        assertThat(body).contains(dc.getUsername());
+
+        // The export exposes every user's contact details, so it must stay admin-only.
+        mockMvc.perform(get("/api/admin/users/export")
+                        .header("Authorization", bearer(dcToken)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void myWorkloadStatsCountsAssignedAndOpenedDocumentsForOwner() throws Exception {
+        String password = "Workload123";
+        User dc = createUser("DC", "workload-dc-", password);
+        User ddc = createUser("DDC", "workload-ddc-", password);
+
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+        String ddcToken = loginAndGetToken(ddc.getUsername(), password);
+
+        long documentId = createDocument(dc, dcToken, "workload-doc");
+        forwardDocument(documentId, dcToken, ddc.getId(), "PRIVATE", "assign to ddc");
+
+        // Assigned to ddc but not yet opened by ddc.
+        JsonNode before = readJson(mockMvc.perform(get("/api/documents/my-workload-stats")
+                        .header("Authorization", bearer(ddcToken)))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(before.get("assignedCount").asLong()).isEqualTo(1);
+        assertThat(before.get("openedCount").asLong()).isEqualTo(0);
+        assertThat(before.get("unopenedCount").asLong()).isEqualTo(1);
+
+        // Opening the document records a view, which moves it from unopened to opened.
+        mockMvc.perform(get("/api/documents/{id}", documentId)
+                        .header("Authorization", bearer(ddcToken)))
+                .andExpect(status().isOk());
+
+        JsonNode after = readJson(mockMvc.perform(get("/api/documents/my-workload-stats")
+                        .header("Authorization", bearer(ddcToken)))
+                .andExpect(status().isOk())
+                .andReturn());
+        assertThat(after.get("assignedCount").asLong()).isEqualTo(1);
+        assertThat(after.get("openedCount").asLong()).isEqualTo(1);
+        assertThat(after.get("unopenedCount").asLong()).isEqualTo(0);
+    }
+
+    @Test
+    void auditLogFilterOptionsReturnActionTypesAndPerformers() throws Exception {
+        String password = "FilterOpts123";
+        User admin = createUser("ADMIN", "filter-opts-admin-", password);
+        User dc = createUser("DC", "filter-opts-dc-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+
+        // Generate audit activity: a CREATE action performed by dc.
+        createDocument(dc, dcToken, "filter-opts-doc");
+
+        JsonNode options = readJson(mockMvc.perform(get("/api/audit-logs/filter-options")
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn());
+
+        assertThat(options.get("actionTypes").isArray()).isTrue();
+        boolean hasCreate = false;
+        for (JsonNode a : options.get("actionTypes")) {
+            if ("CREATE".equals(a.asText())) hasCreate = true;
+        }
+        assertThat(hasCreate).as("action types should include CREATE after a document is created").isTrue();
+
+        assertThat(options.get("performers").isArray()).isTrue();
+        boolean hasDc = false;
+        for (JsonNode p : options.get("performers")) {
+            if (p.get("id").asLong() == dc.getId()) hasDc = true;
+        }
+        assertThat(hasDc).as("performers should include the user who created the document").isTrue();
+    }
+
+    @Test
+    void createdDocumentDetailReportsNoSendToUndoNotAlreadyMoved() throws Exception {
+        String password = "UndoCreate123";
+        User dc = createUser("DC", "undo-create-dc-", password);
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+
+        long documentId = createDocument(dc, dcToken, "undo-create-doc");
+
+        MvcResult result = mockMvc.perform(get("/api/documents/{id}", documentId)
+                        .header("Authorization", bearer(dcToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.canUndoSend").value(false))
+                .andReturn();
+
+        // A just-created document was never sent, so the detail must not claim it "already moved".
+        // It should report NO_SENT_MOVEMENT, which the UI renders as no undo-send notice at all.
+        String undoStatus = readJson(result).path("undoSendStatus").asText("");
+        assertThat(undoStatus).isEqualTo("NO_SENT_MOVEMENT");
+    }
+
+    @Test
+    void returnAlwaysGoesToTheActualSenderIgnoringRequestedTarget() throws Exception {
+        String password = "ReturnTarget123";
+        User sender = createUser("DC", "return-sender-", password);
+        User recipient = createUser("DDC", "return-recipient-", password);
+        User stranger = createUser("DDC", "return-stranger-", password);
+
+        String senderToken = loginAndGetToken(sender.getUsername(), password);
+        String recipientToken = loginAndGetToken(recipient.getUsername(), password);
+
+        long documentId = createDocument(sender, senderToken, "return-target");
+        forwardDocument(documentId, senderToken, recipient.getId(), "PRIVATE", "forward for return target test");
+
+        // The recipient asks to return to an arbitrary stranger who never sent the document; the backend
+        // must ignore that and send it back to the actual sender instead.
+        mockMvc.perform(post("/api/documents/{id}/return", documentId)
+                        .header("Authorization", bearer(recipientToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "toUserId": %d
+                                }
+                                """.formatted(stranger.getId())))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/documents/{id}", documentId)
+                        .header("Authorization", bearer(senderToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.currentOwnerUserId").value(sender.getId()));
+    }
+
+    @Test
+    void returnIsRejectedForADocumentThatWasNeverSentToYou() throws Exception {
+        String password = "ReturnNone123";
+        User dc = createUser("DC", "return-none-", password);
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+
+        long documentId = createDocument(dc, dcToken, "return-none");
+
+        // dc created the document and never received it from anyone, so there is no sender to return to.
+        mockMvc.perform(post("/api/documents/{id}/return", documentId)
+                        .header("Authorization", bearer(dcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "toUserId": %d
+                                }
+                                """.formatted(dc.getId())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("This document was not sent to you, so it cannot be returned."));
     }
 
     private User createUser(String roleName, String prefix, String rawPassword) {

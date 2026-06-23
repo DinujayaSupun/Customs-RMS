@@ -32,76 +32,76 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
 
     List<AuditLog> findByEntityTypeAndEntityIdOrderByPerformedAtAsc(String entityType, Long entityId);
 
-    // ✅ Full document history: document + movements + attachment logs (via details_json containing documentId)
-    @Query(value = """
-        SELECT * FROM audit_logs al
-        WHERE (al.entity_type = 'DOCUMENT' AND al.entity_id = :documentId)
-           OR (al.entity_type = 'MOVEMENT' AND al.entity_id = :documentId)
-           OR (al.entity_type = 'ATTACHMENT' AND al.details_json LIKE CONCAT('%\\"documentId\\":', :documentId, '%'))
-        ORDER BY al.performed_at ASC
-        """, nativeQuery = true)
+    // Full document history: the document's own logs, its movement logs, and attachment logs
+    // (attachment logs carry the owning documentId inside details_json).
+    // JPQL (not native SQL) so the query is portable across databases via the Hibernate dialect.
+    @Query("""
+        select al from AuditLog al
+        where (al.entityType = 'DOCUMENT' and al.entityId = :documentId)
+           or (al.entityType = 'MOVEMENT' and al.entityId = :documentId)
+           or (al.entityType = 'ATTACHMENT'
+               and al.detailsJson like concat('%"documentId":', cast(:documentId as String), '%'))
+        order by al.performedAt asc
+        """)
     List<AuditLog> findHistoryForDocument(@Param("documentId") Long documentId);
 
+    // Audit-log search with optional date/action/performer/document filters.
+    // The document filter matches either a numeric documentId (directly, or via an attachment that
+    // belongs to that document) or any related document whose reference number contains the text.
+    // Written as JPQL with correlated EXISTS subqueries so it stays database-portable.
     @Query(value = """
-        SELECT al.*
-        FROM audit_logs al
-        LEFT JOIN documents d ON (
-             (al.entity_type IN ('DOCUMENT', 'MOVEMENT') AND al.entity_id = d.id)
-             OR
-             (al.entity_type = 'ATTACHMENT' AND EXISTS (
-                 SELECT 1
-                 FROM document_attachments da
-                 WHERE da.id = al.entity_id AND da.document_id = d.id
-             ))
-        )
-        WHERE (:fromAt IS NULL OR al.performed_at >= :fromAt)
-          AND (:toAtExclusive IS NULL OR al.performed_at < :toAtExclusive)
-          AND (:actionType IS NULL OR :actionType = '' OR UPPER(al.action_type) = UPPER(:actionType))
-          AND (:performedByUserId IS NULL OR al.performed_by_user_id = :performedByUserId)
-          AND (
-                :documentFilter IS NULL OR :documentFilter = ''
-                OR ((:documentId IS NOT NULL) AND (
-                        (al.entity_type IN ('DOCUMENT', 'MOVEMENT') AND al.entity_id = :documentId)
-                        OR (al.entity_type = 'ATTACHMENT' AND EXISTS (
-                            SELECT 1
-                            FROM document_attachments da2
-                            WHERE da2.id = al.entity_id AND da2.document_id = :documentId
-                        ))
-                    ))
-                OR (d.ref_no IS NOT NULL AND LOWER(d.ref_no) LIKE LOWER(CONCAT('%', :documentFilter, '%')))
+        select al from AuditLog al
+        where (:fromAt is null or al.performedAt >= :fromAt)
+          and (:toAtExclusive is null or al.performedAt < :toAtExclusive)
+          and (:actionType is null or :actionType = '' or upper(al.actionType) = upper(:actionType))
+          and (:performedByUserId is null or al.performedByUserId = :performedByUserId)
+          and (
+                :documentFilter is null or :documentFilter = ''
+                or (:documentId is not null and (
+                        (al.entityType in ('DOCUMENT', 'MOVEMENT') and al.entityId = :documentId)
+                        or (al.entityType = 'ATTACHMENT' and exists (
+                                select da.id from DocumentAttachment da
+                                where da.id = al.entityId and da.documentId = :documentId))
+                   ))
+                or exists (
+                        select d.id from Document d
+                        where (
+                                (al.entityType in ('DOCUMENT', 'MOVEMENT') and al.entityId = d.id)
+                                or (al.entityType = 'ATTACHMENT' and exists (
+                                        select da2.id from DocumentAttachment da2
+                                        where da2.id = al.entityId and da2.documentId = d.id))
+                              )
+                          and d.refNo is not null
+                          and lower(d.refNo) like lower(concat('%', :documentFilter, '%')))
           )
-        ORDER BY al.performed_at DESC, al.id DESC
+        order by al.performedAt desc, al.id desc
         """,
         countQuery = """
-        SELECT COUNT(DISTINCT al.id)
-        FROM audit_logs al
-        LEFT JOIN documents d ON (
-             (al.entity_type IN ('DOCUMENT', 'MOVEMENT') AND al.entity_id = d.id)
-             OR
-             (al.entity_type = 'ATTACHMENT' AND EXISTS (
-                 SELECT 1
-                 FROM document_attachments da
-                 WHERE da.id = al.entity_id AND da.document_id = d.id
-             ))
-        )
-        WHERE (:fromAt IS NULL OR al.performed_at >= :fromAt)
-          AND (:toAtExclusive IS NULL OR al.performed_at < :toAtExclusive)
-          AND (:actionType IS NULL OR :actionType = '' OR UPPER(al.action_type) = UPPER(:actionType))
-          AND (:performedByUserId IS NULL OR al.performed_by_user_id = :performedByUserId)
-          AND (
-                :documentFilter IS NULL OR :documentFilter = ''
-                OR ((:documentId IS NOT NULL) AND (
-                        (al.entity_type IN ('DOCUMENT', 'MOVEMENT') AND al.entity_id = :documentId)
-                        OR (al.entity_type = 'ATTACHMENT' AND EXISTS (
-                            SELECT 1
-                            FROM document_attachments da2
-                            WHERE da2.id = al.entity_id AND da2.document_id = :documentId
-                        ))
-                    ))
-                OR (d.ref_no IS NOT NULL AND LOWER(d.ref_no) LIKE LOWER(CONCAT('%', :documentFilter, '%')))
+        select count(al) from AuditLog al
+        where (:fromAt is null or al.performedAt >= :fromAt)
+          and (:toAtExclusive is null or al.performedAt < :toAtExclusive)
+          and (:actionType is null or :actionType = '' or upper(al.actionType) = upper(:actionType))
+          and (:performedByUserId is null or al.performedByUserId = :performedByUserId)
+          and (
+                :documentFilter is null or :documentFilter = ''
+                or (:documentId is not null and (
+                        (al.entityType in ('DOCUMENT', 'MOVEMENT') and al.entityId = :documentId)
+                        or (al.entityType = 'ATTACHMENT' and exists (
+                                select da.id from DocumentAttachment da
+                                where da.id = al.entityId and da.documentId = :documentId))
+                   ))
+                or exists (
+                        select d.id from Document d
+                        where (
+                                (al.entityType in ('DOCUMENT', 'MOVEMENT') and al.entityId = d.id)
+                                or (al.entityType = 'ATTACHMENT' and exists (
+                                        select da2.id from DocumentAttachment da2
+                                        where da2.id = al.entityId and da2.documentId = d.id))
+                              )
+                          and d.refNo is not null
+                          and lower(d.refNo) like lower(concat('%', :documentFilter, '%')))
           )
-        """,
-        nativeQuery = true)
+        """)
     Page<AuditLog> searchLogs(@Param("fromAt") LocalDateTime fromAt,
                               @Param("toAtExclusive") LocalDateTime toAtExclusive,
                               @Param("actionType") String actionType,
@@ -109,41 +109,4 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
                               @Param("documentFilter") String documentFilter,
                               @Param("documentId") Long documentId,
                               Pageable pageable);
-
-    @Query(value = """
-        SELECT al.*
-        FROM audit_logs al
-        LEFT JOIN documents d ON (
-             (al.entity_type IN ('DOCUMENT', 'MOVEMENT') AND al.entity_id = d.id)
-             OR
-             (al.entity_type = 'ATTACHMENT' AND EXISTS (
-                 SELECT 1
-                 FROM document_attachments da
-                 WHERE da.id = al.entity_id AND da.document_id = d.id
-             ))
-        )
-        WHERE (:fromAt IS NULL OR al.performed_at >= :fromAt)
-          AND (:toAtExclusive IS NULL OR al.performed_at < :toAtExclusive)
-          AND (:actionType IS NULL OR :actionType = '' OR UPPER(al.action_type) = UPPER(:actionType))
-          AND (:performedByUserId IS NULL OR al.performed_by_user_id = :performedByUserId)
-          AND (
-                :documentFilter IS NULL OR :documentFilter = ''
-                OR ((:documentId IS NOT NULL) AND (
-                        (al.entity_type IN ('DOCUMENT', 'MOVEMENT') AND al.entity_id = :documentId)
-                        OR (al.entity_type = 'ATTACHMENT' AND EXISTS (
-                            SELECT 1
-                            FROM document_attachments da2
-                            WHERE da2.id = al.entity_id AND da2.document_id = :documentId
-                        ))
-                    ))
-                OR (d.ref_no IS NOT NULL AND LOWER(d.ref_no) LIKE LOWER(CONCAT('%', :documentFilter, '%')))
-          )
-        ORDER BY al.performed_at DESC, al.id DESC
-        """, nativeQuery = true)
-    List<AuditLog> exportLogs(@Param("fromAt") LocalDateTime fromAt,
-                              @Param("toAtExclusive") LocalDateTime toAtExclusive,
-                              @Param("actionType") String actionType,
-                              @Param("performedByUserId") Long performedByUserId,
-                              @Param("documentFilter") String documentFilter,
-                              @Param("documentId") Long documentId);
 }

@@ -7,13 +7,14 @@ import lk.customs.rms.entity.Document;
 import lk.customs.rms.entity.Role;
 import lk.customs.rms.entity.User;
 import lk.customs.rms.enums.MovementActionType;
+import lk.customs.rms.enums.Priority;
 import lk.customs.rms.enums.Status;
 import lk.customs.rms.repository.DcAutoForwardConfigRepository;
 import lk.customs.rms.repository.DocumentMovementRepository;
 import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.RoleRepository;
 import lk.customs.rms.repository.UserRepository;
-import lk.customs.rms.service.DcAutoForwardScheduler;
+import lk.customs.rms.scheduler.DcAutoForwardScheduler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -161,6 +162,37 @@ class DcAutoForwardSchedulerIntegrationTests {
         assertThat(unchanged.getDcViewedAt()).isNotNull();
     }
 
+    @Test
+    void schedulerProcessesTimedOutDcDocumentsInBoundedBatchesWithoutSkipping() {
+        String password = "AutoForward123";
+        User creator = createUser("ADMIN", "auto-batch-creator-", password);
+        User dc = createUser("DC", "auto-batch-dc-", password);
+        User receiver = createUser("DDC", "auto-batch-receiver-", password);
+
+        int totalCandidates = 1005;
+        for (int index = 0; index < totalCandidates; index += 1) {
+            createTimedOutDcDocument(creator.getId(), dc.getId(), "auto-batch-" + index);
+        }
+
+        enableAutoForward(receiver.getId(), 1);
+
+        scheduler.processTimedOutDcDocuments();
+
+        long forwardedAfterFirstRun = documentRepository.findAll().stream()
+                .filter(document -> document.getRefNo().startsWith("auto-batch-"))
+                .filter(document -> receiver.getId().equals(document.getCurrentOwnerUserId()))
+                .count();
+        assertThat(forwardedAfterFirstRun).isEqualTo(1000);
+
+        scheduler.processTimedOutDcDocuments();
+
+        long forwardedAfterSecondRun = documentRepository.findAll().stream()
+                .filter(document -> document.getRefNo().startsWith("auto-batch-"))
+                .filter(document -> receiver.getId().equals(document.getCurrentOwnerUserId()))
+                .count();
+        assertThat(forwardedAfterSecondRun).isEqualTo(totalCandidates);
+    }
+
     private User createUser(String roleName, String prefix, String rawPassword) {
         Role role = roleRepository.findByRoleName(roleName)
                 .orElseThrow(() -> new IllegalStateException("Role not found: " + roleName));
@@ -191,6 +223,24 @@ class DcAutoForwardSchedulerIntegrationTests {
                 .andReturn();
 
         return readJson(createResult).get("id").asLong();
+    }
+
+    private Document createTimedOutDcDocument(Long creatorUserId, Long dcUserId, String refPrefix) {
+        Document document = new Document();
+        document.setRefNo(refPrefix + "-" + UUID.randomUUID());
+        document.setTitle("Auto Forward Batch Test Document");
+        document.setReceivedDate(LocalDate.now());
+        document.setCompanyName("Integration Co");
+        document.setVisibility("PUBLIC");
+        document.setPriority(Priority.HIGH);
+        document.setStatus(Status.IN_PROGRESS);
+        document.setCreatedByUserId(creatorUserId);
+        document.setCurrentOwnerUserId(dcUserId);
+        document.setCreatedAt(LocalDateTime.now().minusDays(1));
+        document.setUpdatedAt(LocalDateTime.now().minusMinutes(20));
+        document.setDcAssignedAt(LocalDateTime.now().minusMinutes(10));
+        document.setDcViewedAt(null);
+        return documentRepository.saveAndFlush(document);
     }
 
     private void enableAutoForward(Long receiverUserId, int timeoutMinutes) {

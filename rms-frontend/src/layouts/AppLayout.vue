@@ -1,6 +1,11 @@
 <template>
   <div class="app">
     <header class="header">
+      <button class="hamburger" type="button" aria-label="Open navigation menu" @click="openMobileDrawer">
+        <svg viewBox="0 0 24 24" class="hamburger-svg" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
+      </button>
       <div class="brand">
         <span class="brand-logo">
           <img src="/sri-lanka-customs-logo.svg" alt="Sri Lanka Customs logo" />
@@ -29,8 +34,22 @@
       </div>
     </header>
 
+    <div v-if="backendUnavailable" class="serverBanner" role="status">
+      <span>Cannot connect to server. Some data may be unavailable.</span>
+      <button type="button" class="serverBannerAction" @click="dismissBackendBanner">Dismiss</button>
+    </div>
+
     <div class="body">
-      <aside class="sidebar">
+      <div v-if="isMobileDrawerOpen" class="drawer-backdrop" @click="closeMobileDrawer" aria-hidden="true"></div>
+      <aside
+        class="sidebar"
+        :class="{ 'sidebar-expanded': isSidebarExpanded || isMobileDrawerOpen, 'mobile-drawer': isMobileDrawerOpen }"
+        ref="sidebarRef"
+        @mouseenter="expandSidebar"
+        @mouseleave="scheduleSidebarCollapse"
+        @focusin="expandSidebar"
+        @focusout="handleSidebarFocusOut"
+      >
         <div class="sidebar-top">
           <div class="sidebar-mark" aria-label="Navigation menu">
             <svg viewBox="0 0 48 48" class="sidebar-mark-svg" aria-hidden="true">
@@ -49,6 +68,8 @@
             :to="item.to"
             class="nav"
             :title="item.label"
+            @pointerdown="handleSidebarNavPress"
+            @click="handleSidebarNavClick"
           >
             <span class="nav-icon" :class="`nav-icon-${item.icon}`" aria-hidden="true">
               <svg v-if="item.icon === 'inbox'" viewBox="0 0 24 24" class="nav-svg">
@@ -93,17 +114,43 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import { getMyWorkloadStats } from "../api/documents.api";
 import { createMyProfilePictureUrl } from "../api/auth.api";
 import { clearSession, getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabel } from "../auth/userLabel";
 import { useToast } from "../composables/useToast";
+import { getBackendStatus } from "../services/backendStatus";
+
+const SIDEBAR_EXPANDED_KEY = "rms_sidebar_expanded";
+let persistedSidebarExpanded = false;
+
+function readPersistedSidebarExpanded() {
+  try {
+    return window.sessionStorage.getItem(SIDEBAR_EXPANDED_KEY) === "true";
+  } catch {
+    return persistedSidebarExpanded;
+  }
+}
+
+function setPersistedSidebarExpanded(value) {
+  persistedSidebarExpanded = value;
+  try {
+    window.sessionStorage.setItem(SIDEBAR_EXPANDED_KEY, value ? "true" : "false");
+  } catch {
+    // Session storage can be blocked; the module-level value still covers normal navigation.
+  }
+}
 
 const router = useRouter();
+const route = useRoute();
 const userRef = ref(getCurrentUser());
 const avatarBroken = ref(false);
 const avatarUrl = ref("");
+const sidebarRef = ref(null);
+const isSidebarExpanded = ref(readPersistedSidebarExpanded());
+const isMobileDrawerOpen = ref(false);
+const backendUnavailable = ref(false);
 const { success, info } = useToast();
 
 const currentUser = computed(() => userRef.value);
@@ -137,7 +184,68 @@ const initials = computed(() => {
   return parts.map((p) => p[0]?.toUpperCase() || "").join("") || "U";
 });
 
+function openMobileDrawer() {
+  isMobileDrawerOpen.value = true;
+  document.body.style.overflow = "hidden";
+}
+
+function closeMobileDrawer() {
+  isMobileDrawerOpen.value = false;
+  document.body.style.overflow = "";
+}
+
+watch(() => route.path, closeMobileDrawer);
+
 let avatarRequestId = 0;
+let sidebarCollapseTimer = null;
+let lastSidebarNavClickAt = 0;
+const SIDEBAR_NAV_CLICK_GRACE_MS = 1000;
+
+function clearSidebarCollapseTimer() {
+  if (sidebarCollapseTimer !== null) {
+    window.clearTimeout(sidebarCollapseTimer);
+    sidebarCollapseTimer = null;
+  }
+}
+
+function expandSidebar() {
+  clearSidebarCollapseTimer();
+  if (isSidebarExpanded.value) return;
+  setPersistedSidebarExpanded(true);
+  isSidebarExpanded.value = true;
+}
+
+function scheduleSidebarCollapse() {
+  clearSidebarCollapseTimer();
+  const navClickGraceRemaining = Math.max(0, SIDEBAR_NAV_CLICK_GRACE_MS - (Date.now() - lastSidebarNavClickAt));
+  sidebarCollapseTimer = window.setTimeout(() => {
+    setPersistedSidebarExpanded(false);
+    isSidebarExpanded.value = false;
+    sidebarCollapseTimer = null;
+  }, 550 + navClickGraceRemaining);
+}
+
+function handleSidebarFocusOut(event) {
+  const nextFocusedElement = event?.relatedTarget;
+  if (nextFocusedElement && sidebarRef.value?.contains(nextFocusedElement)) {
+    return;
+  }
+
+  scheduleSidebarCollapse();
+}
+
+function handleSidebarNavPress() {
+  lastSidebarNavClickAt = Date.now();
+  clearSidebarCollapseTimer();
+  setPersistedSidebarExpanded(true);
+  isSidebarExpanded.value = true;
+  if (isMobileDrawerOpen.value) closeMobileDrawer();
+}
+
+function handleSidebarNavClick(event) {
+  if (event?.detail > 0) return;
+  handleSidebarNavPress();
+}
 
 async function refreshAvatarUrl() {
   const requestId = ++avatarRequestId;
@@ -167,6 +275,14 @@ watch(
 function onAuthChanged() {
   userRef.value = getCurrentUser();
   avatarBroken.value = false;
+}
+
+function onBackendStatusChanged(event) {
+  backendUnavailable.value = event?.detail?.status === "unavailable";
+}
+
+function dismissBackendBanner() {
+  backendUnavailable.value = false;
 }
 
 function logout() {
@@ -217,12 +333,21 @@ async function showPendingWelcome() {
 }
 
 onMounted(() => {
+  isSidebarExpanded.value = readPersistedSidebarExpanded();
+  backendUnavailable.value = getBackendStatus() === "unavailable";
   window.addEventListener("rms_auth_changed", onAuthChanged);
+  window.addEventListener("rms_backend_status_changed", onBackendStatusChanged);
   showPendingWelcome();
+  if (isSidebarExpanded.value) {
+    scheduleSidebarCollapse();
+  }
 });
 
 onUnmounted(() => {
   window.removeEventListener("rms_auth_changed", onAuthChanged);
+  window.removeEventListener("rms_backend_status_changed", onBackendStatusChanged);
+  clearSidebarCollapseTimer();
+  document.body.style.overflow = "";
 });
 </script>
 
@@ -276,7 +401,7 @@ onUnmounted(() => {
 .brand-name { font-weight: 800; font-size: 14px; }
 .brand-sub { font-size: 12px; opacity: 0.9; }
 
-.user { display: flex; align-items: center; gap: 12px; }
+.user { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .user-role { font-size: 12px; opacity: 0.95; }
 
 .avatarWrap { display: flex; align-items: center; }
@@ -308,6 +433,31 @@ onUnmounted(() => {
 
 .body { flex: 1; display: flex; min-height: 0; }
 
+.serverBanner {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 18px;
+  border-bottom: 1px solid #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.serverBannerAction {
+  border: 1px solid #f59e0b;
+  background: #ffffff;
+  color: #92400e;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .sidebar {
   width: var(--sidebar-collapsed-width);
   flex: 0 0 var(--sidebar-collapsed-width);
@@ -324,7 +474,7 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 
-.sidebar:hover {
+.sidebar-expanded {
   width: var(--sidebar-expanded-width);
   flex-basis: var(--sidebar-expanded-width);
   padding-right: 16px;
@@ -377,20 +527,20 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.sidebar:hover .sidebar-text {
+.sidebar-expanded .sidebar-text {
   opacity: 1;
   transform: translateX(0);
 }
 
-.sidebar:not(:hover) .sidebar-top .sidebar-text {
+.sidebar:not(.sidebar-expanded) .sidebar-top .sidebar-text {
   display: none;
 }
 
-.sidebar:not(:hover) .nav .sidebar-text {
+.sidebar:not(.sidebar-expanded) .nav .sidebar-text {
   display: none;
 }
 
-.sidebar:hover .sidebar-top {
+.sidebar-expanded .sidebar-top {
   justify-content: flex-start;
 }
 
@@ -402,7 +552,7 @@ onUnmounted(() => {
   width: 100%;
 }
 
-.sidebar:not(:hover) .navList {
+.sidebar:not(.sidebar-expanded) .navList {
   align-items: center;
 }
 
@@ -420,7 +570,7 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 
-.sidebar:not(:hover) .nav {
+.sidebar:not(.sidebar-expanded) .nav {
   width: 44px;
   min-width: 44px;
   justify-content: center;
@@ -467,33 +617,92 @@ onUnmounted(() => {
   color: #ffffff;
 }
 
-.sidebar:not(:hover) .nav.router-link-active .nav-icon {
+.sidebar:not(.sidebar-expanded) .nav.router-link-active .nav-icon {
   background: rgba(37, 99, 235, 0.58);
   box-shadow: 0 8px 20px rgba(37, 99, 235, 0.24);
 }
 
-.sidebar:not(:hover) .nav:hover {
+.sidebar:not(.sidebar-expanded) .nav:hover {
   transform: translateY(-1px);
 }
 
-@media (max-width: 900px) {
-  .sidebar,
-  .sidebar:hover {
-    width: var(--sidebar-expanded-width);
+.hamburger {
+  display: none;
+  background: rgba(255,255,255,0.1);
+  border: none;
+  border-radius: 8px;
+  padding: 6px;
+  cursor: pointer;
+  color: #fff;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.hamburger-svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  display: block;
+}
+
+.drawer-backdrop {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .header {
+    height: auto;
+    min-height: 56px;
+    flex-wrap: wrap;
+    padding: 6px 12px;
+    gap: 6px;
   }
 
-  .sidebar-text {
-    opacity: 1;
-    transform: translateX(0);
+  .brand-sub {
+    display: none;
+  }
+
+  .user-role {
+    display: none;
+  }
+
+  .hamburger {
+    display: flex;
   }
 
   .sidebar {
-    padding: 16px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    z-index: 200;
+    width: var(--sidebar-expanded-width) !important;
+    flex-basis: var(--sidebar-expanded-width) !important;
+    transform: translateX(-100%);
+    transition: transform 0.28s ease;
+    box-shadow: none;
   }
 
-  .nav {
-    justify-content: flex-start;
-    padding: 8px;
+  .sidebar.mobile-drawer {
+    transform: translateX(0);
+    box-shadow: 12px 0 40px rgba(0, 0, 0, 0.35);
+  }
+
+  .drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 199;
+  }
+
+  .content {
+    width: 100%;
   }
 }
+
 </style>

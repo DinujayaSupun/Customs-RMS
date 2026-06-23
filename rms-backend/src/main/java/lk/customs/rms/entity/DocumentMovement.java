@@ -8,7 +8,12 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "document_movements")
+@Table(name = "document_movements", indexes = {
+    @Index(name = "idx_movements_document_action_at", columnList = "document_id,action_at,id"),
+    @Index(name = "idx_movements_action_by_type_at", columnList = "action_by_user_id,action_type,action_at,id"),
+    @Index(name = "idx_movements_from_type_at", columnList = "from_user_id,action_type,action_at,id"),
+    @Index(name = "idx_movements_to_type_at", columnList = "to_user_id,action_type,action_at,id")
+})
 @Getter
 @Setter
 public class DocumentMovement {

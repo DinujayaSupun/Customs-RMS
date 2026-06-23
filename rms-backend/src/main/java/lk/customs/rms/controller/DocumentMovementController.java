@@ -12,6 +12,7 @@ import lk.customs.rms.repository.DocumentMovementRepository;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.security.CurrentUserService;
 import lk.customs.rms.service.PermissionService;
+import lk.customs.rms.service.DocumentRecipientService;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,7 +24,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @RestController
-@CrossOrigin
+
 @RequestMapping("/api/documents/{documentId}/movements")
 public class DocumentMovementController {
 
@@ -32,17 +33,20 @@ public class DocumentMovementController {
     private final UserRepository userRepository;
         private final CurrentUserService currentUserService;
         private final PermissionService permissionService;
+        private final DocumentRecipientService documentRecipientService;
 
         public DocumentMovementController(DocumentRepository documentRepository,
                                                                           DocumentMovementRepository movementRepository,
                                                                           UserRepository userRepository,
                                                                           CurrentUserService currentUserService,
-                                                                          PermissionService permissionService) {
+                                                                          PermissionService permissionService,
+                                                                          DocumentRecipientService documentRecipientService) {
                 this.documentRepository = documentRepository;
         this.movementRepository = movementRepository;
         this.userRepository = userRepository;
                 this.currentUserService = currentUserService;
                 this.permissionService = permissionService;
+                this.documentRecipientService = documentRecipientService;
     }
 
     @GetMapping
@@ -51,8 +55,7 @@ public class DocumentMovementController {
                                 .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
 
                 Long actorUserId = currentUserService.requireUserId(authentication);
-                if (!doc.getCurrentOwnerUserId().equals(actorUserId)
-                                && !permissionService.hasPermission(actorUserId, AppPermission.VIEW_ALL_HISTORY)) {
+                if (!documentRecipientService.canViewTimeline(doc, actorUserId)) {
                         throw new BadRequestException("You are not allowed to view movement history for this document.");
                 }
 
@@ -70,6 +73,7 @@ public class DocumentMovementController {
                         .toUserId(m.getToUserId())
                         .toUserName(userName(usersById, m.getToUserId()))
                         .forwardVisibility(m.getForwardVisibility())
+                        .recipientSummary(documentRecipientService.summaryForMovement(doc, m.getId(), actorUserId))
                         .actionByUserId(m.getActionByUserId())
                         .actionByUserName(userName(usersById, m.getActionByUserId()))
                         .actionAt(m.getActionAt())

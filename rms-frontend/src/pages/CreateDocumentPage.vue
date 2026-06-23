@@ -53,7 +53,7 @@
           />
           <div class="filePickRow">
             <button class="btn btn-sm" type="button" @click="openFilePicker">Choose Files</button>
-            <span class="filePickLabel">{{ selectedFiles.length ? `${selectedFiles.length} file(s) selected` : "No files chosen" }}</span>
+            <span class="filePickLabel">{{ selectedFilesSummary }}</span>
             <HoverHint text="PDF and image files can be previewed here. DOC/DOCX and other file types cannot be previewed in-browser." />
           </div>
           <div class="small">
@@ -67,7 +67,7 @@
               class="selectedFileRow"
             >
               <div class="fileName">
-                <b>{{ file.name }}</b>
+                <b>{{ getSelectedFileVersionLabel(index, file.name) }}</b>
                 <span class="tag">{{ getSelectedFileRole(index) }}</span>
                 <div class="small">{{ file.type || "unknown type" }}</div>
               </div>
@@ -111,7 +111,7 @@
     <div v-if="previewOpen" class="overlay" @click.self="previewOpen=false">
       <div class="modal">
         <div class="modalHead">
-          <div>
+          <div class="modalTitleBlock">
             <div class="modalTitle">Preview</div>
             <div class="modalSub">{{ previewFile?.name }}</div>
           </div>
@@ -146,6 +146,8 @@ import {
   addSelectedFiles,
   getFileKey,
   getSelectedFileRole,
+  getSelectedFileVersionLabel,
+  getSelectedFilesSummary,
   removeSelectedFile,
   uploadFilesInSelectedOrder,
 } from "../utils/createDocumentFilesLogic";
@@ -178,6 +180,7 @@ const fileInputRef = ref(null);
 
 const isPdf = computed(() => previewFile.value && previewFile.value.type === "application/pdf");
 const isImage = computed(() => previewFile.value && previewFile.value.type.startsWith("image/"));
+const selectedFilesSummary = computed(() => getSelectedFilesSummary(selectedFiles.value));
 
 function onFileChange(e) {
   selectedFiles.value = addSelectedFiles(selectedFiles.value, e.target.files);
@@ -277,6 +280,10 @@ h2 { margin:0; }
   grid-template-columns: 1fr 1fr;
   gap:12px;
 }
+@media (max-width: 640px) {
+  .formGrid { grid-template-columns: 1fr; }
+  .span2 { grid-column: span 1; }
+}
 .span2 { grid-column: span 2; }
 
 .labelTop { font-size:12px; font-weight:800; color:#374151; margin-bottom:6px; }
@@ -375,17 +382,33 @@ h2 { margin:0; }
 .modal {
   width:100%;
   max-width:900px;
+  min-width:0;
+  box-sizing:border-box;
   background:#fff;
   border-radius:10px;
   overflow:hidden;
 }
 .modalHead {
   display:flex; align-items:flex-start; justify-content:space-between;
+  gap:12px;
+  min-width:0;
   padding:14px 16px;
   border-bottom:1px solid #eee;
 }
+.modalTitleBlock {
+  flex:1 1 auto;
+  min-width:0;
+  max-width:100%;
+}
 .modalTitle { font-weight:800; font-size:14px; }
-.modalSub { font-size:12px; color:#6b7280; margin-top:2px; }
+.modalSub {
+  max-width:100%;
+  font-size:12px;
+  color:#6b7280;
+  margin-top:2px;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
 .modalBody { padding:16px; }
 .modalFoot {
   display:flex; justify-content:flex-end; gap:10px;

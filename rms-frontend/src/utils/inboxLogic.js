@@ -1,5 +1,5 @@
 export const INBOX_PRIORITY_ORDER = { LOW: 1, MEDIUM: 2, HIGH: 3, URGENT: 4 };
-export const INBOX_STATUS_ORDER = { PENDING: 1, IN_PROGRESS: 2, APPROVED: 3, ISSUED: 4, REJECTED: 5 };
+export const INBOX_STATUS_ORDER = { PENDING: 1, IN_PROGRESS: 2, RETURNED: 3, APPROVED: 4, ISSUED: 5, REJECTED: 6 };
 
 function toText(value) {
   return String(value ?? "").trim().toLowerCase();

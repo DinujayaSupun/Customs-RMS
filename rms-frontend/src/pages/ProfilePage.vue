@@ -61,6 +61,10 @@
             <p class="selectedFile" :class="{ muted: !selectedFileName }">
               {{ selectedFileName || "No image selected yet" }}
             </p>
+            <div v-if="selectedPicPreviewUrl" class="selectedImagePreview">
+              <span class="previewLabel">Selected image preview</span>
+              <img :src="selectedPicPreviewUrl" alt="Selected profile preview" />
+            </div>
           </section>
 
           <section class="settingsPanel compactPanel">
@@ -173,21 +177,67 @@
             <div class="formGrid passwordGrid">
               <label class="formRow">
                 <span>Current Password</span>
-                <input class="input" v-model="password.currentPassword" type="password" autocomplete="current-password" />
+                <div class="passwordField">
+                  <input
+                    class="input passwordInput"
+                    v-model="password.currentPassword"
+                    :type="showCurrentPassword ? 'text' : 'password'"
+                    autocomplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    class="passwordToggle"
+                    :aria-label="showCurrentPassword ? 'Hide current password' : 'Show current password'"
+                    :aria-pressed="showCurrentPassword"
+                    @click="showCurrentPassword = !showCurrentPassword"
+                  >
+                    <EyeOff v-if="showCurrentPassword" class="passwordIcon" aria-hidden="true" />
+                    <Eye v-else class="passwordIcon" aria-hidden="true" />
+                  </button>
+                </div>
               </label>
               <label class="formRow">
                 <span>New Password</span>
-                <input
-                  class="input"
-                  v-model="password.newPassword"
-                  type="password"
-                  autocomplete="new-password"
-                  placeholder="At least 8 chars with letters and numbers"
-                />
+                <div class="passwordField">
+                  <input
+                    class="input passwordInput"
+                    v-model="password.newPassword"
+                    :type="showNewPassword ? 'text' : 'password'"
+                    autocomplete="new-password"
+                    placeholder="At least 8 chars with letters and numbers"
+                  />
+                  <button
+                    type="button"
+                    class="passwordToggle"
+                    :aria-label="showNewPassword ? 'Hide new password' : 'Show new password'"
+                    :aria-pressed="showNewPassword"
+                    @click="showNewPassword = !showNewPassword"
+                  >
+                    <EyeOff v-if="showNewPassword" class="passwordIcon" aria-hidden="true" />
+                    <Eye v-else class="passwordIcon" aria-hidden="true" />
+                  </button>
+                </div>
               </label>
               <label class="formRow">
                 <span>Confirm New Password</span>
-                <input class="input" v-model="password.confirmPassword" type="password" autocomplete="new-password" />
+                <div class="passwordField">
+                  <input
+                    class="input passwordInput"
+                    v-model="password.confirmPassword"
+                    :type="showConfirmPassword ? 'text' : 'password'"
+                    autocomplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    class="passwordToggle"
+                    :aria-label="showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'"
+                    :aria-pressed="showConfirmPassword"
+                    @click="showConfirmPassword = !showConfirmPassword"
+                  >
+                    <EyeOff v-if="showConfirmPassword" class="passwordIcon" aria-hidden="true" />
+                    <Eye v-else class="passwordIcon" aria-hidden="true" />
+                  </button>
+                </div>
               </label>
             </div>
 
@@ -209,7 +259,8 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, onUnmounted, ref } from "vue";
+import { Eye, EyeOff } from "lucide-vue-next";
 import AppLayout from "../layouts/AppLayout.vue";
 import HoverHint from "../components/HoverHint.vue";
 import { useToast } from "../composables/useToast";
@@ -226,12 +277,16 @@ const { success, error } = useToast();
 
 const fileInput = ref(null);
 const selectedPic = ref(null);
+const selectedPicPreviewUrl = ref("");
 const savingPic = ref(false);
 const savingProfile = ref(false);
 const savingPassword = ref(false);
 const avatarBroken = ref(false);
 const avatarVersion = ref("");
 const avatarUrl = ref("");
+const showCurrentPassword = ref(false);
+const showNewPassword = ref(false);
+const showConfirmPassword = ref(false);
 
 const profile = ref({
   id: null,
@@ -280,6 +335,13 @@ const selectedFileName = computed(() => selectedPic.value?.name || "");
 
 let avatarRequestId = 0;
 
+function clearSelectedPicPreview() {
+  if (selectedPicPreviewUrl.value) {
+    URL.revokeObjectURL(selectedPicPreviewUrl.value);
+    selectedPicPreviewUrl.value = "";
+  }
+}
+
 async function refreshAvatarUrl() {
   const requestId = ++avatarRequestId;
   avatarBroken.value = false;
@@ -303,6 +365,9 @@ function resetPasswordForm() {
     newPassword: "",
     confirmPassword: "",
   };
+  showCurrentPassword.value = false;
+  showNewPassword.value = false;
+  showConfirmPassword.value = false;
 }
 
 function applySessionUser(data) {
@@ -352,7 +417,10 @@ function pickFile() {
 
 function onPick(event) {
   const file = event?.target?.files?.[0] || null;
+  clearSelectedPicPreview();
   selectedPic.value = file;
+  // Show a local preview before upload; the file is not sent until Upload Photo is clicked.
+  selectedPicPreviewUrl.value = file ? URL.createObjectURL(file) : "";
 }
 
 function onPhoneInput(event) {
@@ -414,6 +482,7 @@ async function uploadPicture() {
   try {
     const me = await uploadMyProfilePicture(file);
     selectedPic.value = null;
+    clearSelectedPicPreview();
     if (fileInput.value) fileInput.value.value = "";
 
     profile.value.hasProfilePicture = !!me.hasProfilePicture;
@@ -503,6 +572,11 @@ async function savePassword() {
     savingPassword.value = false;
   }
 }
+
+onUnmounted(() => {
+  // Release the browser object URL if the user leaves after selecting an image.
+  clearSelectedPicPreview();
+});
 
 load();
 </script>
@@ -787,6 +861,35 @@ h3 {
   color: #94a3b8;
 }
 
+.selectedImagePreview {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #dbe5f0;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.previewLabel {
+  color: #475569;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.selectedImagePreview img {
+  width: 104px;
+  height: 104px;
+  border: 4px solid #ffffff;
+  border-radius: 999px;
+  object-fit: cover;
+  background: #f1f5f9;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+}
+
 .accountList {
   display: grid;
   gap: 10px;
@@ -854,6 +957,46 @@ h3 {
   border-color: #9ca3af;
   box-shadow: 0 0 0 3px rgba(229, 231, 235, 0.9);
   outline: none;
+}
+
+.passwordField {
+  position: relative;
+}
+
+.passwordInput {
+  padding-right: 46px;
+}
+
+.passwordToggle {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.passwordToggle:hover {
+  background: #f1f5f9;
+  color: #1d4ed8;
+}
+
+.passwordToggle:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.passwordIcon {
+  width: 18px;
+  height: 18px;
 }
 
 .inputReadonly {

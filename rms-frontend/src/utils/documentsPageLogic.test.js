@@ -22,12 +22,22 @@ describe("documentsPageLogic", () => {
     expect(canSeePreviewOperational(doc, { id: 11, permissions: [] })).toBe(false);
   });
 
+  it("uses backend timeline capability when copied-recipient permissions are present", () => {
+    expect(canSeePreviewOperational({ currentOwnerUserId: 10, canViewTimeline: true }, { id: 11, permissions: [] })).toBe(true);
+    expect(canSeePreviewOperational({ currentOwnerUserId: 10, canViewTimeline: false }, { id: 10, permissions: ["VIEW_ALL_HISTORY"] })).toBe(false);
+  });
+
   it("lets preview remarks be seen by owner or users with the dedicated remarks permission", () => {
     const doc = { currentOwnerUserId: 10 };
 
     expect(canSeePreviewRemarks(doc, { id: 10, permissions: [] })).toBe(true);
     expect(canSeePreviewRemarks(doc, { id: 11, permissions: ["VIEW_REMARKS_WHEN_NOT_REPORT_AT"] })).toBe(true);
     expect(canSeePreviewRemarks(doc, { id: 11, permissions: [] })).toBe(false);
+  });
+
+  it("uses backend minutes capability when copied-recipient permissions are present", () => {
+    expect(canSeePreviewRemarks({ currentOwnerUserId: 10, canViewMinutes: true }, { id: 11, permissions: [] })).toBe(true);
+    expect(canSeePreviewRemarks({ currentOwnerUserId: 10, canViewMinutes: false }, { id: 10, permissions: ["VIEW_REMARKS_WHEN_NOT_REPORT_AT"] })).toBe(false);
   });
 
   it("shows Closed for done documents and numeric days for active ones", () => {

@@ -46,9 +46,9 @@ test("non-admin user can open create page and create a document", async ({ page,
     },
   ]);
 
-  await expect(page.getByText(mainFileName)).toBeVisible();
-  await expect(page.getByText(removedFileName)).toBeVisible();
-  await expect(page.getByText(attachmentFileName)).toBeVisible();
+  await expect(page.getByText(`V1 - ${mainFileName}`, { exact: true })).toBeVisible();
+  await expect(page.getByText(`V2 - ${removedFileName}`, { exact: true })).toBeVisible();
+  await expect(page.getByText(`V3 - ${attachmentFileName}`, { exact: true })).toBeVisible();
   await expect(page.locator(".selectedFileRow", { hasText: mainFileName })).toContainText("Main file");
   await expect(page.locator(".selectedFileRow", { hasText: attachmentFileName })).toContainText("Attachment");
 
@@ -58,9 +58,9 @@ test("non-admin user can open create page and create a document", async ({ page,
   await page.getByRole("button", { name: "Create" }).click();
 
   await expect(page).toHaveURL(/\/documents\/\d+$/);
-  await expect(page.locator(".item", { hasText: mainFileName })).toContainText("v1");
+  await expect(page.locator(".item", { hasText: mainFileName })).toContainText("V1");
   await expect(page.locator(".item", { hasText: mainFileName })).toContainText("MAIN");
-  await expect(page.locator(".item", { hasText: attachmentFileName })).toContainText("v2");
+  await expect(page.locator(".item", { hasText: attachmentFileName })).toContainText("V2");
   await expect(page.getByText(removedFileName)).toHaveCount(0);
 });
 

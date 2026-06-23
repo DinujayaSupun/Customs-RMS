@@ -17,6 +17,7 @@ public class DocumentDateColumnMigration {
         return args -> migrateDocumentDateColumns(jdbcTemplate);
     }
 
+    // Keep legacy/local databases compatible without requiring a full migration tool for this small schema change.
     private void migrateDocumentDateColumns(JdbcTemplate jdbcTemplate) {
         // Migration is best-effort only and must not fail app startup.
         if (!tableExists(jdbcTemplate, "documents")) {

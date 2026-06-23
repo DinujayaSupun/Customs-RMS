@@ -1,6 +1,7 @@
 const TOKEN_KEY = "rms_access_token";
 const USER_KEY = "rms_auth_user";
 
+// Permissions are compared case-insensitively across backend, route guards, and UI capability checks.
 function normalizePermissions(permissions) {
   if (!Array.isArray(permissions)) return [];
   return [...new Set(permissions.map((x) => String(x || "").trim().toUpperCase()).filter(Boolean))];
@@ -12,7 +13,6 @@ export function getAccessToken() {
 
 export function getCurrentUser() {
   const raw = localStorage.getItem(USER_KEY);
-  //console.log(raw)
   if (!raw) return null;
 
   try {

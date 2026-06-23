@@ -13,6 +13,7 @@ import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.service.AttachmentService;
 import lk.customs.rms.service.AuditLogService;
+import lk.customs.rms.service.DocumentRecipientService;
 import lk.customs.rms.service.FileStorageService;
 import lk.customs.rms.service.PermissionService;
 import org.springframework.core.io.Resource;
@@ -21,7 +22,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static lk.customs.rms.enums.Status.ISSUED;
 
@@ -34,14 +37,16 @@ public class AttachmentServiceImpl implements AttachmentService {
     private final FileStorageService fileStorageService;
     private final AuditLogService auditLogService;
         private final PermissionService permissionService;
+    private final DocumentRecipientService documentRecipientService;
 
     public AttachmentServiceImpl(
             DocumentRepository documentRepository,
             DocumentAttachmentRepository attachmentRepository,
             UserRepository userRepository,
-            FileStorageService fileStorageService,
+                        FileStorageService fileStorageService,
                         AuditLogService auditLogService,
-                        PermissionService permissionService
+                        PermissionService permissionService,
+                        DocumentRecipientService documentRecipientService
     ) {
         this.documentRepository = documentRepository;
         this.attachmentRepository = attachmentRepository;
@@ -49,6 +54,7 @@ public class AttachmentServiceImpl implements AttachmentService {
         this.fileStorageService = fileStorageService;
         this.auditLogService = auditLogService;
                 this.permissionService = permissionService;
+        this.documentRecipientService = documentRecipientService;
     }
 
     @Override
@@ -58,23 +64,22 @@ public class AttachmentServiceImpl implements AttachmentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
 
                 User uploader = requireUser(actorUserId);
-                permissionService.ensurePermission(actorUserId, AppPermission.UPLOAD_ATTACHMENT, "You are not allowed to upload attachments.");
                 ensureDocumentIsNotIssued(doc, "upload");
 
-                if (!doc.getCurrentOwnerUserId().equals(actorUserId)) {
-                        throw new BadRequestException("Only the current owner can upload attachments.");
+                boolean owner = doc.getCurrentOwnerUserId().equals(actorUserId);
+                if (owner) {
+                    permissionService.ensurePermission(actorUserId, AppPermission.UPLOAD_ATTACHMENT, "You are not allowed to upload attachments.");
+                } else if (documentRecipientService.isActiveRecipient(doc.getId(), actorUserId)) {
+                    if (!documentRecipientService.canUploadAttachment(doc, actorUserId)) {
+                        throw new BadRequestException("You are not allowed to upload attachments for this document.");
+                    }
+                } else {
+                    throw new BadRequestException("Only the current owner can upload attachments.");
                 }
 
         int nextVersion = attachmentRepository.findMaxVersionNo(documentId) + 1;
 
-        // Mark current latest=false (if any)
-        var existing = attachmentRepository.findByDocumentIdAndDeletedFalseOrderByVersionNoDesc(documentId);
-        for (var a : existing) {
-            if (Boolean.TRUE.equals(a.getIsLatest())) {
-                a.setIsLatest(false);
-                attachmentRepository.save(a);
-            }
-        }
+        attachmentRepository.clearLatestFlag(documentId);
 
         String relativePath = fileStorageService.saveDocumentAttachment(documentId, nextVersion, file);
 
@@ -92,12 +97,19 @@ public class AttachmentServiceImpl implements AttachmentService {
         touchDocument(doc);
         documentRepository.save(doc);
 
-        auditLogService.logAttachment(documentId, saved.getId(), actorUserId, "UPLOAD",
-                "Attachment uploaded: v" + nextVersion + " " + saved.getFileName());
+        auditLogService.logEventWithDetails(
+                "ATTACHMENT",
+                saved.getId(),
+                "UPLOAD",
+                actorUserId,
+                "Attachment uploaded: v" + nextVersion + " " + saved.getFileName(),
+                attachmentAuditDetails(doc, saved, actorUserId)
+        );
 
         return toResponse(saved);
     }
 
+    @Transactional(readOnly = true)
     @Override
         public List<AttachmentResponse> listForDocument(Long documentId, Long actorUserId) {
                 Document doc = documentRepository.findByIdAndDeletedFalse(documentId)
@@ -145,11 +157,23 @@ public class AttachmentServiceImpl implements AttachmentService {
                         .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + a.getDocumentId()));
 
                 requireUser(actorUserId);
-                permissionService.ensurePermission(actorUserId, AppPermission.DELETE_ATTACHMENT, "You are not allowed to delete attachments.");
                 ensureDocumentIsNotIssued(doc, "delete");
 
-                if (!doc.getCurrentOwnerUserId().equals(actorUserId)) {
+                boolean owner = doc.getCurrentOwnerUserId().equals(actorUserId);
+                if (owner) {
+                    permissionService.ensurePermission(actorUserId, AppPermission.DELETE_ATTACHMENT, "You are not allowed to delete attachments.");
+                } else if (!documentRecipientService.isActiveRecipient(doc.getId(), actorUserId)) {
                     throw new BadRequestException("Only the current owner can delete attachments.");
+                } else {
+                    if (!documentRecipientService.canDeleteOwnAttachment(doc, actorUserId)) {
+                        throw new BadRequestException("You are not allowed to delete attachments for this document.");
+                    }
+                    if (!actorUserId.equals(a.getUploadedBy())) {
+                        throw new BadRequestException("Copied recipients can delete only their own attachments.");
+                    }
+                    if (a.getVersionNo() != null && a.getVersionNo() == 1) {
+                        throw new BadRequestException("Copied recipients cannot delete the main attachment.");
+                    }
                 }
 
         a.setDeleted(true);
@@ -158,7 +182,7 @@ public class AttachmentServiceImpl implements AttachmentService {
         a.setIsLatest(false);
         attachmentRepository.save(a);
 
-        // Restore latest to previous highest version (if any)
+        // Deleting the latest attachment promotes the previous highest version back to latest.
         var remaining = attachmentRepository.findByDocumentIdAndDeletedFalseOrderByVersionNoDesc(a.getDocumentId());
         if (!remaining.isEmpty()) {
             DocumentAttachment latest = remaining.get(0);
@@ -169,8 +193,14 @@ public class AttachmentServiceImpl implements AttachmentService {
         touchDocument(doc);
         documentRepository.save(doc);
 
-        auditLogService.logAttachment(a.getDocumentId(), a.getId(), actorUserId, "DELETE",
-                "Attachment soft-deleted: v" + a.getVersionNo() + " " + a.getFileName());
+        auditLogService.logEventWithDetails(
+                "ATTACHMENT",
+                a.getId(),
+                "DELETE",
+                actorUserId,
+                "Attachment soft-deleted: v" + a.getVersionNo() + " " + a.getFileName(),
+                attachmentAuditDetails(doc, a, actorUserId)
+        );
     }
 
     private AttachmentResponse toResponse(DocumentAttachment a) {
@@ -195,6 +225,22 @@ public class AttachmentServiceImpl implements AttachmentService {
                 .build();
     }
 
+    private Map<String, Object> attachmentAuditDetails(Document doc, DocumentAttachment attachment, Long actorUserId) {
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("documentId", doc.getId());
+        details.put("attachmentId", attachment.getId());
+        details.put("versionNo", attachment.getVersionNo());
+        details.put("fileName", attachment.getFileName());
+        details.put("actorRecipientType", actorRecipientType(doc, actorUserId));
+        return details;
+    }
+
+    private String actorRecipientType(Document doc, Long actorUserId) {
+        return documentRecipientService.activeRecipientType(doc.getId(), actorUserId)
+                .map(Enum::name)
+                .orElse("NONE");
+    }
+
     private void touchDocument(Document doc) {
         if (doc == null) return;
         doc.setUpdatedAt(LocalDateTime.now());
@@ -206,11 +252,7 @@ public class AttachmentServiceImpl implements AttachmentService {
         }
 
         private void ensureHistoryAccess(Document doc, Long actorUserId) {
-                if (doc.getCurrentOwnerUserId().equals(actorUserId)) {
-                        return;
-                }
-
-                if (permissionService.hasPermission(actorUserId, AppPermission.VIEW_ALL_HISTORY)) {
+                if (documentRecipientService.canViewAttachments(doc, actorUserId)) {
                         return;
                 }
 

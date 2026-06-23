@@ -45,6 +45,9 @@ export function getDocumentDetailsCapabilities({
 }) {
   const owner = isOwner(doc, user);
   const issued = isIssued(doc);
+  // Once a decision is made (approved or rejected) the backend blocks BOTH approve and reject;
+  // the only way forward is reopen. Mirror that so neither button leaks through on a decided document.
+  const decided = ["APPROVED", "REJECTED"].includes(String(doc?.status || "").toUpperCase());
   const canViewAllHistory = hasPermission(user, "VIEW_ALL_HISTORY");
   const canViewRemarks = !!doc && (owner || hasPermission(user, "VIEW_REMARKS_WHEN_NOT_REPORT_AT"));
   const isEditLocked = !!doc && (!!doc.completedAt || issued);
@@ -52,6 +55,7 @@ export function getDocumentDetailsCapabilities({
   const canForwardReturnByStatus = !!doc
     && forwardReturnAllowedStatuses.includes(String(doc.status || "").toUpperCase());
 
+  // Action buttons mirror backend workflow rules so users do not see controls they cannot use.
   const canForward = !!doc
     && canForwardReturnByStatus
     && owner
@@ -66,16 +70,16 @@ export function getDocumentDetailsCapabilities({
   const canApprove = !!doc
     && approveRejectButtonsEnabled
     && !issued
+    && !decided
     && owner
-    && hasPermission(user, "APPROVE_DOCUMENT")
-    && doc.status !== "APPROVED";
+    && hasPermission(user, "APPROVE_DOCUMENT");
 
   const canReject = !!doc
     && approveRejectButtonsEnabled
     && !issued
+    && !decided
     && owner
-    && hasPermission(user, "REJECT_DOCUMENT")
-    && doc.status !== "REJECTED";
+    && hasPermission(user, "REJECT_DOCUMENT");
 
   const canIssue = !!doc
     && owner
@@ -98,6 +102,8 @@ export function getDocumentDetailsCapabilities({
 
   const canAddRemark = !!doc && owner && !issued && hasPermission(user, "ADD_REMARK");
 
+  const canWorkflow = canForward || canReturn || canApprove || canReject || canIssue || canReopen;
+
   return {
     isOwner: owner,
     canViewAllHistory,
@@ -117,7 +123,61 @@ export function getDocumentDetailsCapabilities({
     canIssue,
     canReopen,
     canAddRemark,
-    canTypeRemark: canAddRemark || canForward || canReturn || canApprove || canReject || canIssue || canReopen,
+    canTypeRemark: canAddRemark || canWorkflow,
+    canWorkflow,
     daysOpenDisplay: getDaysOpenDisplay(doc),
   };
+}
+
+function parseDateMs(value) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+export function buildMovementRemarksMap(movements, remarks, maxDeltaMs = 10 * 60 * 1000) {
+  const result = new Map();
+  const movementsByUserId = new Map();
+
+  for (const movement of movements || []) {
+    result.set(movement.id, []);
+
+    const actionTime = parseDateMs(movement?.actionAt);
+    const actionByUserId = Number(movement?.actionByUserId);
+    if (actionTime == null || !Number.isFinite(actionByUserId)) continue;
+
+    const userMovements = movementsByUserId.get(actionByUserId) || [];
+    userMovements.push({ movement, actionTime });
+    movementsByUserId.set(actionByUserId, userMovements);
+  }
+
+  for (const userMovements of movementsByUserId.values()) {
+    userMovements.sort((a, b) => a.actionTime - b.actionTime);
+  }
+
+  for (const remark of remarks || []) {
+    const remarkTime = parseDateMs(remark?.remarkedAt);
+    const remarkUserId = Number(remark?.remarkedByUserId);
+    if (remarkTime == null || !Number.isFinite(remarkUserId)) continue;
+
+    const userMovements = movementsByUserId.get(remarkUserId) || [];
+    let bestMovement = null;
+    let bestDelta = Number.POSITIVE_INFINITY;
+
+    for (const { movement, actionTime } of userMovements) {
+      const delta = actionTime - remarkTime;
+      if (delta < 0) continue;
+      if (delta > maxDeltaMs) break;
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        bestMovement = movement;
+      }
+    }
+
+    if (bestMovement && result.has(bestMovement.id)) {
+      result.get(bestMovement.id).push(remark);
+    }
+  }
+
+  return result;
 }

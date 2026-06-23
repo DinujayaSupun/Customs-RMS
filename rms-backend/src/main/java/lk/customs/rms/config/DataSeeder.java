@@ -52,6 +52,7 @@ public class DataSeeder {
             Role pma = ensureRole(roleRepository, "PMA");
             Role admin = ensureRole(roleRepository, "ADMIN");
 
+            // Seed every permission row so the admin permission matrix can toggle values immediately.
             seedPermissions(rolePermissionRepository, dc, ddc, sddc, sc, asc, pma, admin);
 
             if (!StringUtils.hasText(defaultPassword) || !StringUtils.hasText(adminPassword)) {
@@ -92,6 +93,19 @@ public class DataSeeder {
                 AppPermission.RETURN_DOCUMENT,
                 AppPermission.UPLOAD_ATTACHMENT,
                 AppPermission.DELETE_ATTACHMENT,
+                AppPermission.MANAGE_DOCUMENT_RECIPIENTS,
+                AppPermission.CC_VIEW_DOCUMENT,
+                AppPermission.CC_VIEW_ATTACHMENTS,
+                AppPermission.CC_UPLOAD_ATTACHMENTS,
+                AppPermission.CC_DELETE_OWN_ATTACHMENTS,
+                AppPermission.CC_VIEW_TIMELINE,
+                AppPermission.CC_VIEW_MINUTES,
+                AppPermission.BCC_VIEW_DOCUMENT,
+                AppPermission.BCC_VIEW_ATTACHMENTS,
+                AppPermission.BCC_UPLOAD_ATTACHMENTS,
+                AppPermission.BCC_DELETE_OWN_ATTACHMENTS,
+                AppPermission.BCC_VIEW_TIMELINE,
+                AppPermission.BCC_VIEW_MINUTES,
                 AppPermission.VIEW_SENT_MESSAGES);
 
         seedRolePermissions(rolePermissionRepository, dc, EnumSet.of(

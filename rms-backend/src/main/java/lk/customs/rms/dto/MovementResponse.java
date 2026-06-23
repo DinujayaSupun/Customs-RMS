@@ -20,6 +20,7 @@ public class MovementResponse {
     private String toUserName;
 
     private String forwardVisibility;
+    private RecipientSummaryResponse recipientSummary;
 
     private Long actionByUserId;
     private String actionByUserName;
