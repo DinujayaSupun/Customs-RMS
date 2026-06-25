@@ -1528,6 +1528,7 @@ class AdminManagementAndPermissionIntegrationTests {
 
     private static Set<AppPermission> expectedEnabledPermissionsForRole(String roleName) {
         Set<AppPermission> allWorkflow = EnumSet.of(
+                AppPermission.DELETE_DOCUMENT,
                 AppPermission.VIEW_PUBLIC_DOCUMENT,
                 AppPermission.VIEW_PRIVATE_DOCUMENT,
                 AppPermission.VIEW_OWN_CREATED_DOCUMENTS,
@@ -1548,6 +1549,7 @@ class AdminManagementAndPermissionIntegrationTests {
             case "ADMIN" -> EnumSet.allOf(AppPermission.class);
             case "DC" -> EnumSet.of(
                     AppPermission.CREATE_DOCUMENT,
+                    AppPermission.DELETE_DOCUMENT,
                     AppPermission.VIEW_PUBLIC_DOCUMENT,
                     AppPermission.VIEW_PRIVATE_DOCUMENT,
                     AppPermission.VIEW_OWN_CREATED_DOCUMENTS,
@@ -1573,6 +1575,7 @@ class AdminManagementAndPermissionIntegrationTests {
             case "DDC", "SDDC", "SC", "ASC" -> EnumSet.copyOf(allWorkflow);
             case "PMA" -> EnumSet.of(
                     AppPermission.CREATE_DOCUMENT,
+                    AppPermission.DELETE_DOCUMENT,
                     AppPermission.VIEW_PUBLIC_DOCUMENT,
                     AppPermission.VIEW_PRIVATE_DOCUMENT,
                     AppPermission.VIEW_OWN_CREATED_DOCUMENTS,

@@ -92,9 +92,13 @@ public class DocumentAttachmentController {
             else if (lower.endsWith(".gif")) mediaType = MediaType.IMAGE_GIF;
         }
 
+        // SVG is image/* but can carry executable <script>, so it must never be served inline
+        // (stored XSS — and in a single-origin prod deploy that runs on the SPA's origin). Force download.
+        // Keyed on both the extension and the detected type since probeContentType is OS-dependent.
+        boolean isSvg = lower.endsWith(".svg") || mediaType.toString().toLowerCase().startsWith("image/svg");
         boolean previewable =
                 mediaType.equals(MediaType.APPLICATION_PDF) ||
-                mediaType.toString().startsWith("image/");
+                (mediaType.toString().startsWith("image/") && !isSvg);
 
         String dispositionType = (inline && previewable) ? "inline" : "attachment";
 

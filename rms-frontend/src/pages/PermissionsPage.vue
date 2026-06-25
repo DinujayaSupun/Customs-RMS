@@ -10,7 +10,7 @@
           <p class="pageSub">Tune role access and DC escalation controls without code changes.</p>
         </div>
         <div class="headActions">
-          <button class="btn" :disabled="loading || saving" @click="load">Refresh</button>
+          <button class="btn" :disabled="loading || saving" @click="refresh">Refresh</button>
           <button class="btn btn-primary" :disabled="loading || saving || (!dirty && !configDirty)" @click="save">
             {{ saving ? "Saving..." : "Save Changes" }}
           </button>
@@ -145,12 +145,23 @@
           </div>
         </div>
 
+        <div v-if="!loading && permissions.length > 0" class="matrixToolbar">
+          <input
+            type="search"
+            class="input matrixSearch"
+            v-model="filterText"
+            placeholder="Filter permissions by name or description..."
+            aria-label="Filter permissions"
+          />
+          <span v-if="filterText.trim() && permissionGroups.length === 0" class="muted">No permissions match your filter.</span>
+        </div>
+
         <div v-if="loading || permissions.length === 0" class="tableWrap">
           <table class="table">
             <thead>
               <tr>
-                <th>Permission</th>
-                <th v-for="roleName in roles" :key="`head-${roleName}`">{{ roleName }}</th>
+                <th scope="col">Permission</th>
+                <th v-for="roleName in roles" :key="`head-${roleName}`" scope="col">{{ roleName }}</th>
               </tr>
             </thead>
             <tbody>
@@ -172,6 +183,7 @@
                       type="checkbox"
                       :checked="isEnabled(roleName, permission)"
                       @change="setEnabled(roleName, permission, $event.target.checked)"
+                      :aria-label="`${friendlyLabel(permission)} for ${roleName}`"
                     />
                     <span>{{ isEnabled(roleName, permission) ? "Yes" : "No" }}</span>
                   </label>
@@ -194,8 +206,19 @@
               <table class="table">
                 <thead>
                   <tr>
-                    <th>Permission</th>
-                    <th v-for="roleName in roles" :key="`${group.key}-head-${roleName}`">{{ roleName }}</th>
+                    <th scope="col">Permission</th>
+                    <th v-for="roleName in roles" :key="`${group.key}-head-${roleName}`" scope="col" class="checkCell">
+                      <div class="roleHead">{{ roleName }}</div>
+                      <label class="bulkToggle" :title="`Toggle all shown ${group.title} permissions for ${roleName}`">
+                        <input
+                          type="checkbox"
+                          :checked="isGroupRoleAllEnabled(group, roleName)"
+                          @change="setGroupRoleAll(group, roleName, $event.target.checked)"
+                          :aria-label="`Enable all ${group.title} permissions for ${roleName}`"
+                        />
+                        <span>All</span>
+                      </label>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -204,6 +227,15 @@
                       <div class="permTitle">{{ friendlyLabel(permission) }}</div>
                       <div v-if="permDescription(permission)" class="permDesc">{{ permDescription(permission) }}</div>
                       <div class="permCode truncateText">{{ permission }}</div>
+                      <label class="bulkToggle permAllToggle" :title="`Toggle ${friendlyLabel(permission)} for all roles`">
+                        <input
+                          type="checkbox"
+                          :checked="isPermissionAllEnabled(permission)"
+                          @change="setPermissionForAllRoles(permission, $event.target.checked)"
+                          :aria-label="`Enable ${friendlyLabel(permission)} for all roles`"
+                        />
+                        <span>All roles</span>
+                      </label>
                     </td>
                     <td v-for="roleName in roles" :key="`${group.key}-${permission}-${roleName}`" class="checkCell">
                       <label class="toggleWrap">
@@ -211,6 +243,7 @@
                           type="checkbox"
                           :checked="isEnabled(roleName, permission)"
                           @change="setEnabled(roleName, permission, $event.target.checked)"
+                          :aria-label="`${friendlyLabel(permission)} for ${roleName}`"
                         />
                         <span>{{ isEnabled(roleName, permission) ? "Yes" : "No" }}</span>
                       </label>
@@ -227,7 +260,8 @@
 </template>
 
 <script setup>
-import { computed, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { onBeforeRouteLeave } from "vue-router";
 import AppLayout from "../layouts/AppLayout.vue";
 import {
   adminGetDcAutoForwardConfig,
@@ -251,6 +285,8 @@ const permissions = ref([]);
 const matrix = ref({});
 const dirty = ref(false);
 const configDirty = ref(false);
+const filterText = ref("");
+const hasUnsavedChanges = computed(() => dirty.value || configDirty.value);
 
 const allUsers = ref([]);
 const dcAutoForwardEnabled = ref(false);
@@ -311,7 +347,7 @@ const permissionGroupDefinitions = [
   {
     key: "admin",
     title: "Administration",
-    description: "Admin screens, logs, user management, and system-level controls.",
+    description: "System audit log and other system-level access.",
     match: (permission) => /ADMIN|USER|ROLE|LOG|PERMISSION/.test(permission),
   },
 ];
@@ -341,8 +377,52 @@ const permissionGroups = computed(() => {
     });
   }
 
-  return groups;
+  // Apply the search filter to what is shown, dropping groups that have no remaining matches.
+  const query = filterText.value.trim().toLowerCase();
+  if (!query) return groups;
+  return groups
+    .map((group) => ({ ...group, permissions: group.permissions.filter((permission) => matchesFilter(permission)) }))
+    .filter((group) => group.permissions.length > 0);
 });
+
+function matchesFilter(permission) {
+  const query = filterText.value.trim().toLowerCase();
+  if (!query) return true;
+  return String(permission).toLowerCase().includes(query)
+    || friendlyLabel(permission).toLowerCase().includes(query)
+    || permDescription(permission).toLowerCase().includes(query);
+}
+
+// Bulk helpers operate on a fresh matrix object so Vue reactivity picks up the change.
+function isPermissionAllEnabled(permission) {
+  return roles.value.length > 0 && roles.value.every((roleName) => isEnabled(roleName, permission));
+}
+
+function setPermissionForAllRoles(permission, enabled) {
+  const next = { ...matrix.value };
+  for (const roleName of roles.value) next[cellKey(roleName, permission)] = !!enabled;
+  matrix.value = next;
+  dirty.value = true;
+}
+
+function isGroupRoleAllEnabled(group, roleName) {
+  return group.permissions.length > 0 && group.permissions.every((permission) => isEnabled(roleName, permission));
+}
+
+function setGroupRoleAll(group, roleName, enabled) {
+  const next = { ...matrix.value };
+  for (const permission of group.permissions) next[cellKey(roleName, permission)] = !!enabled;
+  matrix.value = next;
+  dirty.value = true;
+}
+
+function refresh() {
+  if (hasUnsavedChanges.value
+      && !window.confirm("Discard unsaved permission changes and reload from the server?")) {
+    return;
+  }
+  load();
+}
 
 function cellKey(roleName, permission) {
   return `${roleName}::${permission}`;
@@ -656,6 +736,23 @@ async function save() {
   }
 }
 
+// Warn before losing unsaved permission edits on tab close/reload and on in-app navigation.
+function beforeUnloadHandler(event) {
+  if (!hasUnsavedChanges.value) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+
+onMounted(() => window.addEventListener("beforeunload", beforeUnloadHandler));
+onUnmounted(() => window.removeEventListener("beforeunload", beforeUnloadHandler));
+
+onBeforeRouteLeave(() => {
+  if (hasUnsavedChanges.value) {
+    return window.confirm("You have unsaved permission changes. Leave this page without saving?");
+  }
+  return true;
+});
+
 if (isAdmin.value) {
   load();
 }
@@ -865,6 +962,34 @@ h2 {
 .permCode { font-size:10px; color:#9ca3af; margin-top:4px; }
 .checkCell { text-align:center; }
 .toggleWrap { display:inline-flex; align-items:center; gap:8px; font-size:13px; color:#374151; }
+
+.matrixToolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 4px 0 12px;
+}
+.matrixSearch { max-width: 360px; width: 100%; }
+.roleHead {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+}
+.bulkToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #2563eb;
+  cursor: pointer;
+}
+.permAllToggle { margin-top: 6px; color: #64748b; }
 
 .btn {
   padding:10px 12px;
