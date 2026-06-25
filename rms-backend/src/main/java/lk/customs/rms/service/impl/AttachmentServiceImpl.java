@@ -95,7 +95,7 @@ public class AttachmentServiceImpl implements AttachmentService {
 
         DocumentAttachment saved = attachmentRepository.save(a);
         touchDocument(doc);
-        documentRepository.save(doc);
+        doc = documentRepository.save(doc);
 
         auditLogService.logEventWithDetails(
                 "ATTACHMENT",

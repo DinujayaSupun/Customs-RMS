@@ -344,14 +344,14 @@ public class AuditLogServiceImpl implements AuditLogService {
 
     private void save(String entityType, Long entityId, String actionType,
                       Long userId, String message, String detailsJson) {
-        AuditLog log = new AuditLog();
-        log.setEntityType(entityType);
-        log.setEntityId(entityId);
-        log.setActionType(actionType);
-        log.setPerformedByUserId(userId);
-        log.setPerformedAt(LocalDateTime.now());
-        log.setMessage(message);
-        log.setDetailsJson(detailsJson);
-        auditLogRepository.save(log);
+        AuditLog entry = new AuditLog();
+        entry.setEntityType(entityType);
+        entry.setEntityId(entityId);
+        entry.setActionType(actionType);
+        entry.setPerformedByUserId(userId);
+        entry.setPerformedAt(LocalDateTime.now());
+        entry.setMessage(message);
+        entry.setDetailsJson(detailsJson);
+        auditLogRepository.save(entry);
     }
 }

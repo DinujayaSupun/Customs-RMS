@@ -673,9 +673,17 @@ async function load() {
     const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
     all.value = list;
     rows.value = list;
-    last.value = Array.isArray(data) ? true : !!data?.last;
-    totalElements.value = Array.isArray(data) ? list.length : Number(data?.totalElements ?? list.length);
-    totalPages.value = Array.isArray(data) ? 1 : Number(data?.totalPages ?? 1);
+    if (Array.isArray(data)) {
+      last.value = true;
+      totalElements.value = list.length;
+      totalPages.value = 1;
+    } else {
+      const dMeta = data?.page ?? data;
+      const dTp = Number(dMeta?.totalPages ?? 1);
+      totalPages.value = dTp;
+      totalElements.value = Number(dMeta?.totalElements ?? list.length);
+      last.value = data?.last ?? (dTp === 0 || page.value >= dTp - 1);
+    }
   } catch (e) {
     error.value = e?.message ?? "Failed to load documents";
     all.value = [];

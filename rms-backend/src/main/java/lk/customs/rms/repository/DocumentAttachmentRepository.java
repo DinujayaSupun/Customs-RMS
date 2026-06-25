@@ -24,7 +24,7 @@ public interface DocumentAttachmentRepository extends JpaRepository<DocumentAtta
 
     Optional<DocumentAttachment> findFirstByDocumentIdAndDeletedFalseAndIsLatestTrue(Long documentId);
 
-    @Modifying
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE DocumentAttachment a SET a.isLatest = false WHERE a.documentId = :docId AND a.deleted = false")
     void clearLatestFlag(@Param("docId") Long docId);
 }

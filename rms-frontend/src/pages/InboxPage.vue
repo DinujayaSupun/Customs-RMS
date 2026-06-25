@@ -1118,9 +1118,17 @@ async function loadReceived() {
     });
     const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
     allRows.value = list;
-    last.value = Array.isArray(data) ? true : !!data?.last;
-    totalElements.value = Array.isArray(data) ? list.length : Number(data?.totalElements ?? list.length);
-    totalPages.value = Array.isArray(data) ? 1 : Number(data?.totalPages ?? 1);
+    if (Array.isArray(data)) {
+      last.value = true;
+      totalElements.value = list.length;
+      totalPages.value = 1;
+    } else {
+      const iMeta = data?.page ?? data;
+      const iTp = Number(iMeta?.totalPages ?? 1);
+      totalPages.value = iTp;
+      totalElements.value = Number(iMeta?.totalElements ?? list.length);
+      last.value = data?.last ?? (iTp === 0 || page.value >= iTp - 1);
+    }
     applyNow();
   } catch (e) {
     error.value = e?.message ?? "Failed to load inbox";
@@ -1151,9 +1159,17 @@ async function loadSent() {
     });
     const list = Array.isArray(data) ? data : (data?.content ?? data?.items ?? []);
     allRows.value = list;
-    last.value = Array.isArray(data) ? true : !!data?.last;
-    totalElements.value = Array.isArray(data) ? list.length : Number(data?.totalElements ?? list.length);
-    totalPages.value = Array.isArray(data) ? 1 : Number(data?.totalPages ?? 1);
+    if (Array.isArray(data)) {
+      last.value = true;
+      totalElements.value = list.length;
+      totalPages.value = 1;
+    } else {
+      const sMeta = data?.page ?? data;
+      const sTp = Number(sMeta?.totalPages ?? 1);
+      totalPages.value = sTp;
+      totalElements.value = Number(sMeta?.totalElements ?? list.length);
+      last.value = data?.last ?? (sTp === 0 || page.value >= sTp - 1);
+    }
     applyNow();
   } catch (e) {
     error.value = e?.message ?? "Failed to load sent messages";
