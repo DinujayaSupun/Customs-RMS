@@ -9,6 +9,7 @@ services:
 
   mysql:
     image: mysql:8.0
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: customs_rms
@@ -24,6 +25,7 @@ services:
 
   backend:
     image: customs-rms-backend:latest
+    restart: unless-stopped
     depends_on:
       mysql:
         condition: service_healthy
@@ -45,6 +47,7 @@ services:
 
   frontend:
     image: customs-rms-frontend:latest
+    restart: unless-stopped
     depends_on:
       - backend
     ports:

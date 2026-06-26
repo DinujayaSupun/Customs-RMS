@@ -9,6 +9,7 @@ services:
   # ----------------------------------------------------------------
   mysql:
     image: mysql:8.0                 # official MySQL image, pulled from Docker Hub
+    restart: unless-stopped          # auto-restart on crash and after a reboot; respects a manual stop
     environment:
       MYSQL_ROOT_PASSWORD: root      # root user's password
       MYSQL_DATABASE: customs_rms    # auto-creates this empty database on first run
@@ -28,6 +29,7 @@ services:
   # ----------------------------------------------------------------
   backend:
     build: ./rms-backend             # build using rms-backend/Dockerfile
+    restart: unless-stopped          # auto-restart on crash and after a reboot; respects a manual stop
     depends_on:
       mysql:
         condition: service_healthy   # don't start until MySQL's healthcheck passes
@@ -59,6 +61,7 @@ services:
   # 3) Frontend (Vue built into static files, served by Nginx)
   # ----------------------------------------------------------------
   frontend:
+    restart: unless-stopped          # auto-restart on crash and after a reboot; respects a manual stop
     build:
       context: ./rms-frontend        # build using rms-frontend/Dockerfile
       args:
