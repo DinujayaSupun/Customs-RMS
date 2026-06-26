@@ -103,7 +103,7 @@ public class DcAutoForwardScheduler {
         doc.setDcAssignedAt(null);
         doc.setDcViewedAt(null);
         doc.setUpdatedAt(now);
-        documentRepository.save(doc);
+        doc = documentRepository.save(doc);
 
         String forwardVisibility = doc.getVisibility();
         if (forwardVisibility == null || forwardVisibility.isBlank()) {
