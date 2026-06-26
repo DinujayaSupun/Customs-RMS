@@ -383,4 +383,78 @@ Because the browser origin is now `https://rms.customs.gov.lk`, that exact value
 | Uploaded files vanish after redeploy | `APP_UPLOAD_DIR` on ephemeral storage | Point it at a persistent volume |
 | Blank page / missing fonts, images, or live notifications after enabling CSP | `Content-Security-Policy` too strict for this app's resources | Read the blocked directive in the browser console; roll out as `-Report-Only` first, then adjust per §8 (add a separate API origin to `connect-src`, or disable Vite's inline modulepreload) |
 | Login returns 429 "Too many failed login attempts" | App-layer throttle tripped after repeated failures from one IP | Expected for brute-force; wait `LOGIN_BLOCK_MINUTES`, or raise `LOGIN_MAX_FAILED_ATTEMPTS` if staff share one egress IP |
+
+---
+
+## Appendix A — Docker Compose (local / practice)
+
+> **Scope:** This runs the whole stack — MySQL, backend, frontend — in containers on one
+> machine with **one command**, for local development and learning. It is **not** the production
+> deployment; that is §1–§12 above (systemd + Nginx + TLS + `prod` profile). See
+> "Hardening for real use" at the end of this appendix for the gap.
+
+### A.1 What it builds
+
+Three containers wired on a private Docker network:
+
+| Service | Image / build | Host port | Notes |
+|---------|---------------|-----------|-------|
+| `mysql` | `mysql:8.0` | **3307** → 3306 | Host port is 3307 to avoid clashing with a local MySQL already on 3306. Containers still talk to it as `mysql:3306`. |
+| `backend` | built from `rms-backend/Dockerfile` | 8080 → 8080 | Multi-stage Maven build → slim JRE image. Runs the `dev` profile so users are seeded. |
+| `frontend` | built from `rms-frontend/Dockerfile` | **3000** → 80 | Vue built into static files, served by Nginx. `VITE_API_BASE_URL` baked in at build time. |
+
+Data persists in two named volumes: `mysql_data` (database) and `uploads_data` (attachments).
+
+### A.2 Files
+
+| File | Role |
+|------|------|
+| `docker-compose.yml` | Orchestrates all three services, the network, and volumes. |
+| `rms-backend/Dockerfile` | Stage 1 builds the jar with the `maven:3.9-eclipse-temurin-17` image (avoids the Windows `mvnw` CRLF problem); stage 2 runs it on `eclipse-temurin:17-jre`. |
+| `rms-frontend/Dockerfile` | Stage 1 `npm ci && npm run build` (Node 20); stage 2 serves `dist/` via `nginx:alpine`. |
+| `rms-frontend/nginx.conf` | SPA fallback (`try_files … /index.html`) for vue-router history mode. |
+| `rms-backend/.dockerignore`, `rms-frontend/.dockerignore` | Keep `target/`, `node_modules/`, `dist/`, `.git/` out of the build context. |
+
+### A.3 Run it
+
+```bash
+# from the repo root, with Docker Desktop running
+docker compose up --build -d        # first run downloads images + builds (~3–8 min)
 ```
+
+Then open **http://localhost:3000** and log in with **`admin` / `admin123`**
+(other seeded users: `dc`, `ddc`, `sc`, `asc`, `pma` — password `password123`).
+
+| Command | Purpose |
+|---------|---------|
+| `docker compose ps` | Show container status |
+| `docker compose logs -f backend` | Tail backend logs |
+| `docker compose down` | Stop & remove containers (**keeps** data volumes) |
+| `docker compose down -v` | Stop & **wipe** the DB + uploads (fresh start) |
+| `docker compose up -d` | Start again, no rebuild |
+| `docker compose up --build -d` | Rebuild after code changes, then start |
+
+### A.4 Two things that trip people up
+
+1. **Seeding needs a profile.** `DataSeeder` is gated by `@Profile({"local","dev","e2e"})`, so the
+   compose backend sets `SPRING_PROFILES_ACTIVE=dev`. Without it the DB has roles but **no users**,
+   and every login returns `400 Invalid username or password`. (There is no `application-dev.properties`,
+   so the profile *only* turns seeding on — it changes nothing else.)
+2. **First login can race the seeder.** The seeding `CommandLineRunner` runs just *after* the web
+   server starts accepting requests, so a login fired in the first second or two may 400. Retry once.
+
+### A.5 Hardening for real use (do NOT ship the compose file as-is)
+
+The compose file is deliberately convenient, not secure. Before any non-local use:
+
+- Remove `SPRING_PROFILES_ACTIVE=dev` and the `APP_SEED_*` vars; run with `SPRING_PROFILES_ACTIVE=prod`
+  (schema `validate`, no seeding) and bootstrap the first admin per §7.
+- Move every secret (`DB_PASSWORD`, `JWT_SECRET`) out of `docker-compose.yml` into an env file or a
+  secrets manager — generate a fresh `JWT_SECRET` (§5). The values committed here are throwaway dev creds.
+- Put the frontend container behind the §8 Nginx (TLS, security headers, the `/ws/` upgrade proxy,
+  login rate-limit) instead of exposing `:8080`/`:3000` directly, and set `APP_CORS_ALLOWED_ORIGINS`
+  to the real HTTPS origin.
+- Switch `ddl-auto` to `validate` and manage schema with migrations (§4).
+- For a managed/remote database, drop the `mysql` service entirely and point `DB_URL` at it. A
+  PostgreSQL driver is already bundled in `pom.xml`, so `DB_URL=jdbc:postgresql://…` works without a
+  code change (the target database must already exist — Postgres has no `createDatabaseIfNotExist`).

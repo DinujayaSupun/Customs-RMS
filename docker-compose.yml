@@ -1,0 +1,78 @@
+# docker-compose.yml — defines and wires together all 3 containers.
+# Run everything with:   docker compose up --build
+# Stop everything with:  docker compose down
+
+services:
+
+  # ----------------------------------------------------------------
+  # 1) MySQL database
+  # ----------------------------------------------------------------
+  mysql:
+    image: mysql:8.0                 # official MySQL image, pulled from Docker Hub
+    restart: unless-stopped          # auto-restart on crash and after a reboot; respects a manual stop
+    environment:
+      MYSQL_ROOT_PASSWORD: root      # root user's password
+      MYSQL_DATABASE: customs_rms    # auto-creates this empty database on first run
+    ports:
+      - "3307:3306"                  # host 3307 -> container 3306 (avoids clashing with your local MySQL on 3306).
+                                     # Backend still uses mysql:3306 internally; 3307 is only for tools like Workbench.
+    volumes:
+      - mysql_data:/var/lib/mysql    # persists DB data even if the container is recreated
+    healthcheck:                     # backend waits until this passes before starting
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # ----------------------------------------------------------------
+  # 2) Spring Boot backend
+  # ----------------------------------------------------------------
+  backend:
+    build: ./rms-backend             # build using rms-backend/Dockerfile
+    restart: unless-stopped          # auto-restart on crash and after a reboot; respects a manual stop
+    depends_on:
+      mysql:
+        condition: service_healthy   # don't start until MySQL's healthcheck passes
+    environment:
+      # NOTE: host is "mysql" (the service name above), NOT localhost —
+      # containers reach each other by service name on Docker's network.
+      DB_URL: "jdbc:mysql://mysql:3306/customs_rms?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      # 256-bit base64 secret for signing JWTs. CHANGE THIS for real deployments.
+      JWT_SECRET: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+      APP_UPLOAD_DIR: /uploads       # uploads go to a folder backed by a volume (below)
+      # The DataSeeder only runs under the local/dev/e2e profile. "dev" has no
+      # property file of its own, so this just turns seeding on without changing
+      # any other config. Remove this (and the seed vars below) for real production.
+      SPRING_PROFILES_ACTIVE: "dev"
+      # Seed an admin + default users on first run (DB starts empty).
+      APP_SEED_ENABLED: "true"
+      APP_SEED_ADMIN_PASSWORD: "admin123"
+      APP_SEED_DEFAULT_PASSWORD: "password123"
+      # Allow the browser (served from :3000) to call this API.
+      APP_CORS_ALLOWED_ORIGINS: "http://localhost:3000"
+    ports:
+      - "8080:8080"                  # expose the API to your browser at localhost:8080
+    volumes:
+      - uploads_data:/uploads        # uploaded files survive container restarts
+
+  # ----------------------------------------------------------------
+  # 3) Frontend (Vue built into static files, served by Nginx)
+  # ----------------------------------------------------------------
+  frontend:
+    restart: unless-stopped          # auto-restart on crash and after a reboot; respects a manual stop
+    build:
+      context: ./rms-frontend        # build using rms-frontend/Dockerfile
+      args:
+        # Baked into the JS at build time so the browser calls the right API.
+        VITE_API_BASE_URL: "http://localhost:8080"
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"                    # visit the app at http://localhost:3000
+
+# Named volumes: Docker-managed storage that outlives containers.
+volumes:
+  mysql_data:
+  uploads_data:

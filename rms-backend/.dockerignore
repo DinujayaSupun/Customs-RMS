@@ -1,0 +1,8 @@
+# Everything listed here is NOT sent to Docker when building the backend.
+# Keeps the build fast and avoids leaking local files into the image.
+target/
+*.log
+.git/
+.idea/
+.vscode/
+*.iml
