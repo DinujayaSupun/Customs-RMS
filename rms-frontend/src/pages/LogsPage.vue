@@ -380,9 +380,21 @@ async function load() {
   try {
     const data = await listAuditLogs(buildParams());
     rows.value = data?.content ?? [];
-    last.value = !!data?.last;
-    totalPages.value = Number(data?.totalPages ?? 0);
-    totalElements.value = Number(data?.totalElements ?? 0);
+    // Spring Boot 4 / Spring Data 4 nests pagination metadata under a 'page' key.
+    // Fall back to the classic flat root fields for forward/backward compatibility.
+    const meta = data?.page ?? data;
+    const tp = Number(meta?.totalPages ?? 0);
+    totalPages.value = tp;
+    totalElements.value = Number(meta?.totalElements ?? 0);
+    // 'last' exists in the classic flat format; the new format drops it — derive it instead.
+    last.value = data?.last ?? (tp === 0 || page.value >= tp - 1);
+    // If the dataset shrank (e.g. after Refresh) and the current page is now
+    // out of range, jump to the new last valid page and reload once.
+    if (tp > 0 && page.value >= tp) {
+      page.value = tp - 1;
+      load();
+      return;
+    }
   } catch (e) {
     error.value = e?.message || "Failed to load logs.";
     rows.value = [];

@@ -80,6 +80,7 @@ public class DataSeeder {
             Role pma,
             Role admin) {
         Set<AppPermission> allWorkflow = EnumSet.of(
+                AppPermission.DELETE_DOCUMENT,
                 AppPermission.VIEW_PUBLIC_DOCUMENT,
                 AppPermission.VIEW_PRIVATE_DOCUMENT,
                 AppPermission.VIEW_OWN_CREATED_DOCUMENTS,
@@ -110,6 +111,7 @@ public class DataSeeder {
 
         seedRolePermissions(rolePermissionRepository, dc, EnumSet.of(
                 AppPermission.CREATE_DOCUMENT,
+                AppPermission.DELETE_DOCUMENT,
                 AppPermission.VIEW_PUBLIC_DOCUMENT,
                 AppPermission.VIEW_PRIVATE_DOCUMENT,
                 AppPermission.VIEW_OWN_CREATED_DOCUMENTS,
@@ -137,6 +139,7 @@ public class DataSeeder {
         seedRolePermissions(rolePermissionRepository, asc, allWorkflow);
         seedRolePermissions(rolePermissionRepository, pma, EnumSet.of(
                 AppPermission.CREATE_DOCUMENT,
+                AppPermission.DELETE_DOCUMENT,
                 AppPermission.VIEW_PUBLIC_DOCUMENT,
                 AppPermission.VIEW_PRIVATE_DOCUMENT,
                 AppPermission.VIEW_OWN_CREATED_DOCUMENTS,

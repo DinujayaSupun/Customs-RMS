@@ -33,6 +33,8 @@ public class AuditLogController {
     @GetMapping
     public List<AuditLogResponse> getAuditHistory(@PathVariable Long documentId, Authentication authentication) {
         Long actorUserId = currentUserService.requireUserId(authentication);
+        // Intentionally gated by VIEW_LOGS alone (a system-wide audit capability) rather than per-document
+        // view access: holders of VIEW_LOGS are trusted to audit any document's activity trail.
         if (!permissionService.hasPermission(actorUserId, AppPermission.VIEW_LOGS)) {
             throw new BadRequestException("You are not allowed to view logs.");
         }

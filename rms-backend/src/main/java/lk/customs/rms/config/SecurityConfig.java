@@ -25,6 +25,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Configuration
 @EnableMethodSecurity
@@ -50,11 +51,22 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        // Use CSP frame-ancestors instead of X-Frame-Options: SAMEORIGIN. SAMEORIGIN blocked inline
+        // PDF previews because the frontend and backend are different origins in dev / split-origin
+        // setups (the <iframe> serving the PDF from the backend is cross-origin to the SPA page).
+        // frame-ancestors lets the trusted frontend origin(s) embed backend responses while still
+        // blocking arbitrary cross-origin framing (clickjacking).
+        String frameAncestors = "frame-ancestors 'self' " + Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.joining(" "));
+
         http
                 .csrf(csrf -> csrf.disable())
             .cors(Customizer.withDefaults())
-            // sameOrigin (not disable) keeps inline attachment/PDF preview working while blocking cross-origin framing (clickjacking).
-            .headers(headers -> headers.frameOptions(frameOptions -> frameOptions.sameOrigin()))
+            .headers(headers -> headers
+                    .frameOptions(frameOptions -> frameOptions.disable())
+                    .contentSecurityPolicy(csp -> csp.policyDirectives(frameAncestors)))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 // 401 for unauthenticated (bad/missing token), 403 for authenticated-but-forbidden.
                 .exceptionHandling(ex -> ex

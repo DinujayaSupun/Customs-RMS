@@ -58,43 +58,50 @@ Pop-Location
 
 # 3) Frontend e2e (needs MySQL + a live backend)
 Hdr "[3/3] Frontend e2e (Playwright + live backend)"
-$env:SPRING_PROFILES_ACTIVE = "e2e"
-$env:SERVER_PORT            = "8081"
-$env:DB_USERNAME            = $DbUsername
-$env:DB_PASSWORD            = $DbPassword
-if (-not $env:JWT_SECRET) {
-  $env:JWT_SECRET = "Y2lfdGVzdF9qd3Rfc2VjcmV0XzEyMzQ1Njc4OTBfMTIzNDU2Nzg5MF8xMjM0NTY3ODkwXzEyMzQ1Njc4OTA="
-}
-$env:APP_SEED_ENABLED          = "true"
-$env:APP_SEED_ADMIN_PASSWORD   = "CiWorkflowAdmin123!"
-$env:APP_SEED_DEFAULT_PASSWORD = "CiWorkflowPass123!"
-$env:RMS_E2E_API_BASE_URL      = "http://localhost:8081/api"
-$env:RMS_E2E_ADMIN_USER        = "admin"
-$env:RMS_E2E_ADMIN_PASS        = "CiWorkflowAdmin123!"
-$env:RMS_E2E_DC_USER           = "dc"
-$env:RMS_E2E_DC_PASS           = "CiWorkflowPass123!"
-
-Write-Host "--> starting backend on :8081 (e2e profile - needs MySQL on :3306) ..."
-Push-Location $back
-.\mvnw.cmd -q spring-boot:start "-Dspring-boot.start.wait=1000" "-Dspring-boot.start.maxAttempts=120"
-$startOk = ($LASTEXITCODE -eq 0)
-Pop-Location
-
-if ($startOk) {
-  try {
-    Push-Location $front
-    npx playwright install chromium
-    npm run test:e2e
-    if ($LASTEXITCODE -ne 0) { $failed += "frontend-e2e" }
-    Pop-Location
-  } finally {
-    Push-Location $back
-    .\mvnw.cmd -q spring-boot:stop
-    Pop-Location
+$savedProfile = $env:SPRING_PROFILES_ACTIVE
+$savedPort    = $env:SERVER_PORT
+try {
+  $env:SPRING_PROFILES_ACTIVE = "e2e"
+  $env:SERVER_PORT            = "8081"
+  $env:DB_USERNAME            = $DbUsername
+  $env:DB_PASSWORD            = $DbPassword
+  if (-not $env:JWT_SECRET) {
+    $env:JWT_SECRET = "Y2lfdGVzdF9qd3Rfc2VjcmV0XzEyMzQ1Njc4OTBfMTIzNDU2Nzg5MF8xMjM0NTY3ODkwXzEyMzQ1Njc4OTA="
   }
-} else {
-  Write-Host "!! backend did not start - check MySQL is up on :3306 and the password is correct." -ForegroundColor Red
-  $failed += "e2e-backend-startup"
+  $env:APP_SEED_ENABLED          = "true"
+  $env:APP_SEED_ADMIN_PASSWORD   = "CiWorkflowAdmin123!"
+  $env:APP_SEED_DEFAULT_PASSWORD = "CiWorkflowPass123!"
+  $env:RMS_E2E_API_BASE_URL      = "http://localhost:8081/api"
+  $env:RMS_E2E_ADMIN_USER        = "admin"
+  $env:RMS_E2E_ADMIN_PASS        = "CiWorkflowAdmin123!"
+  $env:RMS_E2E_DC_USER           = "dc"
+  $env:RMS_E2E_DC_PASS           = "CiWorkflowPass123!"
+
+  Write-Host "--> starting backend on :8081 (e2e profile - needs MySQL on :3306) ..."
+  Push-Location $back
+  .\mvnw.cmd -q spring-boot:start "-Dspring-boot.start.wait=1000" "-Dspring-boot.start.maxAttempts=120"
+  $startOk = ($LASTEXITCODE -eq 0)
+  Pop-Location
+
+  if ($startOk) {
+    try {
+      Push-Location $front
+      npx playwright install chromium
+      npm run test:e2e
+      if ($LASTEXITCODE -ne 0) { $failed += "frontend-e2e" }
+      Pop-Location
+    } finally {
+      Push-Location $back
+      .\mvnw.cmd -q spring-boot:stop
+      Pop-Location
+    }
+  } else {
+    Write-Host "!! backend did not start - check MySQL is up on :3306 and the password is correct." -ForegroundColor Red
+    $failed += "e2e-backend-startup"
+  }
+} finally {
+  $env:SPRING_PROFILES_ACTIVE = $savedProfile
+  $env:SERVER_PORT            = $savedPort
 }
 
 # Summary

@@ -64,21 +64,34 @@ public class DocumentDateColumnMigration {
     }
 
     private boolean tableExists(JdbcTemplate jdbcTemplate, String tableName) {
-        Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
-                Integer.class,
-                tableName
-        );
-        return count != null && count > 0;
+        // information_schema + DATABASE() are MySQL/H2 constructs. On an engine that doesn't support them
+        // this throws; treat "cannot determine" as "table not present" so this best-effort migration simply
+        // skips instead of failing application startup (keeps the app database-portable at boot time).
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
+                    Integer.class,
+                    tableName
+            );
+            return count != null && count > 0;
+        } catch (Exception ex) {
+            log.warn("Cannot inspect schema for table '{}' on this database; skipping migration: {}", tableName, ex.getMessage());
+            return false;
+        }
     }
 
     private boolean columnExists(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
-        Integer count = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
-                Integer.class,
-                tableName,
-                columnName
-        );
-        return count != null && count > 0;
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
+                    Integer.class,
+                    tableName,
+                    columnName
+            );
+            return count != null && count > 0;
+        } catch (Exception ex) {
+            log.warn("Cannot inspect schema for column {}.{} on this database; skipping migration: {}", tableName, columnName, ex.getMessage());
+            return false;
+        }
     }
 }

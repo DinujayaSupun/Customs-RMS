@@ -298,7 +298,7 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     long countOpenedAssignedActiveByOwner(@Param("userId") Long userId,
                                           @Param("excludedStatus") Status excludedStatus);
 
-    @Modifying
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
            update Document d
               set d.currentOwnerUserId = :newOwnerId

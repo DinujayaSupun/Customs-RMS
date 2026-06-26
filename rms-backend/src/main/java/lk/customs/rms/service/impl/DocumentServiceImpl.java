@@ -203,7 +203,7 @@ public class DocumentServiceImpl implements DocumentService {
         return DocumentResponse.from(withRecipientCapabilities(DocumentResponse.mapping(saved)
                 .createdByName(createdBy.getFullName())
                 .ownerName(owner.getFullName())
-                .canDelete(canDeleteDocument(saved, actorUserId, false)),
+                .canDelete(canDeleteDocument(saved, actorUserId)),
                 saved,
                 actorUserId)
                 .build());
@@ -397,7 +397,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .undoSendFromUserId(undoInboxMovement ? latestInbound.getFromUserId() : null)
                 .undoSendFromName(undoFrom == null ? null : undoFrom.getFullName())
                 .undoSendFromRole(roleName(undoFrom))
-                .canDelete(canDeleteDocument(d, actorUserId, canDeleteAnyDocument)),
+                .canDelete(canDeleteDocument(d, actorUserId, canDeleteAnyDocument, actorPermissions.contains(AppPermission.DELETE_DOCUMENT))),
                 d, actorUserId, recipientType, recipientSummary, actorPermissions)
                 .build());
         });
@@ -761,12 +761,18 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     private boolean canDeleteDocument(Document document, Long actorUserId) {
-        return canDeleteDocument(document, actorUserId, permissionService.hasPermission(actorUserId, AppPermission.DELETE_ANY_DOCUMENT));
+        boolean canDeleteAny = permissionService.hasPermission(actorUserId, AppPermission.DELETE_ANY_DOCUMENT);
+        boolean canDeleteOwn = permissionService.hasPermission(actorUserId, AppPermission.DELETE_DOCUMENT);
+        return canDeleteDocument(document, actorUserId, canDeleteAny, canDeleteOwn);
     }
 
-    private boolean canDeleteDocument(Document document, Long actorUserId, boolean canDeleteAnyDocument) {
+    // The Report At (current owner) may delete only with DELETE_DOCUMENT; DELETE_ANY_DOCUMENT allows
+    // deleting any document regardless of ownership.
+    private boolean canDeleteDocument(Document document, Long actorUserId,
+                                      boolean canDeleteAnyDocument, boolean canDeleteOwnDocument) {
         if (document == null || actorUserId == null) return false;
-        return actorUserId.equals(document.getCurrentOwnerUserId()) || canDeleteAnyDocument;
+        if (canDeleteAnyDocument) return true;
+        return actorUserId.equals(document.getCurrentOwnerUserId()) && canDeleteOwnDocument;
     }
 
     private DocumentResponse.Mapping.MappingBuilder withRecipientCapabilities(
@@ -892,8 +898,12 @@ public class DocumentServiceImpl implements DocumentService {
         Document d = requireDocument(id);
         boolean isCurrentReportAtUser = actorUserId.equals(d.getCurrentOwnerUserId());
         boolean canDeleteAnyDocument = permissionService.hasPermission(actorUserId, AppPermission.DELETE_ANY_DOCUMENT);
-        if (!isCurrentReportAtUser && !canDeleteAnyDocument) {
-            throw new BadRequestException("Only the current Report At user can delete this document.");
+        if (!canDeleteAnyDocument) {
+            if (!isCurrentReportAtUser) {
+                throw new BadRequestException("Only the current Report At user can delete this document.");
+            }
+            // The Report At owner additionally needs DELETE_DOCUMENT to remove their assigned document.
+            permissionService.ensurePermission(actorUserId, AppPermission.DELETE_DOCUMENT, "You are not allowed to delete documents.");
         }
 
         String deletedByName = userRepository.findById(actorUserId).map(User::getFullName).orElse("Unknown user");

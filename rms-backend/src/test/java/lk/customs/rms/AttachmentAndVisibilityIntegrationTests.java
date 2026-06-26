@@ -45,6 +45,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -271,11 +272,11 @@ class AttachmentAndVisibilityIntegrationTests {
     }
 
     @Test
-    void currentReportAtUserCanDeleteDocumentWithoutDeleteDocumentPermission() throws Exception {
+    void currentReportAtUserNeedsDeleteDocumentPermissionToDeleteOwnDocument() throws Exception {
         String password = "DocDelete123";
-        User owner = createUser("PMA", "doc-delete-owner-no-perm-", password);
+        User owner = createUser("PMA", "doc-delete-owner-perm-", password);
         String ownerToken = loginAndGetToken(owner.getUsername(), password);
-        long documentId = createDocument(ownerToken, "doc-delete-owner-no-perm");
+        long documentId = createDocument(ownerToken, "doc-delete-owner-perm");
 
         Map<Long, Boolean> originalPmaPermissions = snapshotRolePermissions(
                 "PMA",
@@ -284,13 +285,22 @@ class AttachmentAndVisibilityIntegrationTests {
         );
 
         try {
+            // Without DELETE_DOCUMENT (and no DELETE_ANY_DOCUMENT), even the Report At owner is denied.
             setRolePermission("PMA", AppPermission.DELETE_DOCUMENT, false);
             setRolePermission("PMA", AppPermission.DELETE_ANY_DOCUMENT, false);
 
             mockMvc.perform(delete("/api/documents/{documentId}", documentId)
                             .header("Authorization", bearer(ownerToken)))
-                    .andExpect(status().isNoContent());
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("You are not allowed to delete documents."));
+            assertThat(documentRepository.findByIdAndDeletedFalse(documentId)).isPresent();
 
+            // Granting DELETE_DOCUMENT lets the Report At owner delete their own document.
+            setRolePermission("PMA", AppPermission.DELETE_DOCUMENT, true);
+
+            mockMvc.perform(delete("/api/documents/{documentId}", documentId)
+                            .header("Authorization", bearer(ownerToken)))
+                    .andExpect(status().isNoContent());
             assertThat(documentRepository.findByIdAndDeletedFalse(documentId)).isEmpty();
         } finally {
             restoreRolePermissions(originalPmaPermissions);
@@ -361,7 +371,8 @@ class AttachmentAndVisibilityIntegrationTests {
         );
 
         try {
-            setRolePermission("PMA", AppPermission.DELETE_DOCUMENT, false);
+            // Owner-delete is allowed via DELETE_DOCUMENT; deleting another user's document still needs DELETE_ANY_DOCUMENT.
+            setRolePermission("PMA", AppPermission.DELETE_DOCUMENT, true);
             setRolePermission("PMA", AppPermission.DELETE_ANY_DOCUMENT, false);
 
             mockMvc.perform(delete("/api/documents/{documentId}", otherOwnedDocumentId)
@@ -453,6 +464,25 @@ class AttachmentAndVisibilityIntegrationTests {
                         .param("download_token", downloadToken))
                 .andExpect(status().isOk())
                 .andExpect(result -> assertThat(result.getResponse().getContentAsString()).isEqualTo("download body"));
+    }
+
+    @Test
+    void svgAttachmentIsNeverServedInlineAndResponseSetsNosniff() throws Exception {
+        String password = "SvgGuard123";
+        User owner = createUser("ADMIN", "svg-guard-owner-", password);
+        String ownerToken = loginAndGetToken(owner.getUsername(), password);
+        long documentId = createDocument(ownerToken, "svg-guard-doc");
+        long attachmentId = uploadAttachment(documentId, ownerToken, "blocked.svg",
+                "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>").get("id").asLong();
+
+        // Even with inline=true, an SVG must be forced to download (Content-Disposition: attachment) so any
+        // embedded <script> can never execute in a browsing context (stored XSS). nosniff guards sniffing.
+        mockMvc.perform(get("/api/attachments/{attachmentId}/download", attachmentId)
+                        .param("inline", "true")
+                        .header("Authorization", bearer(ownerToken)))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("attachment")))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"));
     }
 
     @Test

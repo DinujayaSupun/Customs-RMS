@@ -16,7 +16,7 @@ public interface DocumentRecipientSetRepository extends JpaRepository<DocumentRe
 
     List<DocumentRecipientSet> findByDocumentIdOrderByCreatedAtDescIdDesc(Long documentId);
 
-    @Modifying
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("UPDATE DocumentRecipientSet s SET s.active = false WHERE s.documentId = :documentId AND s.active = true")
     void deactivateAllForDocument(@Param("documentId") Long documentId);
 }

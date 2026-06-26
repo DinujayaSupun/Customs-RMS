@@ -3,6 +3,8 @@ package lk.customs.rms.entity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 
@@ -36,9 +38,11 @@ public class AuditLog {
     @Column(name="performed_at", nullable = false)
     private LocalDateTime performedAt;
 
-    @Column(name="message", columnDefinition = "TEXT")
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(name="message")
     private String message;
 
-    @Column(name="details_json", columnDefinition = "TEXT")
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(name="details_json")
     private String detailsJson;
 }

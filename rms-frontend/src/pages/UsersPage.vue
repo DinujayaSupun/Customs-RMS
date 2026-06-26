@@ -795,7 +795,9 @@ async function load() {
 
     rows.value = data?.content ?? [];
     summaryRows.value = rows.value;
-    last.value = !!data?.last;
+    const uMeta = data?.page ?? data;
+    const uTp = Number(uMeta?.totalPages ?? 0);
+    last.value = data?.last ?? (uTp === 0 || page.value >= uTp - 1);
     selectedUserIds.value = selectedUserIds.value.filter((id) =>
       summaryRows.value.some((u) => Number(u.id) === Number(id) && isSelectableUser(u))
     );

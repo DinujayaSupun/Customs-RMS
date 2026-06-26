@@ -27,9 +27,10 @@ public class Document {
 
     // Optimistic locking: concurrent updates to the same document (e.g. the auto-forward scheduler
     // firing while the owner acts) are detected instead of silently overwriting each other.
+    // Default 0L so Spring Data 4 / Hibernate 7 never calls persist() on an existing row.
     @Version
     @Column(name = "version")
-    private Long version;
+    private Long version = 0L;
 
     @Column(name="ref_no", unique = true, nullable = false)
     private String refNo;
