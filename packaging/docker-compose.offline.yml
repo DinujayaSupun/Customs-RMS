@@ -1,0 +1,55 @@
+# Offline compose — runs the app from PRE-BUILT images (no internet, no building).
+# Use this with the "offline image bundle". The recipient first loads the images
+# (docker load -i images.tar), then runs:  docker compose -f docker-compose.offline.yml up -d
+#
+# The only difference from the normal docker-compose.yml is that the backend and
+# frontend use `image:` (load a ready-made image) instead of `build:` (compile it here).
+
+services:
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: customs_rms
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    image: customs-rms-backend:latest
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_URL: "jdbc:mysql://mysql:3306/customs_rms?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      JWT_SECRET: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+      APP_UPLOAD_DIR: /uploads
+      SPRING_PROFILES_ACTIVE: "dev"
+      APP_SEED_ENABLED: "true"
+      APP_SEED_ADMIN_PASSWORD: "admin123"
+      APP_SEED_DEFAULT_PASSWORD: "password123"
+      APP_CORS_ALLOWED_ORIGINS: "http://localhost:3000"
+    ports:
+      - "8080:8080"
+    volumes:
+      - uploads_data:/uploads
+
+  frontend:
+    image: customs-rms-frontend:latest
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  mysql_data:
+  uploads_data:

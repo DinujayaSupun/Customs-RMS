@@ -29,6 +29,10 @@ node_modules/
 # Build output
 dist/
 
+# Generated distributable bundles (zips + saved image tars)
+bundles/
+images.tar
+
 # IDE
 .idea/
 
