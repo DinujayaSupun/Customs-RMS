@@ -8,3 +8,7 @@ test-results/
 *.log
 .vscode/
 .idea/
+# Keep local Vite env files out of the image so they can't override the
+# VITE_API_BASE_URL build arg baked in by docker-compose.
+.env
+.env.*
