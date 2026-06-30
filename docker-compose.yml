@@ -39,6 +39,12 @@ services:
       DB_URL: "jdbc:mysql://mysql:3306/customs_rms?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
       DB_USERNAME: root
       DB_PASSWORD: root
+      # App timestamps use LocalDateTime.now(), which follows the JVM timezone. Containers default
+      # to UTC, which makes the movement timeline read 5h30m behind Sri Lanka time. Pin the zone.
+      # TZ sets the OS clock; JAVA_TOOL_OPTIONS forces the JVM default zone (TZ alone isn't honored
+      # by this JRE for LocalDateTime.now()).
+      TZ: "Asia/Colombo"
+      JAVA_TOOL_OPTIONS: "-Duser.timezone=Asia/Colombo"
       # 256-bit base64 secret for signing JWTs. CHANGE THIS for real deployments.
       JWT_SECRET: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
       APP_UPLOAD_DIR: /uploads       # uploads go to a folder backed by a volume (below)

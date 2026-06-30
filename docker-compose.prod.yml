@@ -47,6 +47,11 @@ services:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: "prod"
+      # Timezone for app timestamps (LocalDateTime.now()). Defaults to Sri Lanka; override in .env.prod.
+      # TZ sets the OS clock; JAVA_TOOL_OPTIONS forces the JVM default zone (TZ alone isn't honored
+      # by the JRE for LocalDateTime.now()).
+      TZ: ${TZ:-Asia/Colombo}
+      JAVA_TOOL_OPTIONS: "-Duser.timezone=${TZ:-Asia/Colombo}"
       DB_URL: "jdbc:mysql://mysql:3306/${DB_NAME:-customs_rms}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
       DB_USERNAME: ${DB_USERNAME:?set DB_USERNAME in .env.prod}
       DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env.prod}
