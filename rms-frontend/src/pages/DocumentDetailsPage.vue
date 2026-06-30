@@ -291,7 +291,7 @@
 
               <div class="hintInline">
                 <span class="hintLabel">{{ canForward ? 'Forward rules' : 'Return rules' }}</span>
-                <HoverHint :text="`Forward/Return are available only for the current Report At user with the required permission. Return suggests the most recent sender when possible, but you can choose another allowed user. Allowed statuses: ${forwardReturnAllowedStatusesLabel}.`" />
+                <HoverHint :text="`Forward and Return are available only to the current Report At user, and only with the required permission. Return suggests the most recent sender when possible, but you can choose another allowed user. Allowed statuses: ${forwardReturnAllowedStatusesLabel}.`" />
               </div>
           </div>
 
@@ -306,7 +306,7 @@
 
             <div class="hintInline">
               <span class="hintLabel">Visibility help</span>
-              <HoverHint :text="`This sets visibility for the next Forward/Return movement. Options come from your public/private forward permissions; changing visibility also requires Change Document Visibility permission. Undo Send does not change the document's saved visibility. Available now: ${availableForwardVisibilities.join(', ') || 'None'}.`" />
+              <HoverHint :text="`Sets the visibility for your next Forward or Return. The options depend on your public/private forward permissions, and changing visibility also requires the Change Document Visibility permission. Undo Send does not change the document's saved visibility. Available now: ${availableForwardVisibilities.join(', ') || 'None'}.`" />
             </div>
           </div>
           </template>
@@ -466,7 +466,7 @@
 
             <div class="hintInline">
               <span class="hintLabel">Upload rules</span>
-            <HoverHint text="Upload is allowed only for the current Report At user with Upload Attachment permission, and is blocked after the document is Done. The first uploaded file is the main file; later uploads are added as attachments." />
+            <HoverHint text="Upload is allowed only to the current Report At user with the Upload Attachment permission, and is blocked once the document is Done. The first uploaded file becomes the main file; later uploads are added as attachments." />
             </div>
             </template>
 
