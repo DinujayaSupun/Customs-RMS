@@ -23,6 +23,7 @@ control and real-time notifications.
 - [Backend API areas](#backend-api-areas)
 - [Prerequisites](#prerequisites)
 - [Local development](#local-development)
+- [Run with Docker](#run-with-docker)
 - [Environment variables](#environment-variables)
 - [Seeded roles and default users](#seeded-roles-and-default-users)
 - [Authentication and file downloads](#authentication-and-file-downloads)
@@ -92,9 +93,14 @@ Customs-RMS/
 |-- .github/workflows/         # CI pipeline
 |-- package.json               # Root dev orchestration scripts
 |-- scripts/                   # Local development helper scripts
-|-- rms-backend/               # Spring Boot REST API + WebSocket
-|-- rms-frontend/              # Vue 3 SPA
-|-- DEPLOYMENT.md              # Production deployment guide
+|-- rms-backend/               # Spring Boot REST API + WebSocket (incl. Dockerfile)
+|-- rms-frontend/              # Vue 3 SPA (incl. Dockerfile + nginx.conf)
+|-- docker-compose.yml         # Local Docker stack (db + backend + frontend)
+|-- docker-compose.prod.yml    # Production-style Docker stack (prod profile, secrets, bind mounts)
+|-- packaging/                 # Offline image bundle (compose + run scripts + recipient README)
+|-- make-bundles.ps1           # Builds shareable source / offline zips into bundles/
+|-- QUICKSTART-DOCKER.md       # One-command Docker quickstart
+|-- DEPLOYMENT.md              # Production deployment guide (Appendix A covers Docker)
 |-- RELEASE_CHECKLIST.md       # Pre-release verification checklist
 `-- README.md
 ```
@@ -218,6 +224,28 @@ cd rms-frontend; npm install; npm run dev      # frontend at :5173
 cd rms-backend;  .\mvnw.cmd spring-boot:run     # backend at :8080
 ```
 
+## Run with Docker
+
+The whole stack (MySQL + backend + frontend) can run in containers with one command — no local
+Java, Node, or MySQL needed, only Docker.
+
+```bash
+docker compose up --build -d        # first run downloads images + builds (~3-8 min)
+```
+
+Then open **http://localhost:3000** and log in with `admin` / `admin123` (other seeded users:
+`dc`, `ddc`, `sc`, `asc`, `pma` — password `password123`). Stop with `docker compose down`
+(keeps data) or `docker compose down -v` (wipes the database + uploads).
+
+This dev stack runs the `dev` profile (seeds demo users) and serves a built frontend on `:3000`;
+it is for local/demo use, not production. The full walkthrough — including the two gotchas, the
+**offline image bundle** for air-gapped servers, and the production-style `docker-compose.prod.yml`
+— is in **[QUICKSTART-DOCKER.md](QUICKSTART-DOCKER.md)** and **[DEPLOYMENT.md](DEPLOYMENT.md)** (Appendix A).
+
+> For active coding, prefer `npm run dev:all` (hot reload). Docker runs a built snapshot, so it
+> only reflects code changes after `docker compose up --build`. The two can't run at once — both
+> use port `8080`.
+
 ## Environment variables
 
 The backend reads these from `.env` locally, or from server environment variables in production.
@@ -272,8 +300,8 @@ same `APP_CORS_ALLOWED_ORIGINS` setting as HTTP CORS.
 
 | Suite | Count | Command |
 |-------|-------|---------|
-| Backend (JUnit 5, H2) | 163 | `cd rms-backend; .\mvnw.cmd test` |
-| Frontend unit (Vitest) | 79 | `npm --prefix rms-frontend run test:unit` |
+| Backend (JUnit 5, H2) | 177 | `cd rms-backend; .\mvnw.cmd test` |
+| Frontend unit (Vitest) | 83 | `npm --prefix rms-frontend run test:unit` |
 | Frontend E2E (Playwright) | 19 | `cd rms-frontend; npm run test:e2e` |
 
 Backend integration tests use the `test` profile with an in-memory H2 database in MySQL
@@ -319,6 +347,8 @@ bootstrap, security hardening, rollback, and troubleshooting. Verify each releas
 
 ## Further documentation
 
-- [DEPLOYMENT.md](DEPLOYMENT.md) — production deployment guide.
+- [QUICKSTART-DOCKER.md](QUICKSTART-DOCKER.md) — run the whole stack in Docker with one command.
+- [DEPLOYMENT.md](DEPLOYMENT.md) — production deployment guide (Appendix A covers Docker + bundles).
+- [packaging/README.md](packaging/README.md) — recipient guide shipped inside the offline image bundle.
 - [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) — pre-release verification checklist.
 - [rms-backend/README.md](rms-backend/README.md) — backend configuration and secrets handling.

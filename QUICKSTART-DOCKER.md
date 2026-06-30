@@ -57,3 +57,10 @@ Only `down -v` erases it.
 - This setup uses **demo credentials and seeded users** for convenience. It is for
   evaluation/development, **not** a public production server. For production, follow
   DEPLOYMENT.md (fresh `JWT_SECRET`, real passwords, `prod` profile, TLS).
+
+## Other Docker setups
+
+- **Production-style stack** — `docker-compose.prod.yml` (+ `.env.prod.example`) runs the `prod`
+  profile with external secrets and bind-mounted data. See DEPLOYMENT.md Appendix A.6.
+- **Offline / air-gapped delivery** — `make-bundles.ps1` produces a self-contained zip that runs
+  from pre-built images with no internet. See `packaging/README.md` and DEPLOYMENT.md Appendix A.

@@ -1,0 +1,78 @@
+# docker-compose.prod.yml — production-style stack. STANDALONE (not an override).
+#
+# Run it with an env file holding the real secrets:
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+#
+# How this differs from the dev docker-compose.yml:
+#   - SPRING_PROFILES_ACTIVE=prod  -> schema "validate" (no auto-DDL) and NO user seeding.
+#   - All secrets come from .env.prod (the ${VAR:?...} syntax FAILS FAST if one is missing).
+#   - Uploads + database are BIND-MOUNTED to real server folders you can back up.
+#   - MySQL is NOT published to the host (stays on the private Docker network).
+#
+# IMPORTANT — two things this compose does NOT do (they live OUTSIDE Docker):
+#   1. TLS + reverse proxy. Put Nginx/Caddy/Traefik on the host to terminate HTTPS, serve the
+#      SPA, and forward /api and /ws (WebSocket upgrade) to the backend. See DEPLOYMENT.md §8.
+#   2. First-boot schema. "validate" does not create tables. On a brand-new database, do the
+#      one-time bootstrap from DEPLOYMENT.md §4 (start once with ddl-auto=update), then run
+#      this compose normally.
+
+services:
+
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?set DB_ROOT_PASSWORD in .env.prod}
+      MYSQL_DATABASE: ${DB_NAME:-customs_rms}
+    volumes:
+      # Bind-mount the DB data to a real folder so standard backups/snapshots work.
+      - ${DB_DATA_DIR:-./prod-data/mysql}:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    # No "ports:" — the database is reachable only by the backend over the Docker network.
+    # To connect a tool from the host temporarily, uncomment (use a non-3306 host port):
+    # ports:
+    #   - "3307:3306"
+
+  backend:
+    build: ./rms-backend
+    # For an air-gapped/offline server, replace the build line above with a loaded image:
+    # image: customs-rms-backend:latest
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: "prod"
+      DB_URL: "jdbc:mysql://mysql:3306/${DB_NAME:-customs_rms}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+      DB_USERNAME: ${DB_USERNAME:?set DB_USERNAME in .env.prod}
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env.prod}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env.prod}
+      APP_UPLOAD_DIR: /uploads
+      # Must list your real public frontend origin(s) — controls REST AND WebSocket. No trailing slash.
+      APP_CORS_ALLOWED_ORIGINS: ${APP_CORS_ALLOWED_ORIGINS:?set your real frontend origin in .env.prod}
+      JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-28800000}
+    volumes:
+      # Bind-mount uploads to a real folder OUTSIDE the web root; back this up with the DB.
+      - ${UPLOADS_DIR:-./prod-data/uploads}:/uploads
+    # Keep the backend internal; the host reverse proxy forwards /api and /ws to it.
+    # Publish only if the proxy runs on a different host:
+    # ports:
+    #   - "8080:8080"
+
+  frontend:
+    build:
+      context: ./rms-frontend
+      args:
+        # Baked into the JS at build time: the PUBLIC origin the browser uses (your HTTPS host).
+        # The app appends /api and derives wss://…/ws from it. NOT http://localhost.
+        VITE_API_BASE_URL: ${PUBLIC_BASE_URL:?set PUBLIC_BASE_URL (e.g. https://rms.customs.gov.lk) in .env.prod}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      # The host reverse proxy (TLS) sits in front and forwards to this port.
+      - "${FRONTEND_PORT:-3000}:80"

@@ -458,3 +458,23 @@ The compose file is deliberately convenient, not secure. Before any non-local us
 - For a managed/remote database, drop the `mysql` service entirely and point `DB_URL` at it. A
   PostgreSQL driver is already bundled in `pom.xml`, so `DB_URL=jdbc:postgresql://…` works without a
   code change (the target database must already exist — Postgres has no `createDatabaseIfNotExist`).
+
+### A.6 Production-style compose (`docker-compose.prod.yml`)
+
+The repo ships `docker-compose.prod.yml` — a **standalone** compose that already applies the A.5
+hardening, so you don't have to hand-edit the dev file. It uses the `prod` profile (no seeding,
+schema `validate`), pulls every secret from an env file (and refuses to start if one is missing),
+bind-mounts the database and uploads to real server folders you can back up, and keeps MySQL off
+the host network.
+
+```bash
+cp .env.prod.example .env.prod          # then fill in real values
+openssl rand -base64 48                  # generate JWT_SECRET, paste into .env.prod
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+```
+
+It deliberately leaves two things to the host, because they cannot live inside this compose:
+**TLS + the reverse proxy** (§8) and the **first-boot schema bootstrap** (§4, since `validate`
+does not create tables). Set `UPLOADS_DIR` / `DB_DATA_DIR` in `.env.prod` to persistent paths
+(e.g. `/var/lib/customs-rms/...`) and back up `UPLOADS_DIR` together with a `mysqldump` on the
+same schedule — each attachment row points at a file on disk, so the two must stay consistent.
