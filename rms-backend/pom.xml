@@ -88,6 +88,23 @@
 			<artifactId>postgresql</artifactId>
 			<scope>runtime</scope>
 		</dependency>
+		<!-- Flyway: versioned, ordered SQL migrations replace ddl-auto guessing on MySQL/Postgres.
+		     flyway-mysql adds MySQL 8 support; the H2 test profiles disable Flyway (see properties).
+		     spring-boot-flyway carries the Spring Boot 4 auto-configuration that runs Flyway on
+		     startup (Boot 4 split auto-config into per-technology modules — flyway-core alone is
+		     just the library and never gets invoked without this module). -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-flyway</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-core</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.flywaydb</groupId>
+			<artifactId>flyway-mysql</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>com.h2database</groupId>
 			<artifactId>h2</artifactId>
