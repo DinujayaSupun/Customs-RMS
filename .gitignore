@@ -11,6 +11,10 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+!.env.prod.example
+
+# Production bind-mount data (database + uploads) — never commit
+prod-data/
 
 # Local Spring overrides (secrets stay local)
 rms-backend/src/main/resources/application-local.properties
