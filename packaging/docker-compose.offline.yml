@@ -33,6 +33,10 @@ services:
       DB_URL: "jdbc:mysql://mysql:3306/customs_rms?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
       DB_USERNAME: root
       DB_PASSWORD: root
+      # Pin the timezone so LocalDateTime.now() records Sri Lanka time, not the container's UTC.
+      # TZ sets the OS clock; JAVA_TOOL_OPTIONS forces the JVM default zone (TZ alone isn't enough).
+      TZ: "Asia/Colombo"
+      JAVA_TOOL_OPTIONS: "-Duser.timezone=Asia/Colombo"
       JWT_SECRET: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
       APP_UPLOAD_DIR: /uploads
       SPRING_PROFILES_ACTIVE: "dev"
