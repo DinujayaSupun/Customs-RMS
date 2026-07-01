@@ -4,8 +4,9 @@
 .DS_Store
 Thumbs.db
 
-# Logs
+# Logs (including rotated/compressed variants, e.g. rms-backend.log.2026-06-26.0.gz)
 *.log
+*.log.*
 
 # Root-level local envs
 .env
