@@ -167,6 +167,33 @@ class SecurityAndWorkflowIntegrationTests {
     }
 
     @Test
+    void scopedDownloadTokenIsRejectedAsBearerAccessToken() throws Exception {
+        String password = "Bearer1234";
+        User user = createUser("ADMIN", "download-as-bearer-", password);
+        String accessToken = loginAndGetToken(user.getUsername(), password);
+
+        // A profile picture must exist before a download token can be minted for it.
+        mockMvc.perform(multipart("/api/auth/me/profile-picture")
+                        .file(new MockMultipartFile("file", "avatar.png", MediaType.IMAGE_PNG_VALUE, pngBytes()))
+                        .header("Authorization", bearer(accessToken)))
+                .andExpect(status().isOk());
+
+        MvcResult tokenResult = mockMvc.perform(post("/api/auth/me/profile-picture-token")
+                        .header("Authorization", bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andReturn();
+        String downloadToken = queryParam(readJson(tokenResult).get("url").asText(), "download_token");
+        assertThat(downloadToken).isNotBlank();
+
+        // The scoped download token carries the user's identity but must NOT be usable as a
+        // general Bearer access token: it may only authenticate via the narrow download path.
+        // (Regression guard: previously isTokenValid ignored token_type, so this returned 200.)
+        mockMvc.perform(get("/api/auth/me")
+                        .header("Authorization", bearer(downloadToken)))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void queryTokenIsRejectedForGeneralDocumentRoutesAndNonGetRequests() throws Exception {
         String password = "Query1234";
         User admin = createUser("ADMIN", "query-block-", password);

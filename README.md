@@ -306,7 +306,7 @@ same `APP_CORS_ALLOWED_ORIGINS` setting as HTTP CORS.
 
 | Suite | Count | Command |
 |-------|-------|---------|
-| Backend (JUnit 5, H2) | 177 | `cd rms-backend; .\mvnw.cmd test` |
+| Backend (JUnit 5, H2) | 178 | `cd rms-backend; .\mvnw.cmd test` |
 | Frontend unit (Vitest) | 83 | `npm --prefix rms-frontend run test:unit` |
 | Frontend E2E (Playwright) | 19 | `cd rms-frontend; npm run test:e2e` |
 
