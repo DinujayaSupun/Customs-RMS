@@ -2,6 +2,7 @@
 # Keeps the build fast and avoids leaking local files into the image.
 target/
 *.log
+*.log.*
 .git/
 .idea/
 .vscode/
