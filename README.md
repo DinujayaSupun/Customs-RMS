@@ -13,6 +13,12 @@ customs documents. Officers forward documents to one another, add minutes/remark
 make approval decisions, and track every action through an audit trail — with role-based access
 control and real-time notifications.
 
+> **Just want to run it?** You don't need the local setup below (Java, Node, MySQL, `.env`).
+> With Docker installed, `docker compose up --build` starts the whole stack — see
+> **[QUICKSTART-DOCKER.md](QUICKSTART-DOCKER.md)**. The steps in this README are for **local
+> development** (editing code with hot reload); production deployment is in
+> **[DEPLOYMENT.md](DEPLOYMENT.md)**.
+
 ## Contents
 
 - [Key features](#key-features)
