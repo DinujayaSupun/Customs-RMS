@@ -70,7 +70,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private String resolveToken(HttpServletRequest request) {
         String authHeader = request.getHeader("Authorization");
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            return authHeader.substring(7);
+            String bearer = authHeader.substring(7);
+            // A scoped download token (short-lived, carried in URLs) must never authenticate as a
+            // general Bearer access token; it is valid only via the download_token path below.
+            if (jwtService.isDownloadToken(bearer)) {
+                return null;
+            }
+            return bearer;
         }
 
         String downloadToken = request.getParameter("download_token");

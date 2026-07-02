@@ -84,6 +84,20 @@ public class JwtService {
                 && !isTokenExpired(token);
     }
 
+    /**
+     * True if the token is a scoped download token (token_type=download). Such tokens travel in
+     * URLs/logs and must be accepted ONLY via the narrow download path (isDownloadTokenFor), never
+     * as a general Bearer access token. Returns false for malformed tokens so callers can fall
+     * through to normal validation. See JwtAuthFilter#resolveToken.
+     */
+    public boolean isDownloadToken(String token) {
+        try {
+            return "download".equals(extractAllClaims(token).get("token_type", String.class));
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
     public boolean isDownloadTokenFor(String token, String resourceType, Long resourceId) {
         Claims claims = extractAllClaims(token);
         if (!"download".equals(claims.get("token_type", String.class))) return false;
