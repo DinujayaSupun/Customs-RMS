@@ -292,6 +292,98 @@ class AdminManagementAndPermissionIntegrationTests {
     }
 
     @Test
+    void perUserPermissionOverrideRevokesGrantsAndInherits() throws Exception {
+        String password = "Admin1234";
+        User admin = createUser("ADMIN", "up-admin-", password);
+        // PMA role has CREATE_DOCUMENT by default.
+        User pma1 = createUser("PMA", "up-pma1-", password);
+        User pma2 = createUser("PMA", "up-pma2-", password);
+
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+        String pma1Token = loginAndGetToken(pma1.getUsername(), password);
+        String pma2Token = loginAndGetToken(pma2.getUsername(), password);
+
+        // Baseline: inherits the role → pma1 can create.
+        mockMvc.perform(post("/api/documents").header("Authorization", bearer(pma1Token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(documentPayload("up-base", "Base", LocalDate.now().toString(), "LOW")))
+                .andExpect(status().isCreated());
+
+        // REVOKE CREATE_DOCUMENT for pma1 only.
+        mockMvc.perform(put("/api/admin/users/{id}/permissions", pma1.getId())
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "entries": [ { "permission": "CREATE_DOCUMENT", "override": false } ] }
+                                """))
+                .andExpect(status().isOk());
+
+        // pma1 is now blocked...
+        mockMvc.perform(post("/api/documents").header("Authorization", bearer(pma1Token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(documentPayload("up-blocked", "Blocked", LocalDate.now().toString(), "LOW")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("You are not allowed to create documents."));
+
+        // ...but pma2 (same role, no override) is unaffected → override is per-user, not per-role.
+        mockMvc.perform(post("/api/documents").header("Authorization", bearer(pma2Token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(documentPayload("up-other", "Other", LocalDate.now().toString(), "LOW")))
+                .andExpect(status().isCreated());
+
+        // GRANT a permission the PMA role lacks, to pma1, and confirm the resolved response.
+        mockMvc.perform(put("/api/admin/users/{id}/permissions", pma1.getId())
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "entries": [ { "permission": "VIEW_ALL_DOCUMENTS", "override": true } ] }
+                                """))
+                .andExpect(status().isOk());
+
+        MvcResult permResult = mockMvc.perform(get("/api/admin/users/{id}/permissions", pma1.getId())
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode viewAll = null;
+        for (JsonNode e : readJson(permResult).get("entries")) {
+            if ("VIEW_ALL_DOCUMENTS".equals(e.get("permission").asText())) { viewAll = e; break; }
+        }
+        assertThat(viewAll).isNotNull();
+        assertThat(viewAll.get("roleDefault").asBoolean()).isFalse();
+        assertThat(viewAll.get("override").asBoolean()).isTrue();
+        assertThat(viewAll.get("effective").asBoolean()).isTrue();
+
+        // INHERIT: null override removes the CREATE_DOCUMENT override → pma1 can create again.
+        mockMvc.perform(put("/api/admin/users/{id}/permissions", pma1.getId())
+                        .header("Authorization", bearer(adminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "entries": [ { "permission": "CREATE_DOCUMENT", "override": null } ] }
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/documents").header("Authorization", bearer(pma1Token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(documentPayload("up-restored", "Restored", LocalDate.now().toString(), "LOW")))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void nonAdminCannotUpdateUserPermissions() throws Exception {
+        String password = "Member1234";
+        User pma = createUser("PMA", "up-non-admin-", password);
+        String token = loginAndGetToken(pma.getUsername(), password);
+
+        mockMvc.perform(put("/api/admin/users/{id}/permissions", pma.getId())
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "entries": [ { "permission": "VIEW_LOGS", "override": true } ] }
+                                """))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void nonAdminCannotUpdatePermissionMatrix() throws Exception {
         String password = "Member1234";
         User scUser = createUser("SC", "perm-non-admin-", password);

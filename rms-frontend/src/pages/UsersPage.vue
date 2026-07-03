@@ -276,6 +276,7 @@
                       <div class="actions">
                         <button class="btn btn-sm" @click="openEditModal(u)">Edit</button>
                         <button class="btn btn-sm" @click="openResetPasswordModal(u)">Reset Password</button>
+                        <button class="btn btn-sm" @click="openPermissionsModal(u)">Permissions</button>
                         <button
                           v-if="u.active"
                           class="btn btn-sm danger"
@@ -414,6 +415,55 @@
           <button class="btn" @click="closeResetPasswordModal">Cancel</button>
           <button class="btn btn-primary" :disabled="saving || !resetPasswordValue.trim()" @click="confirmResetPassword">
             {{ saving ? "Resetting..." : "Reset Password" }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="permissionsModalOpen" class="overlay">
+      <div class="modal">
+        <div class="modalHead">
+          <div>
+            <div class="modalTitle">Permissions</div>
+            <div class="modalSub">{{ permissionsUserLabel }}</div>
+          </div>
+          <button class="btn btn-sm" @click="closePermissionsModal">Close</button>
+        </div>
+
+        <div class="modalBody">
+          <p class="permsHint">
+            Each permission inherits from the role by default. Override it for this user only:
+            <b>Grant</b> adds it, <b>Revoke</b> removes it, regardless of the role.
+          </p>
+          <div v-if="permissionsLoading" class="permsLoading">Loading…</div>
+          <table v-else class="permsTable">
+            <thead>
+              <tr><th>Permission</th><th>Role default</th><th>Override</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="entry in permissionsEntries" :key="entry.permission">
+                <td class="permName">{{ entry.permission }}</td>
+                <td>
+                  <span :class="entry.roleDefault ? 'permYes' : 'permNo'">
+                    {{ entry.roleDefault ? "Allowed" : "Denied" }}
+                  </span>
+                </td>
+                <td>
+                  <select v-model="entry.mode" class="input permSelect">
+                    <option value="INHERIT">Inherit ({{ entry.roleDefault ? "Allowed" : "Denied" }})</option>
+                    <option value="GRANT">Grant</option>
+                    <option value="REVOKE">Revoke</option>
+                  </select>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="modalFoot">
+          <button class="btn" @click="closePermissionsModal">Cancel</button>
+          <button class="btn btn-primary" :disabled="saving || permissionsLoading" @click="savePermissions">
+            {{ saving ? "Saving..." : "Save Permissions" }}
           </button>
         </div>
       </div>
@@ -592,6 +642,8 @@ import { formatUserLabel } from "../auth/userLabel";
   adminMergeUsers,
   adminResetPassword,
   adminUpdateUser,
+  adminGetUserPermissions,
+  adminUpdateUserPermissions,
 } from "../api/auth.api";
 
 const toast = useToast();
@@ -660,6 +712,12 @@ const activeUsersCount = computed(() => summaryRows.value.filter((u) => u.active
 const inactiveUsersCount = computed(() => summaryRows.value.filter((u) => !u.active).length);
 const editingUserLabel = computed(() => formatAdminUserLabel(editingUser.value));
 const resetPasswordUserLabel = computed(() => formatAdminUserLabel(resetPasswordUser.value));
+
+const permissionsModalOpen = ref(false);
+const permissionsUser = ref(null);
+const permissionsEntries = ref([]);
+const permissionsLoading = ref(false);
+const permissionsUserLabel = computed(() => formatAdminUserLabel(permissionsUser.value));
 const deactivateTargetUserLabel = computed(() => formatAdminUserLabel(deactivateTargetUser.value));
 const deleteTargetUserLabel = computed(() => formatAdminUserLabel(deleteTargetUser.value));
 const deleteRequiresTypedConfirmation = computed(() => deleteTargetUser.value?.role === "ADMIN");
@@ -897,6 +955,55 @@ function closeResetPasswordModal() {
   resetPasswordUser.value = null;
   resetPasswordValue.value = "";
   showResetPassword.value = false;
+}
+
+function openPermissionsModal(u) {
+  permissionsUser.value = u;
+  permissionsEntries.value = [];
+  permissionsModalOpen.value = true;
+  loadUserPermissions(u.id);
+}
+
+async function loadUserPermissions(userId) {
+  permissionsLoading.value = true;
+  try {
+    const data = await adminGetUserPermissions(userId);
+    permissionsEntries.value = (data.entries || []).map((e) => ({
+      permission: e.permission,
+      roleDefault: e.roleDefault,
+      // Map the backend tri-state (override: null / true / false) to the select value.
+      mode: e.override === null || e.override === undefined ? "INHERIT" : e.override ? "GRANT" : "REVOKE",
+    }));
+  } catch (e) {
+    toast.error(String(e));
+    closePermissionsModal();
+  } finally {
+    permissionsLoading.value = false;
+  }
+}
+
+function closePermissionsModal() {
+  permissionsModalOpen.value = false;
+  permissionsUser.value = null;
+  permissionsEntries.value = [];
+}
+
+async function savePermissions() {
+  if (!permissionsUser.value) return;
+  saving.value = true;
+  try {
+    const entries = permissionsEntries.value.map((e) => ({
+      permission: e.permission,
+      override: e.mode === "GRANT" ? true : e.mode === "REVOKE" ? false : null,
+    }));
+    await adminUpdateUserPermissions(permissionsUser.value.id, entries);
+    toast.success("Permissions updated.");
+    closePermissionsModal();
+  } catch (e) {
+    toast.error(String(e));
+  } finally {
+    saving.value = false;
+  }
 }
 
 async function confirmResetPassword() {

@@ -5,6 +5,8 @@ import lk.customs.rms.dto.*;
 import lk.customs.rms.security.CurrentUserService;
 import lk.customs.rms.service.AuditLogService;
 import lk.customs.rms.service.AdminUserService;
+import lk.customs.rms.service.PermissionService;
+import lk.customs.rms.service.RealtimeNotificationService;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -26,13 +28,46 @@ public class AdminUserController {
     private final AdminUserService adminUserService;
     private final CurrentUserService currentUserService;
     private final AuditLogService auditLogService;
+    private final PermissionService permissionService;
+    private final RealtimeNotificationService realtimeNotificationService;
 
     public AdminUserController(AdminUserService adminUserService,
                                CurrentUserService currentUserService,
-                               AuditLogService auditLogService) {
+                               AuditLogService auditLogService,
+                               PermissionService permissionService,
+                               RealtimeNotificationService realtimeNotificationService) {
         this.adminUserService = adminUserService;
         this.currentUserService = currentUserService;
         this.auditLogService = auditLogService;
+        this.permissionService = permissionService;
+        this.realtimeNotificationService = realtimeNotificationService;
+    }
+
+    @GetMapping("/{userId}/permissions")
+    public UserPermissionsResponse getUserPermissions(@PathVariable Long userId) {
+        return permissionService.getUserPermissions(userId);
+    }
+
+    @PutMapping("/{userId}/permissions")
+    public UserPermissionsResponse updateUserPermissions(@PathVariable Long userId,
+                                                         @Valid @RequestBody UpdateUserPermissionsRequest request,
+                                                         Authentication authentication) {
+        UserPermissionsResponse updated = permissionService.updateUserPermissions(userId, request);
+
+        Long actorId = currentUserService.requireUser(authentication).getId();
+        auditLogService.logEventWithDetails(
+                "USER_PERMISSION",
+                userId,
+                "USER_PERMISSION_UPDATE",
+                actorId,
+                "Admin updated per-user permission overrides",
+                Map.of("targetUserId", userId, "entryCount", request.getEntries().size())
+        );
+
+        // Broadcast so the affected user's UI re-evaluates capabilities without a re-login.
+        realtimeNotificationService.notifyPermissionsUpdated();
+
+        return updated;
     }
 
     @GetMapping

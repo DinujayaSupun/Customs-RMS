@@ -136,6 +136,22 @@ export async function adminResetPassword(userId, newPassword) {
   }
 }
 
+export async function adminGetUserPermissions(userId) {
+  try {
+    return (await http.get(`/admin/users/${userId}/permissions`)).data;
+  } catch (e) {
+    throw getMsg(e);
+  }
+}
+
+export async function adminUpdateUserPermissions(userId, entries) {
+  try {
+    return (await http.put(`/admin/users/${userId}/permissions`, { entries })).data;
+  } catch (e) {
+    throw getMsg(e);
+  }
+}
+
 export async function adminDeleteUser(userId) {
   try {
     await http.delete(`/admin/users/${userId}`);
