@@ -173,6 +173,7 @@ public class DocumentServiceImpl implements DocumentService {
         doc.setReceivedDate(request.getReceivedDate());
         doc.setCompanyName(request.getCompanyName());
         doc.setPriority(request.getPriority());
+        doc.setDocumentType(request.getDocumentType());
         doc.setVisibility("PRIVATE");
 
         // Document starts as PENDING

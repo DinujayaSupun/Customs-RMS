@@ -100,6 +100,9 @@
             <div class="k">Priority</div>
             <div class="v">{{ doc.priority }}</div>
 
+            <div class="k">Type</div>
+            <div class="v">{{ doc.documentType || "-" }}</div>
+
             <div class="k">Main Attachment Type</div>
             <div class="v">
               <span class="docTypeBadge" :class="'docType-' + docTypeClass(mainAttachmentType)">

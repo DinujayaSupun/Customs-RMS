@@ -1,6 +1,7 @@
 package lk.customs.rms.dto;
 
 import lk.customs.rms.entity.Document;
+import lk.customs.rms.enums.DocumentType;
 import lk.customs.rms.enums.Priority;
 import lk.customs.rms.enums.Status;
 import lombok.Builder;
@@ -18,6 +19,7 @@ public class DocumentResponse {
     private String title;
     private LocalDate receivedDate;
     private String companyName;
+    private DocumentType documentType;
     private String visibility;
     private Priority priority;
     private Status status;
@@ -79,6 +81,7 @@ public class DocumentResponse {
                 .title(d.getTitle())
                 .receivedDate(d.getReceivedDate())
                 .companyName(d.getCompanyName())
+                .documentType(d.getDocumentType())
                 .visibility(d.getVisibility())
                 .priority(d.getPriority())
                 .status(d.getStatus())

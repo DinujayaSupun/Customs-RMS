@@ -216,7 +216,8 @@ class DcAutoForwardSchedulerIntegrationTests {
                                   "title": "Auto Forward Test Document",
                                   "receivedDate": "%s",
                                   "companyName": "Integration Co",
-                                  "priority": "HIGH"
+                                  "priority": "HIGH",
+                                  "documentType": "INTERNAL"
                                 }
                                 """.formatted(refPrefix, UUID.randomUUID(), LocalDate.now())))
                 .andExpect(status().isCreated())

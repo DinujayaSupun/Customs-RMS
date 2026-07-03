@@ -1,6 +1,7 @@
 package lk.customs.rms.entity;
 
 import jakarta.persistence.*;
+import lk.customs.rms.enums.DocumentType;
 import lk.customs.rms.enums.Priority;
 import lk.customs.rms.enums.Status;
 import lombok.Getter;
@@ -43,6 +44,11 @@ public class Document {
 
     @Column(name="company_name")
     private String companyName;
+
+    // Internal vs External origin, chosen at creation. Nullable so pre-existing rows validate.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "doc_type", length = 20)
+    private DocumentType documentType;
 
     @Column(name = "visibility", length = 10)
     private String visibility;

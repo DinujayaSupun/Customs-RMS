@@ -702,7 +702,8 @@ class AdminAndWorkflowRoutingIntegrationTests {
                   "title": "%s",
                   "receivedDate": "%s",
                   "companyName": "Integration Co",
-                  "priority": "%s"
+                  "priority": "%s",
+                  "documentType": "INTERNAL"
                 }
                 """.formatted(refPrefix, UUID.randomUUID(), title, receivedDate, priority);
     }

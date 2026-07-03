@@ -40,6 +40,14 @@
           </select>
         </div>
 
+        <div>
+          <div class="labelTop">Type</div>
+          <select v-model="documentType" class="input">
+            <option value="INTERNAL">Internal</option>
+            <option value="EXTERNAL">External</option>
+          </select>
+        </div>
+
         <!-- Main file upload -->
         <div class="span2">
           <div class="labelTop">Document Files (optional)</div>
@@ -166,6 +174,7 @@ const title = ref("");
 const companyName = ref("");
 const receivedDate = ref("");
 const priority = ref("MEDIUM");
+const documentType = ref("INTERNAL");
 
 const busy = ref(false);
 const error = ref("");
@@ -249,6 +258,7 @@ async function submit() {
       companyName: companyName.value.trim(),
       receivedDate: receivedDate.value,
       priority: priority.value,
+      documentType: documentType.value,
     };
 
     const created = await createDocument(payload);

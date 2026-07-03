@@ -2,6 +2,7 @@ package lk.customs.rms.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import lk.customs.rms.enums.DocumentType;
 import lk.customs.rms.enums.Priority;
 import lombok.Getter;
 import lombok.Setter;
@@ -25,4 +26,7 @@ public class CreateDocumentRequest {
 
     @NotNull
     private Priority priority;
+
+    @NotNull
+    private DocumentType documentType;
 }

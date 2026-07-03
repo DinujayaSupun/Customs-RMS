@@ -211,6 +211,47 @@ class SecurityAndWorkflowIntegrationTests {
     }
 
     @Test
+    void createDocumentPersistsDocumentTypeAndRequiresIt() throws Exception {
+        String password = "DocType1234";
+        User admin = createUser("ADMIN", "doc-type-", password);
+        String token = loginAndGetToken(admin.getUsername(), password);
+
+        // An explicit type is persisted and echoed back in the response.
+        String externalDoc = """
+                {
+                  "refNo": "doc-type-ext-%s",
+                  "title": "External doc",
+                  "receivedDate": "%s",
+                  "companyName": "Integration Co",
+                  "priority": "HIGH",
+                  "documentType": "EXTERNAL"
+                }
+                """.formatted(UUID.randomUUID(), LocalDate.now());
+        mockMvc.perform(post("/api/documents")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(externalDoc))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.documentType").value("EXTERNAL"));
+
+        // documentType is required: omitting it fails validation with 400.
+        String missingType = """
+                {
+                  "refNo": "doc-type-missing-%s",
+                  "title": "No type",
+                  "receivedDate": "%s",
+                  "companyName": "Integration Co",
+                  "priority": "LOW"
+                }
+                """.formatted(UUID.randomUUID(), LocalDate.now());
+        mockMvc.perform(post("/api/documents")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(missingType))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void repeatedFailedLoginsFromSameIpAreThrottledWith429() throws Exception {
         String password = "Throttle1234";
         User user = createUser("ADMIN", "throttle-", password);
@@ -565,7 +606,8 @@ class SecurityAndWorkflowIntegrationTests {
                   "title": "%s",
                   "receivedDate": "%s",
                   "companyName": "Integration Co",
-                  "priority": "%s"
+                  "priority": "%s",
+                  "documentType": "INTERNAL"
                 }
                 """.formatted(refPrefix, UUID.randomUUID(), title, receivedDate, priority);
     }

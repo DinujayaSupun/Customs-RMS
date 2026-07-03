@@ -1197,7 +1197,8 @@ class AdminManagementAndPermissionIntegrationTests {
                                   "title": "Audit Search Document",
                                   "receivedDate": "%s",
                                   "companyName": "Integration Co",
-                                  "priority": "HIGH"
+                                  "priority": "HIGH",
+                                  "documentType": "INTERNAL"
                                 }
                                 """.formatted(refNo, LocalDate.now().toString())))
                 .andExpect(status().isCreated())
@@ -1401,7 +1402,8 @@ class AdminManagementAndPermissionIntegrationTests {
                   "title": "%s",
                   "receivedDate": "%s",
                   "companyName": "Integration Co",
-                  "priority": "%s"
+                  "priority": "%s",
+                  "documentType": "INTERNAL"
                 }
                 """.formatted(refPrefix, UUID.randomUUID(), title, receivedDate, priority);
     }
