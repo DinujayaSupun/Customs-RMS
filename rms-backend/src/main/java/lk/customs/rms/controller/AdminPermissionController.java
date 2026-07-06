@@ -127,6 +127,7 @@ public class AdminPermissionController {
         details.put("enabled", config.getEnabled());
         details.put("timeoutMinutes", config.getTimeoutMinutes());
         details.put("receiverUserId", config.getReceiverUserId());
+        details.put("dcReceiverMappingCount", config.getDcReceivers() == null ? 0 : config.getDcReceivers().size());
         details.put("forwardReturnAllowedStatuses", config.getForwardReturnAllowedStatuses());
         details.put("approveRejectButtonsEnabled", config.getApproveRejectButtonsEnabled());
         return details;

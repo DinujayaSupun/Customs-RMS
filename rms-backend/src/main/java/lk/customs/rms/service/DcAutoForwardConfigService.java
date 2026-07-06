@@ -7,6 +7,7 @@ import lk.customs.rms.enums.MovementActionType;
 import lk.customs.rms.enums.Status;
 
 import java.util.List;
+import java.util.Map;
 
 public interface DcAutoForwardConfigService {
     DcAutoForwardConfigResponse getConfig();
@@ -16,4 +17,6 @@ public interface DcAutoForwardConfigService {
     boolean isForwardReturnAllowed(Status status);
     boolean isApproveRejectButtonsEnabled();
     List<MovementActionType> getUndoSendAllowedActions();
+    /** dcUserId -> receiverUserId. Used by the scheduler; a DC missing from the map has no receiver configured. */
+    Map<Long, Long> getDcReceiverMapping();
 }

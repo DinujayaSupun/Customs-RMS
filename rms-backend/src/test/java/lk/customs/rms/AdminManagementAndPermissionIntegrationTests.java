@@ -465,6 +465,104 @@ class AdminManagementAndPermissionIntegrationTests {
     }
 
     @Test
+    void adminConfiguresPerDcAutoForwardReceiverMapping() throws Exception {
+        String password = "Admin1234";
+        User admin = createUser("ADMIN", "dc-map-admin-", password);
+        User dcA = createUser("DC", "dc-map-dcA-", password);
+        User dcB = createUser("DC", "dc-map-dcB-", password);
+        User receiverA = createUser("DDC", "dc-map-receiverA-", password);
+        User receiverB = createUser("SDDC", "dc-map-receiverB-", password);
+        String adminToken = loginAndGetToken(admin.getUsername(), password);
+
+        try {
+            mockMvc.perform(put("/api/admin/permissions/dc-auto-forward")
+                            .header("Authorization", bearer(adminToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "enabled": true,
+                                      "timeoutMinutes": 30,
+                                      "approveRejectButtonsEnabled": true,
+                                      "dcReceivers": [
+                                        { "dcUserId": %d, "receiverUserId": %d },
+                                        { "dcUserId": %d, "receiverUserId": %d }
+                                      ]
+                                    }
+                                    """.formatted(dcA.getId(), receiverA.getId(), dcB.getId(), receiverB.getId())))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.dcReceivers.length()").value(2))
+                    .andExpect(jsonPath("$.dcReceivers[?(@.dcUserId == " + dcA.getId() + ")].receiverUserId").value(hasItem(receiverA.getId().intValue())))
+                    .andExpect(jsonPath("$.dcReceivers[?(@.dcUserId == " + dcB.getId() + ")].receiverUserId").value(hasItem(receiverB.getId().intValue())))
+                    .andExpect(jsonPath("$.dcReceivers[?(@.dcUserId == " + dcA.getId() + ")].receiverName").value(hasItem(receiverA.getFullName())));
+
+            // GET reflects the same mapping.
+            mockMvc.perform(get("/api/admin/permissions/dc-auto-forward")
+                            .header("Authorization", bearer(adminToken)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.dcReceivers.length()").value(2));
+
+            // Re-saving with only dcA present removes the dcB mapping (full replace semantics).
+            mockMvc.perform(put("/api/admin/permissions/dc-auto-forward")
+                            .header("Authorization", bearer(adminToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "enabled": true,
+                                      "timeoutMinutes": 30,
+                                      "approveRejectButtonsEnabled": true,
+                                      "dcReceivers": [
+                                        { "dcUserId": %d, "receiverUserId": %d }
+                                      ]
+                                    }
+                                    """.formatted(dcA.getId(), receiverA.getId())))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.dcReceivers.length()").value(1));
+
+            // A non-DC dcUserId is rejected.
+            mockMvc.perform(put("/api/admin/permissions/dc-auto-forward")
+                            .header("Authorization", bearer(adminToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "enabled": true,
+                                      "timeoutMinutes": 30,
+                                      "approveRejectButtonsEnabled": true,
+                                      "dcReceivers": [ { "dcUserId": %d, "receiverUserId": %d } ]
+                                    }
+                                    """.formatted(admin.getId(), receiverA.getId())))
+                    .andExpect(status().isBadRequest());
+
+            // A receiver without DDC/SDDC role is rejected.
+            mockMvc.perform(put("/api/admin/permissions/dc-auto-forward")
+                            .header("Authorization", bearer(adminToken))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "enabled": true,
+                                      "timeoutMinutes": 30,
+                                      "approveRejectButtonsEnabled": true,
+                                      "dcReceivers": [ { "dcUserId": %d, "receiverUserId": %d } ]
+                                    }
+                                    """.formatted(dcA.getId(), dcB.getId())))
+                    .andExpect(status().isBadRequest());
+        } finally {
+            // Clean up through the real API (enabled=false allows an empty dcReceivers list),
+            // rather than a raw repository delete call outside of a managed transaction.
+            mockMvc.perform(put("/api/admin/permissions/dc-auto-forward")
+                    .header("Authorization", bearer(adminToken))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("""
+                            {
+                              "enabled": false,
+                              "timeoutMinutes": 30,
+                              "approveRejectButtonsEnabled": true,
+                              "dcReceivers": []
+                            }
+                            """));
+        }
+    }
+
+    @Test
     void defaultRolePermissionMatrixMatchesSeededConfiguration() {
         for (String roleName : allRoleNames().toList()) {
             Role role = roleRepository.findByRoleName(roleName)

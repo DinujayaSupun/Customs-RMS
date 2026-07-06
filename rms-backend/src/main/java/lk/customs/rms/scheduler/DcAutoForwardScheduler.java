@@ -20,6 +20,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,26 +59,31 @@ public class DcAutoForwardScheduler {
     @Transactional
     public void processTimedOutDcDocuments() {
         DcAutoForwardConfig config = dcAutoForwardConfigService.getOrCreateEntity();
-        if (!config.isEnabled() || config.getReceiverUserId() == null) {
+        if (!config.isEnabled()) {
             return;
         }
 
-        User receiver = userRepository.findById(config.getReceiverUserId()).orElse(null);
-        if (receiver == null || !Boolean.TRUE.equals(receiver.getIsActive()) || receiver.getRole() == null) {
-            return;
-        }
-        String receiverRole = receiver.getRole().getRoleName();
-        if (!"DDC".equalsIgnoreCase(receiverRole) && !"SDDC".equalsIgnoreCase(receiverRole)) {
+        // dcUserId -> receiverUserId, as configured by the admin. Each DC can point at a
+        // different DDC/SDDC receiver; a DC missing from this map has no receiver configured.
+        Map<Long, Long> dcReceiverMapping = dcAutoForwardConfigService.getDcReceiverMapping();
+        if (dcReceiverMapping.isEmpty()) {
             return;
         }
 
         List<User> dcUsers = userRepository.findByIsActiveTrueAndRole_RoleNameOrderByFullNameAsc("DC");
         if (dcUsers.isEmpty()) return;
-        List<Long> dcUserIds = dcUsers.stream().map(User::getId).toList();
+        List<Long> dcUserIds = dcUsers.stream()
+                .map(User::getId)
+                .filter(dcReceiverMapping::containsKey)
+                .toList();
+        if (dcUserIds.isEmpty()) return;
 
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime cutoffAt = now.minusMinutes(config.getTimeoutMinutes());
         int processed = 0;
+        // Cache resolved receivers within this run so a shared receiver across many DCs is
+        // validated (active + DDC/SDDC role) only once, not once per document.
+        Map<Long, User> validatedReceiversByDcUser = new HashMap<>();
 
         while (processed < AUTO_FORWARD_MAX_PER_RUN) {
             int remaining = AUTO_FORWARD_MAX_PER_RUN - processed;
@@ -88,10 +94,31 @@ public class DcAutoForwardScheduler {
             if (candidates.isEmpty()) return;
 
             for (Document doc : candidates) {
+                Long dcUserId = doc.getCurrentOwnerUserId();
+                User receiver = validatedReceiversByDcUser.computeIfAbsent(dcUserId,
+                        id -> resolveValidReceiver(dcReceiverMapping.get(id)));
+                if (receiver == null) {
+                    processed += 1; // count towards the run's cap even when skipped, to bound one run's work
+                    continue;
+                }
                 autoForwardDocument(doc, receiver.getId(), config.getTimeoutMinutes(), now);
                 processed += 1;
             }
         }
+    }
+
+    /** Null if the configured receiver no longer exists, is inactive, or is no longer DDC/SDDC. */
+    private User resolveValidReceiver(Long receiverUserId) {
+        if (receiverUserId == null) return null;
+        User receiver = userRepository.findById(receiverUserId).orElse(null);
+        if (receiver == null || !Boolean.TRUE.equals(receiver.getIsActive()) || receiver.getRole() == null) {
+            return null;
+        }
+        String receiverRole = receiver.getRole().getRoleName();
+        if (!"DDC".equalsIgnoreCase(receiverRole) && !"SDDC".equalsIgnoreCase(receiverRole)) {
+            return null;
+        }
+        return receiver;
     }
 
     private void autoForwardDocument(Document doc, Long receiverUserId, int timeoutMinutes, LocalDateTime now) {

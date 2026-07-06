@@ -421,7 +421,7 @@
     </div>
 
     <div v-if="permissionsModalOpen" class="overlay">
-      <div class="modal">
+      <div class="modal permsModal">
         <div class="modalHead">
           <div>
             <div class="modalTitle">Permissions</div>
@@ -430,34 +430,75 @@
           <button class="btn btn-sm" @click="closePermissionsModal">Close</button>
         </div>
 
-        <div class="modalBody">
+        <div class="modalBody permsModalBody">
           <p class="permsHint">
-            Each permission inherits from the role by default. Override it for this user only:
-            <b>Grant</b> adds it, <b>Revoke</b> removes it, regardless of the role.
+            Each permission inherits from the role by default. Override it for this user only —
+            <b>Grant</b> adds it, <b>Revoke</b> removes it — regardless of the role.
           </p>
-          <div v-if="permissionsLoading" class="permsLoading">Loading…</div>
-          <table v-else class="permsTable">
-            <thead>
-              <tr><th>Permission</th><th>Role default</th><th>Override</th></tr>
-            </thead>
-            <tbody>
-              <tr v-for="entry in permissionsEntries" :key="entry.permission">
-                <td class="permName">{{ entry.permission }}</td>
-                <td>
-                  <span :class="entry.roleDefault ? 'permYes' : 'permNo'">
-                    {{ entry.roleDefault ? "Allowed" : "Denied" }}
-                  </span>
-                </td>
-                <td>
-                  <select v-model="entry.mode" class="input permSelect">
-                    <option value="INHERIT">Inherit ({{ entry.roleDefault ? "Allowed" : "Denied" }})</option>
-                    <option value="GRANT">Grant</option>
-                    <option value="REVOKE">Revoke</option>
-                  </select>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+
+          <div v-if="permissionsLoading" class="permsLoading">
+            <span class="spinner" aria-hidden="true"></span> Loading permissions…
+          </div>
+
+          <template v-else>
+            <div class="permsToolbar">
+              <input
+                v-model="permissionsFilter"
+                class="input permsFilterInput"
+                type="search"
+                placeholder="Filter permissions…"
+              />
+              <div class="permsSummary">
+                <span v-if="permsOverrideCount" class="permsSummaryBadge">
+                  {{ permsOverrideCount }} override{{ permsOverrideCount === 1 ? "" : "s" }}
+                </span>
+                <span class="permsSummaryTotal">{{ filteredPermissionsEntries.length }} / {{ permissionsEntries.length }}</span>
+              </div>
+            </div>
+
+            <div class="permsTableWrap">
+              <table class="permsTable">
+                <thead>
+                  <tr>
+                    <th class="permsColName">Permission</th>
+                    <th class="permsColRole">Role default</th>
+                    <th class="permsColOverride">Override</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="entry in filteredPermissionsEntries"
+                    :key="entry.permission"
+                    :class="{ permRowOverridden: entry.mode !== 'INHERIT' }"
+                  >
+                    <td class="permName">{{ formatPermissionName(entry.permission) }}</td>
+                    <td>
+                      <span class="permBadge" :class="entry.roleDefault ? 'permBadgeYes' : 'permBadgeNo'">
+                        {{ entry.roleDefault ? "Allowed" : "Denied" }}
+                      </span>
+                    </td>
+                    <td>
+                      <select
+                        v-model="entry.mode"
+                        class="input permSelect"
+                        :class="{
+                          permSelectGrant: entry.mode === 'GRANT',
+                          permSelectRevoke: entry.mode === 'REVOKE',
+                        }"
+                      >
+                        <option value="INHERIT">Inherit ({{ entry.roleDefault ? "Allowed" : "Denied" }})</option>
+                        <option value="GRANT">Grant</option>
+                        <option value="REVOKE">Revoke</option>
+                      </select>
+                    </td>
+                  </tr>
+                  <tr v-if="!filteredPermissionsEntries.length">
+                    <td colspan="3" class="permsEmptyRow">No permissions match "{{ permissionsFilter }}".</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
         </div>
 
         <div class="modalFoot">
@@ -717,7 +758,23 @@ const permissionsModalOpen = ref(false);
 const permissionsUser = ref(null);
 const permissionsEntries = ref([]);
 const permissionsLoading = ref(false);
+const permissionsFilter = ref("");
 const permissionsUserLabel = computed(() => formatAdminUserLabel(permissionsUser.value));
+const permsOverrideCount = computed(
+  () => permissionsEntries.value.filter((e) => e.mode !== "INHERIT").length
+);
+const filteredPermissionsEntries = computed(() => {
+  const q = permissionsFilter.value.trim().toLowerCase();
+  if (!q) return permissionsEntries.value;
+  return permissionsEntries.value.filter((e) => e.permission.toLowerCase().includes(q));
+});
+
+function formatPermissionName(name) {
+  return String(name || "")
+    .split("_")
+    .map((w) => w.charAt(0) + w.slice(1).toLowerCase())
+    .join(" ");
+}
 const deactivateTargetUserLabel = computed(() => formatAdminUserLabel(deactivateTargetUser.value));
 const deleteTargetUserLabel = computed(() => formatAdminUserLabel(deleteTargetUser.value));
 const deleteRequiresTypedConfirmation = computed(() => deleteTargetUser.value?.role === "ADMIN");
@@ -960,6 +1017,7 @@ function closeResetPasswordModal() {
 function openPermissionsModal(u) {
   permissionsUser.value = u;
   permissionsEntries.value = [];
+  permissionsFilter.value = "";
   permissionsModalOpen.value = true;
   loadUserPermissions(u.id);
 }
@@ -986,6 +1044,7 @@ function closePermissionsModal() {
   permissionsModalOpen.value = false;
   permissionsUser.value = null;
   permissionsEntries.value = [];
+  permissionsFilter.value = "";
 }
 
 async function savePermissions() {
@@ -2056,6 +2115,199 @@ h2 {
   justify-content:flex-end;
   gap:8px;
   background:#f8fafc;
+}
+
+/* Permissions modal */
+.permsModal {
+  max-width:640px;
+}
+
+.permsModalBody {
+  padding:14px 16px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+.permsHint {
+  margin:0;
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid #dbeafe;
+  background:linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+  color:#334155;
+  font-size:12.5px;
+  line-height:1.5;
+}
+
+.permsHint b {
+  color:#0f172a;
+}
+
+.permsLoading {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:24px 4px;
+  color:#64748b;
+  font-size:13px;
+}
+
+.permsLoading .spinner {
+  width:18px;
+  height:18px;
+  border:2px solid #e2e8f0;
+  border-top-color:#2563eb;
+  border-radius:50%;
+  animation:permsSpin 0.8s linear infinite;
+}
+
+@keyframes permsSpin {
+  to { transform: rotate(360deg); }
+}
+
+.permsToolbar {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  flex-wrap:wrap;
+}
+
+.permsFilterInput {
+  height:36px;
+  max-width:260px;
+  font-size:13px;
+}
+
+.permsSummary {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size:12px;
+  color:#64748b;
+  white-space:nowrap;
+}
+
+.permsSummaryBadge {
+  padding:3px 9px;
+  border-radius:999px;
+  background:#eff6ff;
+  border:1px solid #bfdbfe;
+  color:#1d4ed8;
+  font-weight:800;
+  font-size:11px;
+}
+
+.permsSummaryTotal {
+  font-variant-numeric: tabular-nums;
+}
+
+.permsTableWrap {
+  border:1px solid #e2e8f0;
+  border-radius:12px;
+  overflow:auto;
+  max-height:min(52vh, 440px);
+}
+
+.permsTable {
+  width:100%;
+  border-collapse:collapse;
+  table-layout:fixed;
+}
+
+.permsColName { width:auto; }
+.permsColRole { width:110px; }
+.permsColOverride { width:180px; }
+
+.permsTable th,
+.permsTable td {
+  padding:9px 10px;
+  border-bottom:1px solid #eef2f7;
+  text-align:left;
+  vertical-align:middle;
+}
+
+.permsTable thead th {
+  position:sticky;
+  top:0;
+  z-index:1;
+  background:#f8fafc;
+  font-size:11px;
+  color:#475569;
+  text-transform:uppercase;
+  letter-spacing:0.04em;
+  border-bottom:1px solid #e5e7eb;
+}
+
+.permsTable tbody tr:last-child td {
+  border-bottom:none;
+}
+
+.permsTable tbody tr:hover {
+  background:#f8fafc;
+}
+
+.permRowOverridden {
+  background:#fffbeb;
+}
+
+.permRowOverridden:hover {
+  background:#fef3c7;
+}
+
+.permName {
+  font-size:13px;
+  font-weight:600;
+  color:#0f172a;
+  overflow-wrap:anywhere;
+}
+
+.permBadge {
+  display:inline-block;
+  padding:3px 9px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:800;
+}
+
+.permBadgeYes {
+  background:#ecfdf5;
+  border:1px solid #a7f3d0;
+  color:#047857;
+}
+
+.permBadgeNo {
+  background:#f1f5f9;
+  border:1px solid #e2e8f0;
+  color:#64748b;
+}
+
+.permSelect {
+  height:32px;
+  font-size:12.5px;
+  padding:0 8px;
+}
+
+.permSelectGrant {
+  border-color:#a7f3d0;
+  background:#ecfdf5;
+  color:#047857;
+  font-weight:700;
+}
+
+.permSelectRevoke {
+  border-color:#fecaca;
+  background:#fff1f2;
+  color:#b91c1c;
+  font-weight:700;
+}
+
+.permsEmptyRow {
+  text-align:center;
+  color:#94a3b8;
+  font-size:13px;
+  padding:20px 10px;
 }
 
 @media (max-width: 1100px) {

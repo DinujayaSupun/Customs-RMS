@@ -13,6 +13,9 @@ public class DcAutoForwardConfigResponse {
     private Long receiverUserId;
     private String receiverName;
     private String receiverRole;
+    // Per-DC receiver mapping: which DDC/SDDC each individual DC's timed-out documents go to.
+    // Replaces the single receiverUserId above when populated (kept for backward compatibility).
+    private List<DcAutoForwardReceiverEntry> dcReceivers;
     private List<String> forwardReturnAllowedStatuses;
     private Boolean approveRejectButtonsEnabled;
     private Boolean undoSendEnabled;

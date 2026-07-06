@@ -26,7 +26,9 @@
         <div class="section">
           <div class="sectionHead">
             <h3>DC Auto Forward</h3>
-            <p>If a document is forwarded to DC and DC does not open it in time, auto-forward it to the configured DDC/SDDC user.</p>
+            <p>If a document is forwarded to a DC and that DC does not open it in time, auto-forward it to a
+              configured DDC/SDDC receiver. Each DC can have its own receiver — useful when there is more
+              than one DC.</p>
           </div>
 
           <div class="configGrid">
@@ -47,15 +49,35 @@
                 @input="markConfigDirty"
               />
             </div>
+          </div>
 
-            <div class="controlBlock">
-              <label>Auto-forward receiver (DDC/SDDC)</label>
-              <select class="input" :disabled="!dcAutoForwardEnabled" v-model="dcReceiverUserId" @change="markConfigDirty">
-                <option :value="null">-- Select receiver --</option>
-                <option v-for="u in eligibleReceivers" :key="u.id" :value="u.id">
-                  {{ u.fullName }} ({{ u.role }})
-                </option>
-              </select>
+          <div class="dcReceiverSection">
+            <label class="dcReceiverLabel">Auto-forward receiver by DC</label>
+            <p v-if="!activeDcUsers.length" class="dcReceiverEmpty">No active DC users found.</p>
+            <div v-else class="dcReceiverTableWrap">
+              <table class="dcReceiverTable">
+                <thead>
+                  <tr><th>DC</th><th>Receiver (DDC/SDDC)</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="dc in activeDcUsers" :key="dc.id">
+                    <td class="dcReceiverName">{{ dc.fullName }}</td>
+                    <td>
+                      <select
+                        class="input"
+                        :disabled="!dcAutoForwardEnabled"
+                        :value="dcReceiverMap[dc.id] != null ? String(dcReceiverMap[dc.id]) : ''"
+                        @change="setDcReceiver(dc.id, $event.target.value)"
+                      >
+                        <option value="">-- No receiver (skipped) --</option>
+                        <option v-for="u in eligibleReceivers" :key="u.id" :value="u.id">
+                          {{ u.fullName }} ({{ u.role }})
+                        </option>
+                      </select>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -291,7 +313,8 @@ const hasUnsavedChanges = computed(() => dirty.value || configDirty.value);
 const allUsers = ref([]);
 const dcAutoForwardEnabled = ref(false);
 const dcTimeoutMinutes = ref(60);
-const dcReceiverUserId = ref(null);
+// dcUserId -> receiverUserId (number) or null/undefined for "no receiver configured".
+const dcReceiverMap = ref({});
 const workflowStatuses = ["PENDING", "IN_PROGRESS", "RETURNED", "APPROVED", "REJECTED", "ISSUED"];
 const forwardReturnAllowedStatuses = ref(["PENDING", "IN_PROGRESS", "RETURNED"]);
 const approveRejectButtonsEnabled = ref(true);
@@ -306,6 +329,9 @@ const undoSendShowExpiredInfo = ref(true);
 
 const eligibleReceivers = computed(() =>
   allUsers.value.filter((u) => ["DDC", "SDDC"].includes(String(u.role || "").toUpperCase()))
+);
+const activeDcUsers = computed(() =>
+  allUsers.value.filter((u) => String(u.role || "").toUpperCase() === "DC")
 );
 
 const permissionGroupDefinitions = [
@@ -454,6 +480,12 @@ function markConfigDirty() {
 
 function onEnabledChange(enabled) {
   dcAutoForwardEnabled.value = !!enabled;
+  markConfigDirty();
+}
+
+function setDcReceiver(dcUserId, rawValue) {
+  const receiverId = rawValue === "" || rawValue === null || rawValue === undefined ? null : Number(rawValue);
+  dcReceiverMap.value = { ...dcReceiverMap.value, [dcUserId]: receiverId };
   markConfigDirty();
 }
 
@@ -623,7 +655,9 @@ async function load() {
     allUsers.value = Array.isArray(users) ? users : [];
     dcAutoForwardEnabled.value = !!config?.enabled;
     dcTimeoutMinutes.value = Number(config?.timeoutMinutes || 60);
-    dcReceiverUserId.value = config?.receiverUserId == null ? null : Number(config.receiverUserId);
+    dcReceiverMap.value = Object.fromEntries(
+      (Array.isArray(config?.dcReceivers) ? config.dcReceivers : []).map((entry) => [Number(entry.dcUserId), Number(entry.receiverUserId)])
+    );
     forwardReturnAllowedStatuses.value = Array.isArray(config?.forwardReturnAllowedStatuses) && config.forwardReturnAllowedStatuses.length > 0
       ? workflowStatuses.filter((statusName) => config.forwardReturnAllowedStatuses.includes(statusName))
       : ["PENDING", "IN_PROGRESS", "RETURNED"];
@@ -657,8 +691,11 @@ async function save() {
     if (!Number.isFinite(timeout) || timeout < 1 || timeout > 10080) {
       throw new Error("Timeout must be between 1 and 10080 minutes.");
     }
-    if (dcAutoForwardEnabled.value && !dcReceiverUserId.value) {
-      throw new Error("Select a DDC/SDDC receiver when DC auto forward is enabled.");
+    const dcReceiverEntries = Object.entries(dcReceiverMap.value)
+      .filter(([, receiverUserId]) => receiverUserId !== null && receiverUserId !== undefined)
+      .map(([dcUserId, receiverUserId]) => ({ dcUserId: Number(dcUserId), receiverUserId: Number(receiverUserId) }));
+    if (dcAutoForwardEnabled.value && dcReceiverEntries.length === 0) {
+      throw new Error("Configure at least one DC receiver mapping when DC auto forward is enabled.");
     }
     if (forwardReturnAllowedStatuses.value.length === 0) {
       throw new Error("Select at least one status where Forward/Return is allowed.");
@@ -688,7 +725,7 @@ async function save() {
       dcAutoForwardConfig: {
         enabled: !!dcAutoForwardEnabled.value,
         timeoutMinutes: timeout,
-        receiverUserId: dcReceiverUserId.value == null ? null : Number(dcReceiverUserId.value),
+        dcReceivers: dcReceiverEntries,
         forwardReturnAllowedStatuses: forwardReturnAllowedStatuses.value,
         approveRejectButtonsEnabled: !!approveRejectButtonsEnabled.value,
         undoSendEnabled: !!undoSendEnabled.value,
@@ -710,7 +747,9 @@ async function save() {
 
     dcAutoForwardEnabled.value = !!updatedConfig?.enabled;
     dcTimeoutMinutes.value = Number(updatedConfig?.timeoutMinutes || timeout);
-    dcReceiverUserId.value = updatedConfig?.receiverUserId == null ? null : Number(updatedConfig.receiverUserId);
+    dcReceiverMap.value = Object.fromEntries(
+      (Array.isArray(updatedConfig?.dcReceivers) ? updatedConfig.dcReceivers : []).map((entry) => [Number(entry.dcUserId), Number(entry.receiverUserId)])
+    );
     forwardReturnAllowedStatuses.value = Array.isArray(updatedConfig?.forwardReturnAllowedStatuses) && updatedConfig.forwardReturnAllowedStatuses.length > 0
       ? workflowStatuses.filter((statusName) => updatedConfig.forwardReturnAllowedStatuses.includes(statusName))
       : forwardReturnAllowedStatuses.value;
@@ -870,7 +909,7 @@ h2 {
 .configGrid {
   margin-top: 12px;
   display: grid;
-  grid-template-columns: 180px 1fr 1fr;
+  grid-template-columns: 180px 1fr;
   gap: 12px;
   align-items: end;
 }
@@ -879,6 +918,68 @@ h2 {
   height: 40px;
   display: inline-flex;
   align-items: center;
+}
+
+.dcReceiverSection {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #dbeafe;
+}
+
+.dcReceiverLabel {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 8px;
+}
+
+.dcReceiverEmpty {
+  margin: 0;
+  font-size: 12.5px;
+  color: #94a3b8;
+}
+
+.dcReceiverTableWrap {
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  overflow: auto;
+  max-height: 320px;
+  background: #fff;
+}
+
+.dcReceiverTable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.dcReceiverTable th,
+.dcReceiverTable td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #eef2f7;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.dcReceiverTable th {
+  position: sticky;
+  top: 0;
+  background: #f8fbff;
+  font-size: 11px;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dcReceiverTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.dcReceiverName {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
 }
 
 .statusRuleGrid {
