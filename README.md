@@ -47,6 +47,8 @@ control and real-time notifications.
 - **Workflow actions** — forward, return, approve, reject, mark done (issue), and reopen.
 - **Forward to multiple recipients** — a primary "Report At" owner plus **CC** and **BCC** recipients,
   each with their own view/attachment/minute permissions.
+- **Recipient groups** — WhatsApp-style group forwarding: forward a document to a group and any
+  group admin can act on it, while other members stay copied in (CC-only, no action rights).
 - **Minutes / remarks** timeline per document.
 - **Attachments** — upload, download, versioning, and soft-delete, stored outside the web root.
 - **Undo Send** — a short window to recall a forward/return before the recipient opens it.
@@ -144,6 +146,7 @@ The same pattern applies across modules:
 | Admin users | `UsersPage.vue` | `auth.api.js` | `AdminUserController` | `AdminUserServiceImpl` | `UserRepository`, `RoleRepository` |
 | Permissions | `PermissionsPage.vue` | `permissions.api.js` | `AdminPermissionController` | `PermissionServiceImpl`, `DcAutoForwardConfigServiceImpl` | `RolePermissionRepository`, `dc_auto_forward_config` |
 | Notifications | `App.vue`, `services/realtimeNotifications.js` | WebSocket | `NotificationWebSocketHandler` | `RealtimeNotificationService` | in-memory session registry |
+| Recipient groups | `GroupsPage.vue` | `auth.api.js` | `RecipientGroupController` | `RecipientGroupServiceImpl` | `RecipientGroupRepository`, `recipient_groups` |
 
 Layer responsibilities:
 
@@ -170,6 +173,7 @@ audit logging, and focused tests.
 | `/api/documents/{id}/forward` · `/return` · `/approve` · `/reject` · `/issue` · `/reopen` · `/undo-send` | Workflow actions |
 | `/api/documents/{id}/recipients` · `/remarks` · `/movements` · `/attachments` | Recipients, minutes, history, files |
 | `/api/attachments/{id}` | Download / delete an attachment |
+| `/api/groups` | Recipient group CRUD, membership, and held-documents view |
 | `/api/audit-logs` | Audit log search, filter options, CSV export |
 | `/api/admin/users` | Admin user management (incl. merge, bulk ops, CSV export) |
 | `/api/admin/permissions` | Permission matrix and DC auto-forward config |
@@ -306,8 +310,8 @@ same `APP_CORS_ALLOWED_ORIGINS` setting as HTTP CORS.
 
 | Suite | Count | Command |
 |-------|-------|---------|
-| Backend (JUnit 5, H2) | 183 | `cd rms-backend; .\mvnw.cmd test` |
-| Frontend unit (Vitest) | 83 | `npm --prefix rms-frontend run test:unit` |
+| Backend (JUnit 5, H2) | 199 | `cd rms-backend; .\mvnw.cmd test` |
+| Frontend unit (Vitest) | 100 | `npm --prefix rms-frontend run test:unit` |
 | Frontend E2E (Playwright) | 19 | `cd rms-frontend; npm run test:e2e` |
 
 Backend integration tests use the `test` profile with an in-memory H2 database in MySQL
