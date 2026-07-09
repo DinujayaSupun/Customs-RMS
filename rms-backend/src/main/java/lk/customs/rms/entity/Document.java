@@ -67,6 +67,12 @@ public class Document {
     @Column(name="current_owner_user_id", nullable = false)
     private Long currentOwnerUserId;
 
+    // Set when the document is held by a group (group-held). Null for person-held documents.
+    // When set, current_owner_user_id is a compatibility anchor (a group admin); acting is governed
+    // by group-admin membership, not this single user. See DocumentServiceImpl#canActOnDocument.
+    @Column(name = "current_owner_group_id")
+    private Long currentOwnerGroupId;
+
     @Column(name="created_at", nullable = false)
     private LocalDateTime createdAt;
 

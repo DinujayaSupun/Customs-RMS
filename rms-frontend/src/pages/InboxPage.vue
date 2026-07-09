@@ -163,6 +163,11 @@
                   aria-hidden="true"
                 />
               </span>
+              <span
+                v-if="d.documentType"
+                class="docKindBadge"
+                :class="'docKind-' + d.documentType.toLowerCase()"
+              >{{ d.documentType === "EXTERNAL" ? "Ext" : "Int" }}</span>
             </div>
 
             <div class="mailCenter">
@@ -344,6 +349,7 @@
               <div class="previewPills">
                 <span class="pill" :class="'pill-'+previewDoc?.status">{{ displayStatusLabel(previewDoc?.status) || '-' }}</span>
                 <span class="pill" :class="'pill-'+previewDoc?.priority">{{ previewDoc?.priority || '-' }}</span>
+                <span v-if="previewDoc?.documentType" class="docKindBadge" :class="'docKind-' + previewDoc.documentType.toLowerCase()">{{ previewDoc.documentType === "EXTERNAL" ? "External" : "Internal" }}</span>
               </div>
 
               <div class="previewGrid">
@@ -352,7 +358,7 @@
                 <div><span class="label">Days Open</span>{{ previewDaysOpen }}</div>
                 <div><span class="label">Viewing File</span>{{ selectedPreviewAttachment?.fileName || selectedPreviewAttachmentType }}</div>
                 <div><span class="label">Attachments</span>{{ previewAttachmentCount }}</div>
-                <div><span class="label">Report At</span>{{ ownerLabel(previewDoc?.currentOwnerUserId, previewDoc?.currentOwnerName) }}</div>
+                <div><span class="label">Report At</span>{{ ownerLabel(previewDoc?.currentOwnerUserId, previewDoc?.currentOwnerName, null, previewDoc?.currentOwnerGroupId) }}</div>
               </div>
 
               <div v-if="previewExtrasError" class="note noteWarn">{{ previewExtrasError }}</div>
@@ -488,8 +494,75 @@
               ></textarea>
             </div>
 
-            <div class="formRow">
+            <div v-if="canForwardSelectedDoc" class="formRow">
               <label class="label">Forward To</label>
+              <div class="modeToggle">
+                <button
+                  type="button"
+                  class="modeToggleBtn"
+                  :class="{ active: forwardTargetMode === 'person' }"
+                  :disabled="forwardBusy"
+                  @click="forwardTargetMode = 'person'"
+                >
+                  Person
+                </button>
+                <button
+                  type="button"
+                  class="modeToggleBtn"
+                  :class="{ active: forwardTargetMode === 'group' }"
+                  :disabled="forwardBusy"
+                  @click="forwardTargetMode = 'group'"
+                >
+                  Group
+                </button>
+              </div>
+            </div>
+
+            <div v-if="canForwardSelectedDoc && forwardTargetMode === 'group'" class="formRow">
+              <label class="label">Forward To Group</label>
+              <div class="forwardSearchWrap">
+                <input
+                  v-model="forwardGroupSearch"
+                  class="input"
+                  :disabled="forwardBusy"
+                  placeholder="Search groups by name or member..."
+                  spellcheck="false"
+                  @focus="forwardGroupSearchFocused = true"
+                  @blur="forwardGroupSearchFocused = false"
+                  @keydown.escape="forwardGroupSearchFocused = false"
+                />
+
+                <div v-if="showForwardGroupSearchDropdown" class="forwardSearchDropdown">
+                  <button
+                    v-for="g in filteredForwardGroups"
+                    :key="g.id"
+                    type="button"
+                    class="forwardSearchOption"
+                    :class="{ active: Number(g.id) === Number(toGroupId) }"
+                    @mousedown.prevent="selectForwardGroup(g)"
+                  >
+                    <span class="groupOptionTop">
+                      <span class="groupAvatarSm" :style="{ background: g.color || '#64748b' }">{{ groupInitials(g.name) }}</span>
+                      <span class="forwardUserName">{{ g.name }}</span>
+                    </span>
+                    <span class="forwardUserMeta">{{ g.adminCount }} admin{{ g.adminCount === 1 ? "" : "s" }} · {{ g.memberCount }} member{{ g.memberCount === 1 ? "" : "s" }}</span>
+                  </button>
+                  <div v-if="filteredForwardGroups.length === 0" class="forwardSearchEmpty">No matching groups</div>
+                </div>
+              </div>
+
+              <div v-if="selectedForwardGroup" class="forwardSelected">
+                <span>Selected group</span>
+                <span class="groupOptionTop">
+                  <span class="groupAvatarSm" :style="{ background: selectedForwardGroup.color || '#64748b' }">{{ groupInitials(selectedForwardGroup.name) }}</span>
+                  <b>{{ selectedForwardGroup.name }}</b>
+                </span>
+              </div>
+              <div v-else class="forwardSelected muted">Select a group before forwarding.</div>
+            </div>
+
+            <div v-if="!(canForwardSelectedDoc && forwardTargetMode === 'group')" class="formRow">
+              <label class="label">{{ canForwardSelectedDoc ? 'Forward To Person' : 'Forward To' }}</label>
               <div class="forwardSearchWrap">
                 <input
                   v-model="forwardUserSearch"
@@ -573,7 +646,7 @@
             <button class="btn" :disabled="forwardBusy || !canReturnSelectedDoc || !forwardToUserId" @click="submitReturn">
               {{ forwardBusy ? 'Returning...' : 'Return' }}
             </button>
-            <button class="btn btn-primary" :disabled="forwardBusy || !canForwardSelectedDoc || !forwardToUserId" @click="submitForward">
+            <button class="btn btn-primary" :disabled="forwardBusy || !canForwardSelectedDoc || (forwardTargetMode === 'group' ? !toGroupId : !forwardToUserId)" @click="submitForward">
               {{ forwardBusy ? 'Forwarding...' : 'Forward' }}
             </button>
           </div>
@@ -592,7 +665,8 @@ import HoverHint from "../components/HoverHint.vue";
 import RecipientChipPicker from "../components/RecipientChipPicker.vue";
 import { useToast } from "../composables/useToast";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
-import { listUsers } from "../api/auth.api";
+import { listUsers, listGroups } from "../api/auth.api";
+import { buildForwardPayload, filterGroupsBySearch, initialsFor } from "../utils/groupsLogic";
 import { getAttachmentViewerState, resolveAttachmentTypeFromName } from "../utils/attachmentViewerLogic";
 import { formatDateSafe, formatDateTimeSafe } from "../utils/dateFormat";
 import {
@@ -632,6 +706,7 @@ const viewFilter = ref("all");
 const inboxMode = ref("received");
 const authTick = ref(0);
 const users = ref([]);
+const groups = ref([]);
 const forwardReturnAllowedStatuses = ref(["PENDING", "IN_PROGRESS", "RETURNED"]);
 const page = ref(0);
 const pageSize = ref(25);
@@ -664,6 +739,10 @@ const forwardUserSearch = ref("");
 const forwardSearchFocused = ref(false);
 const forwardCcUserIds = ref([]);
 const forwardBccUserIds = ref([]);
+const forwardTargetMode = ref("person");
+const toGroupId = ref(null);
+const forwardGroupSearch = ref("");
+const forwardGroupSearchFocused = ref(false);
 const forwardAttachments = ref([]);
 const forwardAttachmentsLoading = ref(false);
 const forwardAttachmentsError = ref("");
@@ -913,6 +992,8 @@ function undoSendInfo(doc) {
 }
 
 function sentToLabel(doc) {
+  if (doc?.toGroupId) return `Group: ${doc.toGroupName || "a group"}`;
+
   const recipientText = sentRecipientSummaryText(doc);
   if (recipientText) return recipientText.replace(/^To:\s*/i, "");
 
@@ -1008,7 +1089,11 @@ async function openAttachmentInNewTab(attachment) {
   }
 }
 
-function ownerLabel(userId, name, role) {
+function ownerLabel(userId, name, role, groupId) {
+  if (groupId) {
+    const group = groups.value.find((g) => Number(g.id) === Number(groupId));
+    return `Held by ${group ? group.name : "a group"}`;
+  }
   return formatUserLabelFromParts({ userId, name, role }, users.value);
 }
 
@@ -1078,6 +1163,23 @@ watch(
 
     if (resolved.targetId === resolved.autoSelectedTargetId) {
       forwardUserSearch.value = "";
+    }
+  },
+  { immediate: true }
+);
+
+// Default to the first group when switching into group mode, and forget the selection when
+// leaving it, so re-entering group mode doesn't carry over a stale, unrelated pick.
+watch(
+  [forwardTargetMode, groups],
+  ([mode, list]) => {
+    if (mode !== "group") {
+      toGroupId.value = null;
+      forwardGroupSearch.value = "";
+      return;
+    }
+    if (!toGroupId.value && list.length > 0) {
+      selectForwardGroup(list[0]);
     }
   },
   { immediate: true }
@@ -1197,6 +1299,14 @@ async function loadUsers() {
     users.value = await listUsers();
   } catch {
     users.value = [];
+  }
+}
+
+async function loadGroups() {
+  try {
+    groups.value = await listGroups();
+  } catch {
+    groups.value = [];
   }
 }
 
@@ -1365,6 +1475,10 @@ function resetForwardForm() {
   forwardSearchFocused.value = false;
   forwardCcUserIds.value = [];
   forwardBccUserIds.value = [];
+  forwardTargetMode.value = "person";
+  toGroupId.value = null;
+  forwardGroupSearch.value = "";
+  forwardGroupSearchFocused.value = false;
   forwardMovements.value = [];
   autoSelectedForwardTargetId.value = null;
   forwardAttachments.value = [];
@@ -1438,6 +1552,27 @@ function selectForwardUser(user) {
   autoSelectedForwardTargetId.value = null;
 }
 
+const selectedForwardGroup = computed(() => {
+  return groups.value.find((g) => Number(g.id) === Number(toGroupId.value)) || null;
+});
+
+const filteredForwardGroups = computed(() => filterGroupsBySearch(groups.value, forwardGroupSearch.value));
+
+const showForwardGroupSearchDropdown = computed(() => {
+  return forwardGroupSearchFocused.value && (forwardGroupSearch.value.trim() || filteredForwardGroups.value.length > 0);
+});
+
+function selectForwardGroup(group) {
+  if (!group) return;
+  toGroupId.value = Number(group.id);
+  forwardGroupSearch.value = group.name;
+  forwardGroupSearchFocused.value = false;
+}
+
+function groupInitials(name) {
+  return initialsFor(name);
+}
+
 function uniqueNumericIds(values) {
   return [...new Set((values || [])
     .map(Number)
@@ -1474,7 +1609,12 @@ async function submitForward() {
     return;
   }
 
-  if (!forwardToUserId.value) {
+  const toGroup = forwardTargetMode.value === "group";
+  if (toGroup && !toGroupId.value) {
+    error.value = "Please select a group to forward.";
+    return;
+  }
+  if (!toGroup && !forwardToUserId.value) {
     error.value = "Please select a user to forward.";
     return;
   }
@@ -1494,13 +1634,15 @@ async function submitForward() {
 
   forwardBusy.value = true;
   try {
-    await forwardDocument(documentId, {
-      toUserId: Number(forwardToUserId.value),
+    await forwardDocument(documentId, buildForwardPayload({
+      mode: forwardTargetMode.value,
+      toUserId: forwardToUserId.value,
+      toGroupId: toGroupId.value,
       ccUserIds,
       bccUserIds,
       forwardVisibility: selectedVisibility,
       remarkText: forwardRemark.value.trim() || null,
-    });
+    }));
     forwardOpen.value = false;
     forwardDoc.value = null;
     resetForwardForm();
@@ -1625,6 +1767,7 @@ onMounted(() => {
   window.addEventListener("rms_permissions_updated", onAuthChanged);
   window.addEventListener("rms_document_received", onRealtimeDocumentReceived);
   loadUsers();
+  loadGroups();
   loadWorkflowRules();
   load();
 });
@@ -1866,6 +2009,19 @@ h2 { margin:0; line-height:1.15; }
 .docType-TXT { background:#eef2ff; border-color:#c7d2fe; color:#3730a3; }
 .docType-ZIP { background:#fffbeb; border-color:#fde68a; color:#92400e; }
 .docType-FILE { background:#f3f4f6; border-color:#e5e7eb; color:#4b5563; }
+.docKindBadge {
+  display:inline-flex;
+  align-items:center;
+  flex:0 0 auto;
+  padding:2px 6px;
+  border-radius:6px;
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:0.04em;
+  text-transform:uppercase;
+}
+.docKind-internal { background:#e0f2fe; color:#0369a1; }
+.docKind-external { background:#fef3c7; color:#92400e; }
 
 .mailCenter {
   min-width: 0;
@@ -2564,6 +2720,40 @@ h2 { margin:0; line-height:1.15; }
   box-shadow:0 0 0 3px rgba(229, 231, 235, 0.9);
 }
 
+.modeToggle {
+  display:inline-flex;
+  border:1px solid #d1d5db;
+  border-radius:10px;
+  overflow:hidden;
+}
+.modeToggleBtn {
+  padding:8px 14px;
+  border:0;
+  background:#fff;
+  color:#374151;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+}
+.modeToggleBtn + .modeToggleBtn { border-left:1px solid #d1d5db; }
+.modeToggleBtn.active { background:#2563eb; color:#fff; }
+.modeToggleBtn:disabled { opacity:0.6; cursor:not-allowed; }
+.groupOptionTop {
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.groupAvatarSm {
+  width:22px;
+  height:22px;
+  border-radius:999px;
+  display:inline-grid;
+  place-items:center;
+  flex:0 0 auto;
+  color:#fff;
+  font-size:10px;
+  font-weight:900;
+}
 .forwardSearchWrap {
   position:relative;
   min-width:0;

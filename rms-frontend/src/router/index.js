@@ -11,6 +11,7 @@ import LogsPage from "../pages/LogsPage.vue";
 import PermissionsPage from "../pages/PermissionsPage.vue";
 import ProfilePage from "../pages/ProfilePage.vue";
 import UsersPage from "../pages/UsersPage.vue";
+import GroupsPage from "../pages/GroupsPage.vue";
 import LoginPage from "../pages/LoginPage.vue";
 
 const routes = [
@@ -27,6 +28,7 @@ const routes = [
   { path: "/inbox", component: InboxPage },
   { path: "/profile", component: ProfilePage },
   { path: "/logs", component: LogsPage, meta: { requiredPermission: "VIEW_LOGS" } },
+  { path: "/groups", component: GroupsPage },
   { path: "/users", component: UsersPage, meta: { adminOnly: true } },
   { path: "/permissions", component: PermissionsPage, meta: { adminOnly: true } },
 

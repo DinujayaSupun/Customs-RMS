@@ -13,6 +13,7 @@ import lk.customs.rms.repository.AuditLogRepository;
 import lk.customs.rms.repository.DocumentAttachmentRepository;
 import lk.customs.rms.repository.DocumentMovementRepository;
 import lk.customs.rms.repository.DocumentRepository;
+import lk.customs.rms.repository.RecipientGroupRepository;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.security.CurrentUserService;
 import lk.customs.rms.service.DocumentRecipientService;
@@ -43,6 +44,7 @@ class ResponseBatchMappingTests {
         DocumentRepository documentRepository = mock(DocumentRepository.class);
         DocumentMovementRepository movementRepository = mock(DocumentMovementRepository.class);
         UserRepository userRepository = mock(UserRepository.class);
+        RecipientGroupRepository recipientGroupRepository = mock(RecipientGroupRepository.class);
         CurrentUserService currentUserService = mock(CurrentUserService.class);
         PermissionService permissionService = mock(PermissionService.class);
         DocumentRecipientService documentRecipientService = mock(DocumentRecipientService.class);
@@ -68,6 +70,7 @@ class ResponseBatchMappingTests {
                 documentRepository,
                 movementRepository,
                 userRepository,
+                recipientGroupRepository,
                 currentUserService,
                 permissionService,
                 documentRecipientService

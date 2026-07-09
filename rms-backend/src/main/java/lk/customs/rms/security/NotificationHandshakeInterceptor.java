@@ -38,8 +38,16 @@ public class NotificationHandshakeInterceptor implements HandshakeInterceptor {
         }
 
         try {
-            Long userId = jwtService.extractUserId(token.trim());
-            String username = jwtService.extractUsername(token.trim());
+            String trimmedToken = token.trim();
+            // A scoped download token (short-lived, carried in URLs) must never authenticate a
+            // WebSocket session either - the same rule already enforced for the HTTP Bearer path.
+            if (jwtService.isDownloadToken(trimmedToken)) {
+                setUnauthorized(response);
+                return false;
+            }
+
+            Long userId = jwtService.extractUserId(trimmedToken);
+            String username = jwtService.extractUsername(trimmedToken);
             if (userId == null || username == null || username.isBlank()) {
                 setUnauthorized(response);
                 return false;

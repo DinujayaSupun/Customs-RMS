@@ -39,5 +39,6 @@ public enum AppPermission {
     BCC_VIEW_MINUTES,
     VIEW_ALL_HISTORY,
     VIEW_LOGS,
-    VIEW_SENT_MESSAGES
+    VIEW_SENT_MESSAGES,
+    MANAGE_GROUPS
 }

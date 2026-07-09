@@ -2,6 +2,7 @@ package lk.customs.rms;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lk.customs.rms.dto.RealtimeNotificationMessage;
 import lk.customs.rms.entity.DcAutoForwardConfig;
 import lk.customs.rms.entity.DcAutoForwardReceiver;
 import lk.customs.rms.entity.Document;
@@ -17,13 +18,17 @@ import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.RoleRepository;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.scheduler.DcAutoForwardScheduler;
+import lk.customs.rms.websocket.NotificationWebSocketHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -69,6 +74,9 @@ class DcAutoForwardSchedulerIntegrationTests {
 
     @Autowired
     private WebApplicationContext webApplicationContext;
+
+    @MockitoSpyBean
+    private NotificationWebSocketHandler notificationWebSocketHandler;
 
     private MockMvc mockMvc;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -222,6 +230,35 @@ class DcAutoForwardSchedulerIntegrationTests {
         assertThat(requireDocument(docB.getId()).getCurrentOwnerUserId()).isEqualTo(receiverB.getId());
         // No mapping configured for this DC -> its document is left untouched, still with the DC.
         assertThat(requireDocument(docNoMapping.getId()).getCurrentOwnerUserId()).isEqualTo(dcNoMapping.getId());
+    }
+
+    @Test
+    void autoForwardSendsARealtimePushToTheReceiverNotJustASilentDbUpdate() {
+        String password = "AutoForward123";
+        User creator = createUser("ADMIN", "auto-notify-creator-", password);
+        User dc = createUser("DC", "auto-notify-dc-", password);
+        User receiver = createUser("DDC", "auto-notify-receiver-", password);
+
+        createTimedOutDcDocument(creator.getId(), dc.getId(), "auto-notify");
+        enableAutoForward(dc.getId(), receiver.getId(), 1);
+
+        Mockito.clearInvocations(notificationWebSocketHandler);
+        scheduler.processTimedOutDcDocuments();
+
+        ArgumentCaptor<Long> userIdCaptor = ArgumentCaptor.forClass(Long.class);
+        ArgumentCaptor<RealtimeNotificationMessage> messageCaptor = ArgumentCaptor.forClass(RealtimeNotificationMessage.class);
+        Mockito.verify(notificationWebSocketHandler, Mockito.atLeastOnce())
+                .sendToUser(userIdCaptor.capture(), messageCaptor.capture());
+
+        String typeSentToReceiver = null;
+        for (int i = 0; i < userIdCaptor.getAllValues().size(); i++) {
+            if (receiver.getId().equals(userIdCaptor.getAllValues().get(i))) {
+                typeSentToReceiver = messageCaptor.getAllValues().get(i).type();
+            }
+        }
+        assertThat(typeSentToReceiver)
+                .as("the receiver must get a real-time push so the document appears without a manual refresh")
+                .isEqualTo("DOCUMENT_FORWARDED");
     }
 
     private User createUser(String roleName, String prefix, String rawPassword) {

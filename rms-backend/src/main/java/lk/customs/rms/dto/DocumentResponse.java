@@ -29,6 +29,7 @@ public class DocumentResponse {
 
     private Long currentOwnerUserId;
     private String currentOwnerName;
+    private Long currentOwnerGroupId;
 
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -89,6 +90,7 @@ public class DocumentResponse {
                 .createdByName(mapping.createdByName)
                 .currentOwnerUserId(d.getCurrentOwnerUserId())
                 .currentOwnerName(mapping.ownerName)
+                .currentOwnerGroupId(d.getCurrentOwnerGroupId())
                 .createdAt(d.getCreatedAt())
                 .updatedAt(d.getUpdatedAt())
                 .inboxReceivedAt(mapping.inboxReceivedAt)

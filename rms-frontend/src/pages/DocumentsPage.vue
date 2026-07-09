@@ -127,6 +127,11 @@
                     />
                   </span>
                   <b class="truncateText">{{ d.refNo }}</b>
+                  <span
+                    v-if="d.documentType"
+                    class="docKindBadge"
+                    :class="'docKind-' + d.documentType.toLowerCase()"
+                  >{{ d.documentType === "EXTERNAL" ? "Ext" : "Int" }}</span>
                 </div>
               </td>
               <td :title="d.title"><span class="truncateText">{{ d.title }}</span></td>
@@ -136,8 +141,8 @@
               <td><span class="pill" :class="'pill-'+d.priority">{{ d.priority }}</span></td>
               <td><span class="pill" :class="'pill-'+d.status">{{ displayStatusLabel(d.status) }}</span></td>
 
-              <td class="ownerCell" :title="ownerLabel(d.currentOwnerUserId, d.currentOwnerName)">
-                <span class="truncateText">{{ ownerLabel(d.currentOwnerUserId, d.currentOwnerName) }}</span>
+              <td class="ownerCell" :title="ownerLabel(d.currentOwnerUserId, d.currentOwnerName, null, d.currentOwnerGroupId)">
+                <span class="truncateText">{{ ownerLabel(d.currentOwnerUserId, d.currentOwnerName, null, d.currentOwnerGroupId) }}</span>
               </td>
 
               <td class="actionsCell">
@@ -202,7 +207,8 @@
           <div class="previewPills">
             <span class="pill" :class="'pill-'+previewDoc?.status">{{ displayStatusLabel(previewDoc?.status) || '-' }}</span>
             <span class="pill" :class="'pill-'+previewDoc?.priority">{{ previewDoc?.priority || '-' }}</span>
-            <span class="pill pill-PENDING">Report At: {{ ownerLabel(previewDoc?.currentOwnerUserId, previewDoc?.currentOwnerName) }}</span>
+            <span class="pill pill-PENDING">Report At: {{ ownerLabel(previewDoc?.currentOwnerUserId, previewDoc?.currentOwnerName, null, previewDoc?.currentOwnerGroupId) }}</span>
+            <span v-if="previewDoc?.documentType" class="docKindBadge" :class="'docKind-' + previewDoc.documentType.toLowerCase()">{{ previewDoc.documentType === "EXTERNAL" ? "External" : "Internal" }}</span>
           </div>
 
           <div class="previewContent">
@@ -304,7 +310,7 @@ import HoverHint from "../components/HoverHint.vue";
 import { useToast } from "../composables/useToast";
 import { useDebouncedWatch } from "../composables/useDebouncedWatch";
 import { listDocuments, listMovements, listRemarks, listAttachments, createAttachmentDownloadUrl, deleteDocument } from "../api/documents.api";
-import { listUsers } from "../api/auth.api";
+import { listUsers, listGroups } from "../api/auth.api";
 import { getCurrentUser, hasPermission } from "../auth/currentUser";
 import { formatUserLabelFromParts } from "../auth/userLabel";
 import { getPrimaryAttachment, isImageAttachmentName, isPdfAttachmentName, isPreviewableAttachmentName, resolveAttachmentTypeFromName } from "../utils/attachmentViewerLogic";
@@ -354,6 +360,7 @@ const error = ref("");
 const all = ref([]);
 const rows = ref([]);
 const users = ref([]);
+const groups = ref([]);
 const deletingId = ref(null);
 const page = ref(0);
 const pageSize = ref(25);
@@ -533,7 +540,11 @@ async function openPreviewAttachment(attachment) {
   }
 }
 
-function ownerLabel(userId, name, role) {
+function ownerLabel(userId, name, role, groupId) {
+  if (groupId) {
+    const group = groups.value.find((g) => Number(g.id) === Number(groupId));
+    return `Held by ${group ? group.name : "a group"}`;
+  }
   return formatUserLabelFromParts({ userId, name, role }, users.value);
 }
 
@@ -710,18 +721,32 @@ function onUserChanged() {
   applyNow();
 }
 
+// Unlike the Inbox page, Documents has no "mode" to switch and active filters/sorting/pagination
+// the user may be mid-adjusting - so this only silently refetches the current view, it never
+// resets any of that state.
+function onRealtimeDocumentReceived() {
+  load();
+}
+
 onMounted(() => {
   window.addEventListener("rms_auth_changed", onUserChanged);
+  window.addEventListener("rms_document_received", onRealtimeDocumentReceived);
   listUsers().then((data) => {
     users.value = data || [];
   }).catch(() => {
     users.value = [];
+  });
+  listGroups().then((data) => {
+    groups.value = data || [];
+  }).catch(() => {
+    groups.value = [];
   });
   load();
 });
 
 onUnmounted(() => {
   window.removeEventListener("rms_auth_changed", onUserChanged);
+  window.removeEventListener("rms_document_received", onRealtimeDocumentReceived);
 });
 </script>
 
@@ -882,6 +907,19 @@ h2 { margin:0; line-height:1.15; }
 .docType-TXT { background:#eef2ff; border-color:#c7d2fe; color:#3730a3; }
 .docType-ZIP { background:#fffbeb; border-color:#fde68a; color:#92400e; }
 .docType-FILE { background:#f3f4f6; border-color:#e5e7eb; color:#4b5563; }
+.docKindBadge {
+  display:inline-flex;
+  align-items:center;
+  flex:0 0 auto;
+  padding:2px 6px;
+  border-radius:6px;
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:0.04em;
+  text-transform:uppercase;
+}
+.docKind-internal { background:#e0f2fe; color:#0369a1; }
+.docKind-external { background:#fef3c7; color:#92400e; }
 .ownerCell {
   font-weight:600;
   color:#1f2937;

@@ -19,6 +19,11 @@ public class MovementResponse {
     private Long toUserId;
     private String toUserName;
 
+    // Set only when this FORWARD targeted a group; toUserId/toUserName still resolve to the
+    // group's anchor admin (see Document#currentOwnerGroupId).
+    private Long toGroupId;
+    private String toGroupName;
+
     private String forwardVisibility;
     private RecipientSummaryResponse recipientSummary;
 

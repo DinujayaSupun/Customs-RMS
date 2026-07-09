@@ -99,6 +99,12 @@
                 <circle cx="12" cy="12" r="3.2" />
                 <path d="M12 4.5v2.2M12 17.3v2.2M19.5 12h-2.2M6.7 12H4.5M17.3 6.7l-1.6 1.6M8.3 15.7l-1.6 1.6M17.3 17.3l-1.6-1.6M8.3 8.3L6.7 6.7" />
               </svg>
+              <svg v-else-if="item.icon === 'groups'" viewBox="0 0 24 24" class="nav-svg">
+                <circle cx="9" cy="10" r="3.4" />
+                <circle cx="16.5" cy="9" r="2.6" />
+                <path d="M3.8 19c1-3 3-4.6 5.2-4.6s4.2 1.6 5.2 4.6" />
+                <path d="M14.3 15.1c1.7.2 3.1 1.7 3.9 3.9" />
+              </svg>
             </span>
             <span class="sidebar-text nav-label">{{ item.label }}</span>
           </router-link>
@@ -160,6 +166,7 @@ const navItems = computed(() => {
   const items = [
     { to: "/inbox", label: "My Inbox", icon: "inbox" },
     { to: "/documents", label: "Documents", icon: "documents" },
+    { to: "/groups", label: "Groups", icon: "groups" },
     { to: "/profile", label: "My Profile", icon: "profile" },
   ];
 

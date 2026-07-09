@@ -223,3 +223,43 @@ export async function adminSavePermissionsPage(payload) {
     throw getMsg(e);
   }
 }
+
+export async function listGroups() {
+  try {
+    return (await http.get("/groups")).data;
+  } catch (e) {
+    throw getMsg(e);
+  }
+}
+
+export async function getGroupDocuments(groupId) {
+  try {
+    return (await http.get(`/groups/${groupId}/documents`)).data;
+  } catch (e) {
+    throw getMsg(e);
+  }
+}
+
+export async function createGroup(payload) {
+  try {
+    return (await http.post("/groups", payload)).data;
+  } catch (e) {
+    throw getMsg(e);
+  }
+}
+
+export async function updateGroup(groupId, payload) {
+  try {
+    return (await http.put(`/groups/${groupId}`, payload)).data;
+  } catch (e) {
+    throw getMsg(e);
+  }
+}
+
+export async function deleteGroup(groupId) {
+  try {
+    await http.delete(`/groups/${groupId}`);
+  } catch (e) {
+    throw getMsg(e);
+  }
+}

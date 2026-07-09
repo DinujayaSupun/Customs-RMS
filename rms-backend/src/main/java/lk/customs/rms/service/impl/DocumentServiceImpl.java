@@ -23,7 +23,11 @@ import lk.customs.rms.repository.DocumentRemarkRepository;
 import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.DocumentUserViewRepository;
 import lk.customs.rms.repository.AuditLogRepository;
+import lk.customs.rms.repository.RecipientGroupMemberRepository;
+import lk.customs.rms.repository.RecipientGroupRepository;
 import lk.customs.rms.repository.UserRepository;
+import lk.customs.rms.entity.RecipientGroup;
+import lk.customs.rms.entity.RecipientGroupMember;
 import lk.customs.rms.service.AuditLogService;
 import lk.customs.rms.service.DcAutoForwardConfigService;
 import lk.customs.rms.service.DocumentRecipientService;
@@ -121,6 +125,8 @@ public class DocumentServiceImpl implements DocumentService {
     private final RealtimeNotificationService realtimeNotificationService;
     private final DcAutoForwardConfigService dcAutoForwardConfigService;
     private final DocumentRecipientService documentRecipientService;
+    private final RecipientGroupRepository recipientGroupRepository;
+    private final RecipientGroupMemberRepository recipientGroupMemberRepository;
 
     public DocumentServiceImpl(
             DocumentRepository documentRepository,
@@ -134,7 +140,9 @@ public class DocumentServiceImpl implements DocumentService {
                 PermissionService permissionService,
                 RealtimeNotificationService realtimeNotificationService,
                 DcAutoForwardConfigService dcAutoForwardConfigService,
-                DocumentRecipientService documentRecipientService
+                DocumentRecipientService documentRecipientService,
+                RecipientGroupRepository recipientGroupRepository,
+                RecipientGroupMemberRepository recipientGroupMemberRepository
     ) {
         this.documentRepository = documentRepository;
         this.attachmentRepository = attachmentRepository;
@@ -148,6 +156,8 @@ public class DocumentServiceImpl implements DocumentService {
         this.realtimeNotificationService = realtimeNotificationService;
         this.dcAutoForwardConfigService = dcAutoForwardConfigService;
         this.documentRecipientService = documentRecipientService;
+        this.recipientGroupRepository = recipientGroupRepository;
+        this.recipientGroupMemberRepository = recipientGroupMemberRepository;
     }
 
     // ==========================================================
@@ -341,13 +351,25 @@ public class DocumentServiceImpl implements DocumentService {
             ? java.util.EnumSet.noneOf(AppPermission.class)
             : permissionService.getPermissionsForUser(actorUserId);
 
+        // A group admin can act on any document their group holds, even when they are not the
+        // current_owner_user_id anchor. Batch this (one query for the whole page) instead of a
+        // per-row isGroupAdmin lookup.
+        Set<Long> groupIdsOnPage = docs.getContent().stream()
+            .map(Document::getCurrentOwnerGroupId)
+            .filter(java.util.Objects::nonNull)
+            .collect(Collectors.toSet());
+        Set<Long> adminGroupIds = groupIdsOnPage.isEmpty()
+            ? Set.of()
+            : new HashSet<>(recipientGroupMemberRepository.findAdminGroupIds(actorUserId, groupIdsOnPage));
+
         return docs.map(d -> {
             User createdBy = usersById.get(d.getCreatedByUserId());
             User owner = usersById.get(d.getCurrentOwnerUserId());
             String createdByName = createdBy == null ? null : createdBy.getFullName();
             String ownerName = owner == null ? null : owner.getFullName();
             boolean viewedByMe = viewedDocIds.contains(d.getId());
-            boolean isOwnerRow = d.getCurrentOwnerUserId() != null && d.getCurrentOwnerUserId().equals(actorUserId);
+            boolean isOwnerRow = (d.getCurrentOwnerUserId() != null && d.getCurrentOwnerUserId().equals(actorUserId))
+                    || (d.getCurrentOwnerGroupId() != null && adminGroupIds.contains(d.getCurrentOwnerGroupId()));
             RecipientType recipientType = recipientTypes.getOrDefault(d.getId(), Optional.empty())
                     .orElse(isOwnerRow ? RecipientType.TO : null);
             // Minute visibility from already-batched recipient type + permissions (avoids a per-row query).
@@ -399,7 +421,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .undoSendFromName(undoFrom == null ? null : undoFrom.getFullName())
                 .undoSendFromRole(roleName(undoFrom))
                 .canDelete(canDeleteDocument(d, actorUserId, canDeleteAnyDocument, actorPermissions.contains(AppPermission.DELETE_DOCUMENT))),
-                d, actorUserId, recipientType, recipientSummary, actorPermissions)
+                isOwnerRow, recipientType, recipientSummary, actorPermissions)
                 .build());
         });
     }
@@ -439,6 +461,19 @@ public class DocumentServiceImpl implements DocumentService {
             : userRepository.findAllById(toUserIds)
                 .stream()
                 .collect(Collectors.toMap(User::getId, User::getFullName));
+
+        List<Long> toGroupIds = pageMovements.stream()
+            .map(DocumentMovement::getToGroupId)
+            .filter(java.util.Objects::nonNull)
+            .distinct()
+            .toList();
+        // Not Map.of(): almost every movement has a null toGroupId, and Map.of().get(null) throws
+        // (unlike HashMap/Collections.emptyMap(), which return null for a missing/null key).
+        Map<Long, String> groupNamesById = toGroupIds.isEmpty()
+            ? java.util.Collections.emptyMap()
+            : recipientGroupRepository.findAllById(toGroupIds)
+                .stream()
+                .collect(Collectors.toMap(RecipientGroup::getId, RecipientGroup::getName));
 
         List<Long> pageDocIds = pageMovements.stream().map(DocumentMovement::getDocumentId).distinct().toList();
 
@@ -545,6 +580,8 @@ public class DocumentServiceImpl implements DocumentService {
                 .forwardVisibility(movement.getForwardVisibility())
                 .toUserId(movement.getToUserId())
                 .toUserName(userNamesById.get(movement.getToUserId()))
+                .toGroupId(movement.getToGroupId())
+                .toGroupName(groupNamesById.get(movement.getToGroupId()))
                 .recipientSummary(recipientSummary)
                 .recipientSummaryText(recipientSummary == null ? null : recipientSummary.getCompactText())
                 .latestRemarkPreview(ownMinutePreview)
@@ -652,8 +689,8 @@ public class DocumentServiceImpl implements DocumentService {
 
         permissionService.ensurePermission(actorUserId, AppPermission.EDIT_DOCUMENT_DETAILS, "You are not allowed to edit document details.");
 
-        // Only the current owner can edit details
-        if (!d.getCurrentOwnerUserId().equals(actorUserId)) {
+        // Only the current owner (or, for a group-held document, a group admin) can edit details
+        if (!canActOnDocument(d, actorUserId)) {
             throw new BadRequestException("Only the current owner can edit document details.");
         }
 
@@ -796,13 +833,11 @@ public class DocumentServiceImpl implements DocumentService {
 
     private DocumentResponse.Mapping.MappingBuilder withPreloadedRecipientCapabilities(
             DocumentResponse.Mapping.MappingBuilder builder,
-            Document document,
-            Long actorUserId,
+            boolean isOwner,
             RecipientType preloadedType,
             RecipientSummaryResponse preloadedSummary,
             Set<AppPermission> actorPermissions
     ) {
-        boolean isOwner = document.getCurrentOwnerUserId().equals(actorUserId);
         boolean canViewHidden = actorPermissions.contains(AppPermission.VIEW_ALL_HISTORY);
 
         boolean canViewAttachments = isOwner || canViewHidden || (preloadedType == RecipientType.CC
@@ -852,9 +887,9 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     private RecipientCapabilities recipientCapabilities(Document document, Long actorUserId) {
+        boolean isWorkflowOwner = canActOnDocument(document, actorUserId);
         RecipientType recipientType = documentRecipientService.activeRecipientType(document.getId(), actorUserId)
-                .orElse(document.getCurrentOwnerUserId().equals(actorUserId) ? RecipientType.TO : null);
-        boolean isWorkflowOwner = document.getCurrentOwnerUserId().equals(actorUserId);
+                .orElse(isWorkflowOwner ? RecipientType.TO : null);
         return new RecipientCapabilities(
                 recipientType == null ? null : recipientType.name(),
                 documentRecipientService.summaryForViewer(document, actorUserId),
@@ -962,10 +997,15 @@ public class DocumentServiceImpl implements DocumentService {
         ensureCanForwardOrReturn(d);
 
         User actionBy = requireUser(actorUserId);
-        User toUser = requireUser(request.getToUserId());
 
-        // Ownership check
-        if (!d.getCurrentOwnerUserId().equals(actionBy.getId())) {
+        boolean toGroup = request.getToGroupId() != null;
+        boolean toPerson = request.getToUserId() != null;
+        if (toGroup == toPerson) {
+            throw new BadRequestException("Specify exactly one of toUserId or toGroupId to forward this document.");
+        }
+
+        // Ownership check (or, for a group-held document, a group admin)
+        if (!canActOnDocument(d, actionBy.getId())) {
             throw new BadRequestException("Only the current owner can forward this document.");
         }
 
@@ -983,6 +1023,44 @@ public class DocumentServiceImpl implements DocumentService {
         saveRemarkIfPresent(d, actionBy.getId(), request.getRemarkText(), "Remark added during forward");
 
         Long from = d.getCurrentOwnerUserId();
+
+        // Resolve the forward target: a single person (unchanged path), or a group - which holds
+        // the document via its lowest-id admin as a compatibility anchor, with its other members
+        // (including any other admins) added as CC so they can view the document too. Either way,
+        // "who can now act" is governed by canActOnDocument, not by who this anchor is.
+        User toUser;
+        Long toGroupId = null;
+        List<Long> groupCcUserIds = List.of();
+        Set<Long> otherGroupAdminIds = Set.of();
+        if (toGroup) {
+            RecipientGroup group = recipientGroupRepository.findById(request.getToGroupId())
+                    .orElseThrow(() -> new BadRequestException("Group not found: " + request.getToGroupId()));
+            List<RecipientGroupMember> members = recipientGroupMemberRepository.findByGroupId(group.getId());
+            Long primaryAdminId = members.stream()
+                    .filter(m -> Boolean.TRUE.equals(m.getIsAdmin()))
+                    .map(RecipientGroupMember::getUserId)
+                    .min(Long::compareTo)
+                    .orElseThrow(() -> new BadRequestException("This group has no admins to forward to."));
+            toUser = requireUser(primaryAdminId);
+            toGroupId = group.getId();
+            groupCcUserIds = members.stream()
+                    .map(RecipientGroupMember::getUserId)
+                    .filter(id -> !id.equals(primaryAdminId))
+                    .distinct()
+                    .toList();
+            // Other admins are full co-owners of the document (see canActOnDocument), so they get
+            // notified the same way as the anchor rather than as a passive "copied" recipient.
+            otherGroupAdminIds = members.stream()
+                    .filter(m -> Boolean.TRUE.equals(m.getIsAdmin()))
+                    .map(RecipientGroupMember::getUserId)
+                    .filter(id -> !id.equals(primaryAdminId))
+                    .collect(Collectors.toSet());
+            d.setCurrentOwnerGroupId(group.getId());
+        } else {
+            toUser = requireUser(request.getToUserId());
+            // Forwarding to a person always exits group-held state.
+            d.setCurrentOwnerGroupId(null);
+        }
         Long to = toUser.getId();
 
         d.setCurrentOwnerUserId(to);
@@ -994,13 +1072,25 @@ public class DocumentServiceImpl implements DocumentService {
         touchDocument(d);
         documentRepository.save(d);
 
+        List<Long> ccUserIds = request.getCcUserIds();
+        if (!groupCcUserIds.isEmpty()) {
+            java.util.LinkedHashSet<Long> merged = new java.util.LinkedHashSet<>(groupCcUserIds);
+            if (request.getCcUserIds() != null) {
+                merged.addAll(request.getCcUserIds());
+            }
+            merged.remove(to);
+            ccUserIds = List.copyOf(merged);
+        }
+
         DocumentMovement mv = DocumentMovement.create(documentId, from, to, actionBy.getId(), MovementActionType.FORWARD, forwardVisibility);
+        mv.setToGroupId(toGroupId);
         DocumentMovement savedMovement = movementRepository.save(mv);
-        documentRecipientService.createForwardSet(d, to, request.getCcUserIds(), request.getBccUserIds(), actionBy.getId(), savedMovement.getId());
+        documentRecipientService.createForwardSet(d, to, ccUserIds, request.getBccUserIds(), actionBy.getId(), savedMovement.getId());
         Map<String, List<Long>> forwardRecipients = documentRecipientService.getActiveRecipientsByType(documentId);
         Map<String, Object> forwardDetails = new LinkedHashMap<>();
         forwardDetails.put("fromUserId", from);
         forwardDetails.put("toUserId", to);
+        forwardDetails.put("toGroupId", toGroupId);
         forwardDetails.put("toUserIds", forwardRecipients.getOrDefault("to", List.of()));
         forwardDetails.put("ccUserIds", forwardRecipients.getOrDefault("cc", List.of()));
         forwardDetails.put("bccUserIds", forwardRecipients.getOrDefault("bcc", List.of()));
@@ -1024,13 +1114,25 @@ public class DocumentServiceImpl implements DocumentService {
             actionBy.getId(),
             actionBy.getFullName()
         );
-        // CC/BCC recipients are also told in real time that they were copied (distinct from the
-        // primary "assigned" notification the report-at recipient receives).
+        // Other group admins are full co-owners (see canActOnDocument) - notify them the same way
+        // as the anchor, not as a passive "copied" recipient. (Captured into a final copy so it
+        // can be referenced from the lambdas below; otherGroupAdminIds itself is reassigned above.)
+        final Set<Long> notifiedAsAdminIds = otherGroupAdminIds;
+        notifiedAsAdminIds.forEach(adminId -> realtimeNotificationService.notifyDocumentForwarded(
+                adminId,
+                d.getId(),
+                d.getRefNo(),
+                d.getTitle(),
+                actionBy.getId(),
+                actionBy.getFullName()));
+        // Remaining CC/BCC recipients are told in real time that they were copied (distinct from
+        // the "assigned" notification the report-at recipient and other group admins receive).
         java.util.stream.Stream.concat(
                         forwardRecipients.getOrDefault("cc", List.of()).stream(),
                         forwardRecipients.getOrDefault("bcc", List.of()).stream())
                 .filter(java.util.Objects::nonNull)
                 .filter(copiedUserId -> !copiedUserId.equals(to))
+                .filter(copiedUserId -> !notifiedAsAdminIds.contains(copiedUserId))
                 .distinct()
                 .forEach(copiedUserId -> realtimeNotificationService.notifyDocumentCopied(
                         copiedUserId,
@@ -1052,8 +1154,8 @@ public class DocumentServiceImpl implements DocumentService {
         ensureCanForwardOrReturn(d);
 
         User actionBy = requireUser(actorUserId);
-        // Ownership check
-        if (!d.getCurrentOwnerUserId().equals(actionBy.getId())) {
+        // Ownership check (or, for a group-held document, a group admin)
+        if (!canActOnDocument(d, actionBy.getId())) {
             throw new BadRequestException("Only the current owner can return this document.");
         }
 
@@ -1074,6 +1176,8 @@ public class DocumentServiceImpl implements DocumentService {
             throw new BadRequestException("This document was not sent to you, so it cannot be returned.");
         }
         d.setCurrentOwnerUserId(requestedTo);
+        // Returning always hands the document back to a single person, so it is no longer group-held.
+        d.setCurrentOwnerGroupId(null);
 
         DocumentMovement mv = DocumentMovement.create(documentId, from, requestedTo, actionBy.getId(), MovementActionType.RETURN);
         DocumentMovement savedMovement = movementRepository.save(mv);
@@ -1215,8 +1319,8 @@ public class DocumentServiceImpl implements DocumentService {
         // FINAL STATE + transition guard
         ensureCanApproveOrReject(d);
 
-        // DC must be current owner
-        if (!d.getCurrentOwnerUserId().equals(actorUserId)) {
+        // DC must be current owner (or a group admin, if the document is group-held)
+        if (!canActOnDocument(d, actorUserId)) {
             throw new BadRequestException("Only the current owner can approve this document.");
         }
 
@@ -1246,7 +1350,7 @@ public class DocumentServiceImpl implements DocumentService {
         // FINAL STATE + transition guard
         ensureCanApproveOrReject(d);
 
-        if (!d.getCurrentOwnerUserId().equals(actorUserId)) {
+        if (!canActOnDocument(d, actorUserId)) {
             throw new BadRequestException("Only the current owner can reject this document.");
         }
 
@@ -1273,7 +1377,7 @@ public class DocumentServiceImpl implements DocumentService {
         // ISSUE must happen ONLY after APPROVED
         ensureCanIssue(d);
 
-        if (!d.getCurrentOwnerUserId().equals(actorUserId)) {
+        if (!canActOnDocument(d, actorUserId)) {
             throw new BadRequestException("Only the current owner can complete this document.");
         }
 
@@ -1317,8 +1421,8 @@ public class DocumentServiceImpl implements DocumentService {
             }
         }
 
-        // DC must also be the current owner (strong integrity)
-        if (!d.getCurrentOwnerUserId().equals(actorUserId)) {
+        // DC must also be the current owner (or a group admin, if group-held) - strong integrity
+        if (!canActOnDocument(d, actorUserId)) {
             throw new BadRequestException("Only the current owner can reopen this document.");
         }
 
@@ -1501,8 +1605,8 @@ public class DocumentServiceImpl implements DocumentService {
         String text = remarkText.trim();
         if (text.isEmpty()) return;
 
-        // Only current owner can add remark
-        if (!doc.getCurrentOwnerUserId().equals(actionByUserId)) {
+        // Only current owner (or, for a group-held document, a group admin) can add remark
+        if (!canActOnDocument(doc, actionByUserId)) {
             throw new BadRequestException("Only the current owner can add remarks.");
         }
 
@@ -1534,6 +1638,17 @@ public class DocumentServiceImpl implements DocumentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
     }
 
+    // Person-held: you are the current owner. Group-held (current_owner_group_id set): any admin
+    // of that group can act, mirroring co-ownership in a WhatsApp-style group. Regular group
+    // members are not owners here - they get CC-level access via the recipient set instead.
+    private boolean canActOnDocument(Document doc, Long userId) {
+        if (doc.getCurrentOwnerUserId().equals(userId)) {
+            return true;
+        }
+        return doc.getCurrentOwnerGroupId() != null
+                && recipientGroupMemberRepository.isGroupAdmin(doc.getCurrentOwnerGroupId(), userId);
+    }
+
     private User requireUser(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new BadRequestException("User not found: " + userId));
@@ -1556,7 +1671,7 @@ public class DocumentServiceImpl implements DocumentService {
             return;
         }
 
-        if (actorUserId.equals(doc.getCurrentOwnerUserId())) {
+        if (canActOnDocument(doc, actorUserId)) {
             return;
         }
 
@@ -1668,7 +1783,7 @@ public class DocumentServiceImpl implements DocumentService {
         if (document == null || actorUserId == null) {
             return false;
         }
-        if (document.getCurrentOwnerUserId() != null && document.getCurrentOwnerUserId().equals(actorUserId)) {
+        if (canActOnDocument(document, actorUserId)) {
             return true;
         }
         return documentRecipientService.canViewMinutes(document, actorUserId);

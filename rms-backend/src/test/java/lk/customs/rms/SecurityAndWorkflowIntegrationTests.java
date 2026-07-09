@@ -8,11 +8,17 @@ import lk.customs.rms.entity.User;
 import lk.customs.rms.repository.DcAutoForwardConfigRepository;
 import lk.customs.rms.repository.RoleRepository;
 import lk.customs.rms.repository.UserRepository;
+import lk.customs.rms.security.NotificationHandshakeInterceptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.server.ServletServerHttpRequest;
+import org.springframework.http.server.ServletServerHttpResponse;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
@@ -24,6 +30,8 @@ import org.springframework.web.context.WebApplicationContext;
 import java.nio.charset.StandardCharsets;
 import java.net.URI;
 import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -55,6 +63,9 @@ class SecurityAndWorkflowIntegrationTests {
 
     @Autowired
     private DcAutoForwardConfigRepository dcAutoForwardConfigRepository;
+
+    @Autowired
+    private NotificationHandshakeInterceptor notificationHandshakeInterceptor;
 
     private MockMvc mockMvc;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -191,6 +202,41 @@ class SecurityAndWorkflowIntegrationTests {
         mockMvc.perform(get("/api/auth/me")
                         .header("Authorization", bearer(downloadToken)))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void scopedDownloadTokenIsRejectedAtWebSocketHandshake() throws Exception {
+        String password = "Bearer1234";
+        User user = createUser("ADMIN", "download-as-ws-", password);
+        String accessToken = loginAndGetToken(user.getUsername(), password);
+
+        mockMvc.perform(multipart("/api/auth/me/profile-picture")
+                        .file(new MockMultipartFile("file", "avatar.png", MediaType.IMAGE_PNG_VALUE, pngBytes()))
+                        .header("Authorization", bearer(accessToken)))
+                .andExpect(status().isOk());
+
+        MvcResult tokenResult = mockMvc.perform(post("/api/auth/me/profile-picture-token")
+                        .header("Authorization", bearer(accessToken)))
+                .andExpect(status().isOk())
+                .andReturn();
+        String downloadToken = queryParam(readJson(tokenResult).get("url").asText(), "download_token");
+        assertThat(downloadToken).isNotBlank();
+
+        // A scoped download token must not be accepted as the WebSocket handshake's auth token
+        // either - the same rule already enforced for the HTTP Bearer path.
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/ws/notifications");
+        request.setParameter("token", downloadToken);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        boolean handshakeAllowed = notificationHandshakeInterceptor.beforeHandshake(
+                new ServletServerHttpRequest(request),
+                new ServletServerHttpResponse(response),
+                null,
+                new HashMap<>()
+        );
+
+        assertThat(handshakeAllowed).as("handshake must reject a scoped download token").isFalse();
+        assertThat(response.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
     }
 
     @Test

@@ -35,6 +35,11 @@ public class DocumentMovement {
     @Column(name="to_user_id")
     private Long toUserId;
 
+    // Set only for a FORWARD that targeted a group; toUserId still holds the group's anchor admin
+    // (see Document#currentOwnerGroupId) so existing single-owner reads keep working unmodified.
+    @Column(name="to_group_id")
+    private Long toGroupId;
+
     @Column(name="action_by_user_id", nullable = false)
     private Long actionByUserId;
 

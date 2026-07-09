@@ -14,6 +14,7 @@ import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.service.AuditLogService;
 import lk.customs.rms.service.DcAutoForwardConfigService;
 import lk.customs.rms.service.DocumentRecipientService;
+import lk.customs.rms.service.RealtimeNotificationService;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -38,6 +39,7 @@ public class DcAutoForwardScheduler {
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
     private final DocumentRecipientService documentRecipientService;
+    private final RealtimeNotificationService realtimeNotificationService;
 
     public DcAutoForwardScheduler(DcAutoForwardConfigService dcAutoForwardConfigService,
                                   DocumentRepository documentRepository,
@@ -45,7 +47,8 @@ public class DcAutoForwardScheduler {
                                   DocumentUserViewRepository documentUserViewRepository,
                                   UserRepository userRepository,
                                   AuditLogService auditLogService,
-                                  DocumentRecipientService documentRecipientService) {
+                                  DocumentRecipientService documentRecipientService,
+                                  RealtimeNotificationService realtimeNotificationService) {
         this.dcAutoForwardConfigService = dcAutoForwardConfigService;
         this.documentRepository = documentRepository;
         this.movementRepository = movementRepository;
@@ -53,6 +56,7 @@ public class DcAutoForwardScheduler {
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
         this.documentRecipientService = documentRecipientService;
+        this.realtimeNotificationService = realtimeNotificationService;
     }
 
     @Scheduled(fixedDelayString = "${app.dc-auto-forward.poll-ms:60000}")
@@ -180,5 +184,22 @@ public class DcAutoForwardScheduler {
                 "Auto-forwarded after DC did not view in " + timeoutMinutes + " minute(s). Receiver userId=" + receiverUserId,
                 details
         );
+
+        // Without this, the receiver only learns about the document on their next manual refresh -
+        // an auto-forward must push the same way an interactive forward does. (doc itself is
+        // reassigned above, so a final copy is needed for the lambda below.)
+        User dcUser = userRepository.findById(from).orElse(null);
+        String dcName = dcUser == null ? null : dcUser.getFullName();
+        final Document forwardedDoc = doc;
+        realtimeNotificationService.notifyDocumentForwarded(
+                receiverUserId, forwardedDoc.getId(), forwardedDoc.getRefNo(), forwardedDoc.getTitle(), from, dcName);
+        java.util.stream.Stream.concat(
+                        preservedRecipients.getOrDefault("cc", List.of()).stream(),
+                        preservedRecipients.getOrDefault("bcc", List.of()).stream())
+                .filter(java.util.Objects::nonNull)
+                .filter(copiedUserId -> !copiedUserId.equals(receiverUserId))
+                .distinct()
+                .forEach(copiedUserId -> realtimeNotificationService.notifyDocumentCopied(
+                        copiedUserId, forwardedDoc.getId(), forwardedDoc.getRefNo(), forwardedDoc.getTitle(), from, dcName));
     }
 }
