@@ -141,6 +141,7 @@ export async function createDocumentByApi(request, creds, overrides = {}) {
     receivedDate: overrides.receivedDate || "2026-03-25",
     companyName: overrides.companyName || "E2E Company",
     priority: overrides.priority || "HIGH",
+    documentType: overrides.documentType || "INTERNAL",
   };
 
   const response = await request.post(`${apiBaseUrl}/documents`, {

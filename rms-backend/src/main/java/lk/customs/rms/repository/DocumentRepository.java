@@ -309,4 +309,8 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
     int transferOwnershipForActiveDocuments(@Param("oldOwnerId") Long oldOwnerId,
                                             @Param("newOwnerId") Long newOwnerId,
                                             @Param("excludedStatus") Status excludedStatus);
+
+    long countByCurrentOwnerGroupIdAndDeletedFalseAndStatusNot(Long currentOwnerGroupId, Status excludedStatus);
+
+    List<Document> findByCurrentOwnerGroupIdAndDeletedFalseOrderByUpdatedAtDesc(Long currentOwnerGroupId);
 }

@@ -136,6 +136,22 @@ export async function adminResetPassword(userId, newPassword) {
   }
 }
 
+export async function adminGetUserPermissions(userId) {
+  try {
+    return (await http.get(`/admin/users/${userId}/permissions`)).data;
+  } catch (e) {
+    throw getMsg(e);
+  }
+}
+
+export async function adminUpdateUserPermissions(userId, entries) {
+  try {
+    return (await http.put(`/admin/users/${userId}/permissions`, { entries })).data;
+  } catch (e) {
+    throw getMsg(e);
+  }
+}
+
 export async function adminDeleteUser(userId) {
   try {
     await http.delete(`/admin/users/${userId}`);
@@ -203,6 +219,46 @@ export async function adminUpdateDcAutoForwardConfig(payload) {
 export async function adminSavePermissionsPage(payload) {
   try {
     return (await http.put("/admin/permissions/page", payload)).data;
+  } catch (e) {
+    throw getMsg(e);
+  }
+}
+
+export async function listGroups() {
+  try {
+    return (await http.get("/groups")).data;
+  } catch (e) {
+    throw getMsg(e);
+  }
+}
+
+export async function getGroupDocuments(groupId) {
+  try {
+    return (await http.get(`/groups/${groupId}/documents`)).data;
+  } catch (e) {
+    throw getMsg(e);
+  }
+}
+
+export async function createGroup(payload) {
+  try {
+    return (await http.post("/groups", payload)).data;
+  } catch (e) {
+    throw getMsg(e);
+  }
+}
+
+export async function updateGroup(groupId, payload) {
+  try {
+    return (await http.put(`/groups/${groupId}`, payload)).data;
+  } catch (e) {
+    throw getMsg(e);
+  }
+}
+
+export async function deleteGroup(groupId) {
+  try {
+    await http.delete(`/groups/${groupId}`);
   } catch (e) {
     throw getMsg(e);
   }

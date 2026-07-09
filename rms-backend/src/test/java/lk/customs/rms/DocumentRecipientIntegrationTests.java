@@ -968,7 +968,8 @@ class DocumentRecipientIntegrationTests {
                           "title": "Test Document",
                           "companyName": "Test Company",
                           "receivedDate": "2026-06-16",
-                          "priority": "HIGH"
+                          "priority": "HIGH",
+                          "documentType": "INTERNAL"
                         }
                         """, refPrefix, System.currentTimeMillis())))
                 .andExpect(status().isCreated())

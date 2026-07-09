@@ -1,6 +1,7 @@
 package lk.customs.rms.entity;
 
 import jakarta.persistence.*;
+import lk.customs.rms.enums.DocumentType;
 import lk.customs.rms.enums.Priority;
 import lk.customs.rms.enums.Status;
 import lombok.Getter;
@@ -44,6 +45,11 @@ public class Document {
     @Column(name="company_name")
     private String companyName;
 
+    // Internal vs External origin, chosen at creation. Nullable so pre-existing rows validate.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "doc_type", length = 20)
+    private DocumentType documentType;
+
     @Column(name = "visibility", length = 10)
     private String visibility;
 
@@ -60,6 +66,12 @@ public class Document {
 
     @Column(name="current_owner_user_id", nullable = false)
     private Long currentOwnerUserId;
+
+    // Set when the document is held by a group (group-held). Null for person-held documents.
+    // When set, current_owner_user_id is a compatibility anchor (a group admin); acting is governed
+    // by group-admin membership, not this single user. See DocumentServiceImpl#canActOnDocument.
+    @Column(name = "current_owner_group_id")
+    private Long currentOwnerGroupId;
 
     @Column(name="created_at", nullable = false)
     private LocalDateTime createdAt;

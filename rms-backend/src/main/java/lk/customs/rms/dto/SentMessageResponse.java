@@ -21,6 +21,8 @@ public class SentMessageResponse {
     private String forwardVisibility;
     private Long toUserId;
     private String toUserName;
+    private Long toGroupId;
+    private String toGroupName;
     private RecipientSummaryResponse recipientSummary;
     private String recipientSummaryText;
     private String latestRemarkPreview;

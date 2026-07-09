@@ -9,7 +9,12 @@ function hasPermission(user, permission) {
 }
 
 function isOwner(doc, user) {
-  return !!doc && Number(doc.currentOwnerUserId) === Number(user?.id);
+  if (!doc) return false;
+  // The literal current_owner_user_id check covers person-held documents. A group-held document's
+  // anchor is just one admin, but any admin of that group can act - the backend already resolves
+  // that (canActOnDocument) into doc.canWorkflow, so trust it as a second, additive path here
+  // rather than re-deriving group membership on the client.
+  return Number(doc.currentOwnerUserId) === Number(user?.id) || Boolean(doc.canWorkflow);
 }
 
 function isIssued(doc) {

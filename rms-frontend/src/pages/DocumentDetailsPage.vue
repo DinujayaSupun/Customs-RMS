@@ -100,6 +100,9 @@
             <div class="k">Priority</div>
             <div class="v">{{ doc.priority }}</div>
 
+            <div class="k">Type</div>
+            <div class="v">{{ doc.documentType || "-" }}</div>
+
             <div class="k">Main Attachment Type</div>
             <div class="v">
               <span class="docTypeBadge" :class="'docType-' + docTypeClass(mainAttachmentType)">
@@ -233,10 +236,82 @@
               placeholder="No BCC users selected"
             />
           </div>
-          </template>
 
           <div class="formRow">
-            <div class="label">{{ canForward ? 'Forward To' : 'Return To' }}</div>
+            <div class="label">Forward To</div>
+            <div class="modeToggle">
+              <button
+                type="button"
+                class="modeToggleBtn"
+                :class="{ active: forwardTargetMode === 'person' }"
+                :disabled="busy"
+                @click="forwardTargetMode = 'person'"
+              >
+                Person
+              </button>
+              <button
+                type="button"
+                class="modeToggleBtn"
+                :class="{ active: forwardTargetMode === 'group' }"
+                :disabled="busy"
+                @click="forwardTargetMode = 'group'"
+              >
+                Group
+              </button>
+            </div>
+          </div>
+          </template>
+
+          <div v-if="canForward && forwardTargetMode === 'group'" class="formRow">
+            <div class="label">Forward To Group</div>
+
+            <div class="forwardSearchWrap">
+              <input
+                class="input forwardSearch"
+                v-model="forwardGroupSearch"
+                :disabled="busy"
+                placeholder="Search groups by name or member..."
+                spellcheck="false"
+                @focus="forwardGroupSearchFocused = true"
+                @blur="forwardGroupSearchFocused = false"
+                @keydown.escape="forwardGroupSearchFocused = false"
+              />
+
+              <div v-if="showForwardGroupSearchDropdown" class="forwardSearchDropdown">
+                <button
+                  v-for="g in filteredForwardGroups"
+                  :key="g.id"
+                  type="button"
+                  class="forwardSearchOption"
+                  :class="{ active: Number(g.id) === Number(toGroupId) }"
+                  @mousedown.prevent="selectForwardGroup(g)"
+                >
+                  <span class="groupOptionTop">
+                    <span class="groupAvatarSm" :style="{ background: g.color || '#64748b' }">{{ groupInitials(g.name) }}</span>
+                    <span class="forwardUserName">{{ g.name }}</span>
+                  </span>
+                  <span class="forwardUserMeta">{{ g.adminCount }} admin{{ g.adminCount === 1 ? "" : "s" }} · {{ g.memberCount }} member{{ g.memberCount === 1 ? "" : "s" }}</span>
+                </button>
+                <div v-if="filteredForwardGroups.length === 0" class="forwardSearchEmpty">
+                  No matching groups
+                </div>
+              </div>
+            </div>
+
+            <div v-if="selectedForwardGroup" class="forwardSelected">
+              <span>Selected group</span>
+              <span class="groupOptionTop">
+                <span class="groupAvatarSm" :style="{ background: selectedForwardGroup.color || '#64748b' }">{{ groupInitials(selectedForwardGroup.name) }}</span>
+                <b>{{ selectedForwardGroup.name }}</b>
+              </span>
+            </div>
+            <div v-else class="forwardSelected muted">
+              Select a group from the search results before forwarding.
+            </div>
+          </div>
+
+          <div v-if="!(canForward && forwardTargetMode === 'group')" class="formRow">
+            <div class="label">{{ canForward ? 'Forward To Person' : 'Return To' }}</div>
 
             <div class="forwardSearchWrap">
               <input
@@ -528,7 +603,8 @@
                   <span class="who">
                     <b>{{ displayMovementActionLabel(m.actionType) }}</b>
                     <span v-if="m.fromUserId"> | from {{ movementUserLabel(m, "from") }}</span>
-                    <span v-if="m.toUserId"> → to {{ movementUserLabel(m, "to") }}</span>
+                    <span v-if="m.toGroupId"> → to Group: {{ m.toGroupName || "a group" }}</span>
+                    <span v-else-if="m.toUserId"> → to {{ movementUserLabel(m, "to") }}</span>
                   </span>
                   <span class="when mono">{{ formatDateTime(m.actionAt) }}</span>
                 </div>
@@ -718,7 +794,8 @@ import { getWorkflowSenderSuccessMessage } from "../utils/workflowNotificationLo
 import { getUndoSendInfo, needsUndoReason } from "../utils/undoSendLogic";
 import { formatVersionedFileName } from "../utils/createDocumentFilesLogic";
 import { compactRecipientSummary, fullRecipientSummary, recipientDisplayName, recipientIds } from "../utils/recipientSummaryLogic";
-import { listUsers } from "../api/auth.api";
+import { listUsers, listGroups } from "../api/auth.api";
+import { buildForwardPayload, filterGroupsBySearch, initialsFor } from "../utils/groupsLogic";
 import {
   getDocument,
   updateDocument,
@@ -786,6 +863,11 @@ const forwardUserSearch = ref("");
 const forwardSearchFocused = ref(false);
 const forwardCcUserIds = ref([]);
 const forwardBccUserIds = ref([]);
+const forwardTargetMode = ref("person");
+const toGroupId = ref(null);
+const groups = ref([]);
+const forwardGroupSearch = ref("");
+const forwardGroupSearchFocused = ref(false);
 const manageRecipientsOpen = ref(false);
 const manageRecipientsBusy = ref(false);
 const manageCcUserIds = ref([]);
@@ -952,6 +1034,27 @@ function selectForwardUser(user) {
   autoSelectedTargetId.value = null;
 }
 
+const selectedForwardGroup = computed(() => {
+  return groups.value.find((g) => Number(g.id) === Number(toGroupId.value)) || null;
+});
+
+const filteredForwardGroups = computed(() => filterGroupsBySearch(groups.value, forwardGroupSearch.value));
+
+const showForwardGroupSearchDropdown = computed(() => {
+  return forwardGroupSearchFocused.value && (forwardGroupSearch.value.trim() || filteredForwardGroups.value.length > 0);
+});
+
+function selectForwardGroup(group) {
+  if (!group) return;
+  toGroupId.value = Number(group.id);
+  forwardGroupSearch.value = group.name;
+  forwardGroupSearchFocused.value = false;
+}
+
+function groupInitials(name) {
+  return initialsFor(name);
+}
+
 function recipientGroupText(recipients = []) {
   if (!Array.isArray(recipients) || recipients.length === 0) return "";
   return recipients.map(recipientDisplayName).join(", ");
@@ -1040,6 +1143,23 @@ watch(
   { immediate: true }
 );
 
+// Default to the first group when switching into group mode, and forget the selection when
+// leaving it, so re-entering group mode doesn't carry over a stale, unrelated pick.
+watch(
+  [forwardTargetMode, groups],
+  ([mode, list]) => {
+    if (mode !== "group") {
+      toGroupId.value = null;
+      forwardGroupSearch.value = "";
+      return;
+    }
+    if (!toGroupId.value && list.length > 0) {
+      selectForwardGroup(list[0]);
+    }
+  },
+  { immediate: true }
+);
+
 watch(
   availableForwardVisibilities,
   (list) => {
@@ -1083,6 +1203,10 @@ const createdByLabel = computed(() => {
 
 const ownerLabel = computed(() => {
   if (!doc.value) return "-";
+  if (doc.value.currentOwnerGroupId) {
+    const group = groups.value.find((g) => Number(g.id) === Number(doc.value.currentOwnerGroupId));
+    return `Held by ${group ? group.name : "a group"}`;
+  }
   return formatUserLabelFromParts({
     userId: doc.value.currentOwnerUserId,
     name: doc.value.currentOwnerName,
@@ -1360,6 +1484,11 @@ onMounted(async () => {
   } catch {
     users.value = [];
   }
+  try {
+    groups.value = await listGroups();
+  } catch {
+    groups.value = [];
+  }
   await loadWorkflowRules();
   await reloadAll();
 });
@@ -1558,7 +1687,14 @@ async function deleteMinute(remark) {
 async function doForward() {
   error.value = "";
   if (!ensureWorkflowMinuteAllowed("Forward")) return;
-  if (!toUserId.value) {
+
+  const toGroup = forwardTargetMode.value === "group";
+  if (toGroup && !toGroupId.value) {
+    error.value = "Please select a group to forward.";
+    toast.warning(error.value);
+    return;
+  }
+  if (!toGroup && !toUserId.value) {
     error.value = "Please select a user to forward.";
     toast.warning(error.value);
     return;
@@ -1585,13 +1721,15 @@ async function doForward() {
 
   busy.value = true;
   try {
-    await forwardDocument(documentId, {
-      toUserId: Number(toUserId.value),
+    await forwardDocument(documentId, buildForwardPayload({
+      mode: forwardTargetMode.value,
+      toUserId: toUserId.value,
+      toGroupId: toGroupId.value,
       ccUserIds,
       bccUserIds,
       forwardVisibility: selectedVisibility,
-      remarkText: remarkOrNull(), // ✅ this is what backend expects
-    });
+      remarkText: remarkOrNull(),
+    }));
 
     // Forward succeeded. The document may no longer be viewable by this user after ownership change.
     remarkDraft.value = "";
@@ -1821,6 +1959,40 @@ async function removeAttachment(a) {
 .formRow { margin-top:10px; }
 .label { font-size:12px; font-weight:800; margin-bottom:6px; color:#374151; }
 .input { height:38px; width:100%; border:1px solid #e5e7eb; border-radius:8px; padding:0 10px; outline:none; }
+.modeToggle {
+  display:inline-flex;
+  border:1px solid #d1d5db;
+  border-radius:10px;
+  overflow:hidden;
+}
+.modeToggleBtn {
+  padding:8px 14px;
+  border:0;
+  background:#fff;
+  color:#374151;
+  font-size:13px;
+  font-weight:700;
+  cursor:pointer;
+}
+.modeToggleBtn + .modeToggleBtn { border-left:1px solid #d1d5db; }
+.modeToggleBtn.active { background:#2563eb; color:#fff; }
+.modeToggleBtn:disabled { opacity:0.6; cursor:not-allowed; }
+.groupOptionTop {
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.groupAvatarSm {
+  width:22px;
+  height:22px;
+  border-radius:999px;
+  display:inline-grid;
+  place-items:center;
+  flex:0 0 auto;
+  color:#fff;
+  font-size:10px;
+  font-weight:900;
+}
 .forwardSearchWrap {
   position:relative;
   margin-bottom:8px;

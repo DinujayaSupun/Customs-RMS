@@ -1,13 +1,16 @@
 package lk.customs.rms.service.impl;
 
 import lk.customs.rms.dto.DcAutoForwardConfigResponse;
+import lk.customs.rms.dto.DcAutoForwardReceiverEntry;
 import lk.customs.rms.dto.UpdateDcAutoForwardConfigRequest;
 import lk.customs.rms.entity.DcAutoForwardConfig;
+import lk.customs.rms.entity.DcAutoForwardReceiver;
 import lk.customs.rms.entity.User;
 import lk.customs.rms.enums.MovementActionType;
 import lk.customs.rms.enums.Status;
 import lk.customs.rms.exception.BadRequestException;
 import lk.customs.rms.repository.DcAutoForwardConfigRepository;
+import lk.customs.rms.repository.DcAutoForwardReceiverRepository;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.service.DcAutoForwardConfigService;
 import org.springframework.stereotype.Service;
@@ -17,6 +20,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -31,11 +35,14 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
 
     private final DcAutoForwardConfigRepository configRepository;
     private final UserRepository userRepository;
+    private final DcAutoForwardReceiverRepository dcReceiverRepository;
 
     public DcAutoForwardConfigServiceImpl(DcAutoForwardConfigRepository configRepository,
-                                          UserRepository userRepository) {
+                                          UserRepository userRepository,
+                                          DcAutoForwardReceiverRepository dcReceiverRepository) {
         this.configRepository = configRepository;
         this.userRepository = userRepository;
+        this.dcReceiverRepository = dcReceiverRepository;
     }
 
     @Override
@@ -71,20 +78,21 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
             config.setUndoSendShowExpiredInfo(Boolean.TRUE.equals(request.getUndoSendShowExpiredInfo()));
         }
 
+        // Kept for backward compatibility. Receiver assignment is now per-DC (below); this
+        // singleton value is no longer required and no longer read by the scheduler.
         Long receiverUserId = request.getReceiverUserId();
-        if (config.isEnabled()) {
-            if (receiverUserId == null) {
-                throw new BadRequestException("Receiver user is required when DC auto-forward is enabled.");
-            }
+        if (receiverUserId == null) {
+            config.setReceiverUserId(null);
+        } else {
             User receiver = requireReceiver(receiverUserId);
             config.setReceiverUserId(receiver.getId());
-        } else {
-            if (receiverUserId == null) {
-                config.setReceiverUserId(null);
-            } else {
-                User receiver = requireReceiver(receiverUserId);
-                config.setReceiverUserId(receiver.getId());
+        }
+
+        if (request.getDcReceivers() != null) {
+            if (config.isEnabled() && request.getDcReceivers().isEmpty()) {
+                throw new BadRequestException("Configure at least one DC receiver mapping when DC auto-forward is enabled.");
             }
+            saveDcReceiverMappings(request.getDcReceivers());
         }
 
         if (request.getForwardReturnAllowedStatuses() != null) {
@@ -164,11 +172,74 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
         return user;
     }
 
+    private User requireDcUser(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new BadRequestException("DC user not found: " + userId));
+
+        String role = user.getRole() == null ? "" : user.getRole().getRoleName();
+        if (!"DC".equalsIgnoreCase(role)) {
+            throw new BadRequestException("dcUserId must reference a user with the DC role: " + userId);
+        }
+
+        return user;
+    }
+
+    /** Full replace: every mapping in the request is upserted; any existing mapping not present is removed. */
+    private void saveDcReceiverMappings(List<UpdateDcAutoForwardConfigRequest.Entry> entries) {
+        Set<Long> keepDcUserIds = new LinkedHashSet<>();
+        for (UpdateDcAutoForwardConfigRequest.Entry entry : entries) {
+            requireDcUser(entry.getDcUserId());
+            requireReceiver(entry.getReceiverUserId());
+
+            DcAutoForwardReceiver mapping = dcReceiverRepository.findByDcUserId(entry.getDcUserId())
+                    .orElseGet(DcAutoForwardReceiver::new);
+            mapping.setDcUserId(entry.getDcUserId());
+            mapping.setReceiverUserId(entry.getReceiverUserId());
+            dcReceiverRepository.save(mapping);
+            keepDcUserIds.add(entry.getDcUserId());
+        }
+
+        for (DcAutoForwardReceiver existing : dcReceiverRepository.findAllByOrderByDcUserIdAsc()) {
+            if (!keepDcUserIds.contains(existing.getDcUserId())) {
+                dcReceiverRepository.delete(existing);
+            }
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Map<Long, Long> getDcReceiverMapping() {
+        return dcReceiverRepository.receiverIdByDcUserId();
+    }
+
     private DcAutoForwardConfigResponse toResponse(DcAutoForwardConfig config) {
         User receiver = null;
         if (config.getReceiverUserId() != null) {
             receiver = userRepository.findById(config.getReceiverUserId()).orElse(null);
         }
+
+        List<DcAutoForwardReceiver> mappings = dcReceiverRepository.findAllByOrderByDcUserIdAsc();
+        Set<Long> lookupIds = new LinkedHashSet<>();
+        for (DcAutoForwardReceiver m : mappings) {
+            lookupIds.add(m.getDcUserId());
+            lookupIds.add(m.getReceiverUserId());
+        }
+        Map<Long, User> usersById = userRepository.findAllById(lookupIds).stream()
+                .collect(java.util.stream.Collectors.toMap(User::getId, u -> u));
+
+        List<DcAutoForwardReceiverEntry> dcReceivers = mappings.stream()
+                .map(m -> {
+                    User dc = usersById.get(m.getDcUserId());
+                    User r = usersById.get(m.getReceiverUserId());
+                    return DcAutoForwardReceiverEntry.builder()
+                            .dcUserId(m.getDcUserId())
+                            .dcName(dc == null ? null : dc.getFullName())
+                            .receiverUserId(m.getReceiverUserId())
+                            .receiverName(r == null ? null : r.getFullName())
+                            .receiverRole(r == null || r.getRole() == null ? null : r.getRole().getRoleName())
+                            .build();
+                })
+                .toList();
 
         return DcAutoForwardConfigResponse.builder()
                 .enabled(config.isEnabled())
@@ -176,6 +247,7 @@ public class DcAutoForwardConfigServiceImpl implements DcAutoForwardConfigServic
                 .receiverUserId(config.getReceiverUserId())
                 .receiverName(receiver == null ? null : receiver.getFullName())
                 .receiverRole(receiver == null || receiver.getRole() == null ? null : receiver.getRole().getRoleName())
+                .dcReceivers(dcReceivers)
                 .forwardReturnAllowedStatuses(parseStatuses(config.getForwardReturnAllowedStatuses())
                         .stream()
                         .map(Status::name)

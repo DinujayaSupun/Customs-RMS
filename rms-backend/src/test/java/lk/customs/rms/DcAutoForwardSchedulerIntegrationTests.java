@@ -2,7 +2,9 @@ package lk.customs.rms;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lk.customs.rms.dto.RealtimeNotificationMessage;
 import lk.customs.rms.entity.DcAutoForwardConfig;
+import lk.customs.rms.entity.DcAutoForwardReceiver;
 import lk.customs.rms.entity.Document;
 import lk.customs.rms.entity.Role;
 import lk.customs.rms.entity.User;
@@ -10,18 +12,23 @@ import lk.customs.rms.enums.MovementActionType;
 import lk.customs.rms.enums.Priority;
 import lk.customs.rms.enums.Status;
 import lk.customs.rms.repository.DcAutoForwardConfigRepository;
+import lk.customs.rms.repository.DcAutoForwardReceiverRepository;
 import lk.customs.rms.repository.DocumentMovementRepository;
 import lk.customs.rms.repository.DocumentRepository;
 import lk.customs.rms.repository.RoleRepository;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.scheduler.DcAutoForwardScheduler;
+import lk.customs.rms.websocket.NotificationWebSocketHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -57,6 +64,9 @@ class DcAutoForwardSchedulerIntegrationTests {
     private DcAutoForwardConfigRepository dcAutoForwardConfigRepository;
 
     @Autowired
+    private DcAutoForwardReceiverRepository dcAutoForwardReceiverRepository;
+
+    @Autowired
     private DcAutoForwardScheduler scheduler;
 
     @Autowired
@@ -64,6 +74,9 @@ class DcAutoForwardSchedulerIntegrationTests {
 
     @Autowired
     private WebApplicationContext webApplicationContext;
+
+    @MockitoSpyBean
+    private NotificationWebSocketHandler notificationWebSocketHandler;
 
     private MockMvc mockMvc;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -103,7 +116,7 @@ class DcAutoForwardSchedulerIntegrationTests {
         assigned.setDcViewedAt(null);
         documentRepository.saveAndFlush(assigned);
 
-        enableAutoForward(receiver.getId(), 1);
+        enableAutoForward(dc.getId(), receiver.getId(), 1);
 
         scheduler.processTimedOutDcDocuments();
 
@@ -153,7 +166,7 @@ class DcAutoForwardSchedulerIntegrationTests {
         viewed.setDcAssignedAt(LocalDateTime.now().minusMinutes(10));
         documentRepository.saveAndFlush(viewed);
 
-        enableAutoForward(receiver.getId(), 1);
+        enableAutoForward(dc.getId(), receiver.getId(), 1);
 
         scheduler.processTimedOutDcDocuments();
 
@@ -174,7 +187,7 @@ class DcAutoForwardSchedulerIntegrationTests {
             createTimedOutDcDocument(creator.getId(), dc.getId(), "auto-batch-" + index);
         }
 
-        enableAutoForward(receiver.getId(), 1);
+        enableAutoForward(dc.getId(), receiver.getId(), 1);
 
         scheduler.processTimedOutDcDocuments();
 
@@ -191,6 +204,61 @@ class DcAutoForwardSchedulerIntegrationTests {
                 .filter(document -> receiver.getId().equals(document.getCurrentOwnerUserId()))
                 .count();
         assertThat(forwardedAfterSecondRun).isEqualTo(totalCandidates);
+    }
+
+    @Test
+    void eachDcAutoForwardsToItsOwnMappedReceiverAndUnmappedDcIsSkipped() {
+        String password = "AutoForward123";
+        User creator = createUser("ADMIN", "auto-perdc-creator-", password);
+        User dcA = createUser("DC", "auto-perdc-dcA-", password);
+        User dcB = createUser("DC", "auto-perdc-dcB-", password);
+        User dcNoMapping = createUser("DC", "auto-perdc-dcNone-", password);
+        User receiverA = createUser("DDC", "auto-perdc-receiverA-", password);
+        User receiverB = createUser("SDDC", "auto-perdc-receiverB-", password);
+
+        Document docA = createTimedOutDcDocument(creator.getId(), dcA.getId(), "auto-perdc-a");
+        Document docB = createTimedOutDcDocument(creator.getId(), dcB.getId(), "auto-perdc-b");
+        Document docNoMapping = createTimedOutDcDocument(creator.getId(), dcNoMapping.getId(), "auto-perdc-none");
+
+        // Enable, then map dcA -> receiverA and dcB -> receiverB. dcNoMapping is left unmapped.
+        enableAutoForward(dcA.getId(), receiverA.getId(), 1);
+        setDcReceiverMapping(dcB.getId(), receiverB.getId());
+
+        scheduler.processTimedOutDcDocuments();
+
+        assertThat(requireDocument(docA.getId()).getCurrentOwnerUserId()).isEqualTo(receiverA.getId());
+        assertThat(requireDocument(docB.getId()).getCurrentOwnerUserId()).isEqualTo(receiverB.getId());
+        // No mapping configured for this DC -> its document is left untouched, still with the DC.
+        assertThat(requireDocument(docNoMapping.getId()).getCurrentOwnerUserId()).isEqualTo(dcNoMapping.getId());
+    }
+
+    @Test
+    void autoForwardSendsARealtimePushToTheReceiverNotJustASilentDbUpdate() {
+        String password = "AutoForward123";
+        User creator = createUser("ADMIN", "auto-notify-creator-", password);
+        User dc = createUser("DC", "auto-notify-dc-", password);
+        User receiver = createUser("DDC", "auto-notify-receiver-", password);
+
+        createTimedOutDcDocument(creator.getId(), dc.getId(), "auto-notify");
+        enableAutoForward(dc.getId(), receiver.getId(), 1);
+
+        Mockito.clearInvocations(notificationWebSocketHandler);
+        scheduler.processTimedOutDcDocuments();
+
+        ArgumentCaptor<Long> userIdCaptor = ArgumentCaptor.forClass(Long.class);
+        ArgumentCaptor<RealtimeNotificationMessage> messageCaptor = ArgumentCaptor.forClass(RealtimeNotificationMessage.class);
+        Mockito.verify(notificationWebSocketHandler, Mockito.atLeastOnce())
+                .sendToUser(userIdCaptor.capture(), messageCaptor.capture());
+
+        String typeSentToReceiver = null;
+        for (int i = 0; i < userIdCaptor.getAllValues().size(); i++) {
+            if (receiver.getId().equals(userIdCaptor.getAllValues().get(i))) {
+                typeSentToReceiver = messageCaptor.getAllValues().get(i).type();
+            }
+        }
+        assertThat(typeSentToReceiver)
+                .as("the receiver must get a real-time push so the document appears without a manual refresh")
+                .isEqualTo("DOCUMENT_FORWARDED");
     }
 
     private User createUser(String roleName, String prefix, String rawPassword) {
@@ -216,7 +284,8 @@ class DcAutoForwardSchedulerIntegrationTests {
                                   "title": "Auto Forward Test Document",
                                   "receivedDate": "%s",
                                   "companyName": "Integration Co",
-                                  "priority": "HIGH"
+                                  "priority": "HIGH",
+                                  "documentType": "INTERNAL"
                                 }
                                 """.formatted(refPrefix, UUID.randomUUID(), LocalDate.now())))
                 .andExpect(status().isCreated())
@@ -243,15 +312,24 @@ class DcAutoForwardSchedulerIntegrationTests {
         return documentRepository.saveAndFlush(document);
     }
 
-    private void enableAutoForward(Long receiverUserId, int timeoutMinutes) {
+    /** Enables auto-forward and maps every id in dcUserIds to the same receiver (the common single-DC test shape). */
+    private void enableAutoForward(Long dcUserId, Long receiverUserId, int timeoutMinutes) {
         DcAutoForwardConfig config = dcAutoForwardConfigRepository.findById(1L).orElseGet(DcAutoForwardConfig::new);
         config.setId(1L);
         config.setEnabled(true);
-        config.setReceiverUserId(receiverUserId);
         config.setTimeoutMinutes(timeoutMinutes);
         config.setForwardReturnAllowedStatuses("PENDING,IN_PROGRESS,RETURNED");
         config.setApproveRejectButtonsEnabled(true);
         dcAutoForwardConfigRepository.saveAndFlush(config);
+        setDcReceiverMapping(dcUserId, receiverUserId);
+    }
+
+    private void setDcReceiverMapping(Long dcUserId, Long receiverUserId) {
+        DcAutoForwardReceiver mapping = dcAutoForwardReceiverRepository.findByDcUserId(dcUserId)
+                .orElseGet(DcAutoForwardReceiver::new);
+        mapping.setDcUserId(dcUserId);
+        mapping.setReceiverUserId(receiverUserId);
+        dcAutoForwardReceiverRepository.saveAndFlush(mapping);
     }
 
     private void resetAutoForwardConfig() {
@@ -263,6 +341,7 @@ class DcAutoForwardSchedulerIntegrationTests {
         config.setForwardReturnAllowedStatuses("PENDING,IN_PROGRESS,RETURNED");
         config.setApproveRejectButtonsEnabled(true);
         dcAutoForwardConfigRepository.saveAndFlush(config);
+        dcAutoForwardReceiverRepository.deleteAll();
     }
 
     private Document requireDocument(long documentId) {
