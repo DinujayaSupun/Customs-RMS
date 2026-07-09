@@ -14,6 +14,13 @@
       "runtimeArgs": ["--prefix", "rms-frontend", "run", "dev", "--", "--port", "4000", "--strictPort"],
       "port": 4000,
       "autoPort": false
+    },
+    {
+      "name": "docker-frontend",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "frontend"],
+      "port": 3000,
+      "autoPort": false
     }
   ]
 }
