@@ -11,10 +11,14 @@ import lk.customs.rms.entity.User;
 import lk.customs.rms.enums.MovementActionType;
 import lk.customs.rms.enums.Priority;
 import lk.customs.rms.enums.Status;
+import lk.customs.rms.entity.RecipientGroup;
+import lk.customs.rms.entity.RecipientGroupMember;
 import lk.customs.rms.repository.DcAutoForwardConfigRepository;
 import lk.customs.rms.repository.DcAutoForwardReceiverRepository;
 import lk.customs.rms.repository.DocumentMovementRepository;
 import lk.customs.rms.repository.DocumentRepository;
+import lk.customs.rms.repository.RecipientGroupMemberRepository;
+import lk.customs.rms.repository.RecipientGroupRepository;
 import lk.customs.rms.repository.RoleRepository;
 import lk.customs.rms.repository.UserRepository;
 import lk.customs.rms.scheduler.DcAutoForwardScheduler;
@@ -65,6 +69,12 @@ class DcAutoForwardSchedulerIntegrationTests {
 
     @Autowired
     private DcAutoForwardReceiverRepository dcAutoForwardReceiverRepository;
+
+    @Autowired
+    private RecipientGroupRepository recipientGroupRepository;
+
+    @Autowired
+    private RecipientGroupMemberRepository recipientGroupMemberRepository;
 
     @Autowired
     private DcAutoForwardScheduler scheduler;
@@ -259,6 +269,58 @@ class DcAutoForwardSchedulerIntegrationTests {
         assertThat(typeSentToReceiver)
                 .as("the receiver must get a real-time push so the document appears without a manual refresh")
                 .isEqualTo("DOCUMENT_FORWARDED");
+    }
+
+    @Test
+    void autoForwardingAGroupHeldDcDocumentClearsGroupHeldStateSoTheOtherGroupAdminCanNoLongerAct() throws Exception {
+        String password = "AutoForward123";
+        User creator = createUser("ADMIN", "auto-grp-creator-", password);
+        User dc = createUser("DC", "auto-grp-dc-", password);
+        User otherGroupAdmin = createUser("SC", "auto-grp-other-", password);
+        User receiver = createUser("DDC", "auto-grp-receiver-", password);
+        String otherGroupAdminToken = loginAndGetToken(otherGroupAdmin.getUsername(), password);
+
+        long groupId = createGroupWithAdmins("Auto-Forward Test Group", creator.getId(), dc.getId(), otherGroupAdmin.getId());
+        Document document = createTimedOutDcDocument(creator.getId(), dc.getId(), "auto-grp");
+        document.setCurrentOwnerGroupId(groupId);
+        documentRepository.saveAndFlush(document);
+
+        enableAutoForward(dc.getId(), receiver.getId(), 1);
+
+        scheduler.processTimedOutDcDocuments();
+
+        Document forwarded = requireDocument(document.getId());
+        assertThat(forwarded.getCurrentOwnerUserId()).isEqualTo(receiver.getId());
+        assertThat(forwarded.getCurrentOwnerGroupId())
+                .as("auto-forward clears group-held state, not just the owning user")
+                .isNull();
+
+        // Before the fix, currentOwnerGroupId stayed set and canActOnDocument() kept treating any
+        // admin of the timed-out DC's group as a co-owner of a document that now belongs to receiver.
+        mockMvc.perform(post("/api/documents/{id}/forward", document.getId())
+                        .header("Authorization", bearer(otherGroupAdminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "toUserId": %d, "forwardVisibility": "PUBLIC" }
+                                """.formatted(creator.getId())))
+                .andExpect(status().isBadRequest());
+    }
+
+    private long createGroupWithAdmins(String name, Long createdByUserId, Long... adminUserIds) {
+        RecipientGroup group = new RecipientGroup();
+        group.setName(name);
+        group.setColor("#123456");
+        group.setCreatedByUserId(createdByUserId);
+        group.setCreatedAt(LocalDateTime.now());
+        group = recipientGroupRepository.saveAndFlush(group);
+        for (Long adminUserId : adminUserIds) {
+            RecipientGroupMember member = new RecipientGroupMember();
+            member.setGroupId(group.getId());
+            member.setUserId(adminUserId);
+            member.setIsAdmin(true);
+            recipientGroupMemberRepository.saveAndFlush(member);
+        }
+        return group.getId();
     }
 
     private User createUser(String roleName, String prefix, String rawPassword) {
