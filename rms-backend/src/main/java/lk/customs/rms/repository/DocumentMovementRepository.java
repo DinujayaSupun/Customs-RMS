@@ -59,31 +59,46 @@ public interface DocumentMovementRepository extends JpaRepository<DocumentMoveme
 
     boolean existsByDocumentIdAndActionAtAfter(Long documentId, java.time.LocalDateTime actionAt);
 
+        // A viewer can receive a document either directly (toUserId) or as a member of a group the
+        // document was forwarded to (toGroupId) — e.g. a CC-only group member has no toUserId movement
+        // of their own, so without the toGroupId branch this returns nothing and the inbox falls back
+        // to "Unknown user" for the sender. actorGroupIds may be empty; Hibernate renders an empty
+        // IN (...) as always-false rather than erroring.
         @Query("""
                      select m
                      from DocumentMovement m
                      where m.documentId in :documentIds
-                         and m.toUserId = :actorUserId
+                         and (m.toUserId = :actorUserId or m.toGroupId in :actorGroupIds)
                          and m.actionType in :inboundActions
                          and m.actionAt = (
                                  select max(m2.actionAt)
                                  from DocumentMovement m2
                                  where m2.documentId = m.documentId
-                                     and m2.toUserId = :actorUserId
+                                     and (m2.toUserId = :actorUserId or m2.toGroupId in :actorGroupIds)
                                      and m2.actionType in :inboundActions
                          )
                      """)
         List<DocumentMovement> findLatestInboundByActorAndDocumentIds(@Param("actorUserId") Long actorUserId,
                                                                                                                                     @Param("documentIds") List<Long> documentIds,
+                                                                                                                                    @Param("actorGroupIds") Collection<Long> actorGroupIds,
                                                                                                                                     @Param("inboundActions") Collection<MovementActionType> inboundActions);
 
+        // A user is "in the trail" either directly (fromUserId/toUserId) or through group membership
+        // at the time of a forward-to-group - otherwise a plain (non-admin) group member loses view
+        // access to a private document's history once it moves on past their group.
         @Query("""
                      select case when count(m) > 0 then true else false end
                      from DocumentMovement m
                      where m.documentId = :documentId
                          and m.actionType = :forwardAction
                          and upper(coalesce(m.forwardVisibility, '')) = 'PRIVATE'
-                         and (m.fromUserId = :userId or m.toUserId = :userId)
+                         and (
+                             m.fromUserId = :userId
+                             or m.toUserId = :userId
+                             or (m.toGroupId is not null and m.toGroupId in (
+                                 select gm.groupId from RecipientGroupMember gm where gm.userId = :userId
+                             ))
+                         )
                      """)
         boolean existsPrivateForwardTrailForUser(@Param("documentId") Long documentId,
                                                                                          @Param("userId") Long userId,

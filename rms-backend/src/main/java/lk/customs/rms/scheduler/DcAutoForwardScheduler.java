@@ -129,6 +129,10 @@ public class DcAutoForwardScheduler {
         Long from = doc.getCurrentOwnerUserId();
         Map<String, List<Long>> previousRecipients = documentRecipientService.getActiveRecipientsByType(doc.getId());
         doc.setCurrentOwnerUserId(receiverUserId);
+        // Auto-forward always hands the document to a single DDC/SDDC receiver, so it is no longer
+        // group-held - without this, admins of whatever group the timed-out DC belonged to would
+        // keep action rights on a document that now belongs solely to the receiver.
+        doc.setCurrentOwnerGroupId(null);
         documentUserViewRepository.deleteByDocumentIdAndUserId(doc.getId(), receiverUserId);
         doc.setStatus(Status.IN_PROGRESS);
         doc.setDcAssignedAt(null);

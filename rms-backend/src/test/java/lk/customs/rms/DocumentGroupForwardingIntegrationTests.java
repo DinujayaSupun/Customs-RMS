@@ -268,6 +268,44 @@ class DocumentGroupForwardingIntegrationTests {
         assertThat(typeByRecipient.get(plainMember.getId())).as("plain member notification type").isEqualTo("DOCUMENT_COPIED");
     }
 
+    @Test
+    void undoingAGroupForwardClearsGroupHeldStateSoTheGroupAdminCanNoLongerAct() throws Exception {
+        String password = "Grp1234";
+        User dc = createUser("DC", "gf6-dc-", password);
+        User groupOwnerAdmin = createUser("ADMIN", "gf6-owner-", password);
+        User groupAdmin = createUser("DDC", "gf6-admin-", password);
+        String dcToken = loginAndGetToken(dc.getUsername(), password);
+        String groupAdminToken = loginAndGetToken(groupAdmin.getUsername(), password);
+
+        long groupId = createGroup(loginAndGetToken(groupOwnerAdmin.getUsername(), password),
+                "Undo Group", groupAdmin.getId(), true);
+        long documentId = createDocument(dcToken, "gf6-undo");
+        forwardToGroup(dcToken, documentId, groupId).andExpect(status().isOk());
+
+        // Undo before the group admin opens it - available by default (unopened, within window).
+        mockMvc.perform(post("/api/documents/{id}/undo-send", documentId)
+                        .header("Authorization", bearer(dcToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"Wrong group\"}"))
+                .andExpect(status().isOk());
+
+        JsonNode afterUndo = getDocument(dcToken, documentId);
+        assertThat(afterUndo.get("currentOwnerUserId").asLong()).isEqualTo(dc.getId());
+        assertThat(afterUndo.has("currentOwnerGroupId") && !afterUndo.get("currentOwnerGroupId").isNull())
+                .as("undo send clears group-held state, not just the owning user")
+                .isFalse();
+
+        // The group's admin must lose action rights entirely - before the fix, currentOwnerGroupId
+        // stayed set and canActOnDocument() kept treating any admin of that group as a co-owner.
+        mockMvc.perform(post("/api/documents/{id}/forward", documentId)
+                        .header("Authorization", bearer(groupAdminToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "toUserId": %d, "forwardVisibility": "PUBLIC" }
+                                """.formatted(dc.getId())))
+                .andExpect(status().isBadRequest());
+    }
+
     // ---- helpers ----
 
     private org.springframework.test.web.servlet.ResultActions forwardToGroup(String token, long documentId, long groupId) throws Exception {

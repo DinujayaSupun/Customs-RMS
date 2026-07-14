@@ -40,4 +40,13 @@ public interface RecipientGroupMemberRepository extends JpaRepository<RecipientG
            where m.userId = :userId and m.isAdmin = true and m.groupId in :groupIds
            """)
     List<Long> findAdminGroupIds(@Param("userId") Long userId, @Param("groupIds") Collection<Long> groupIds);
+
+    // Same batching as findAdminGroupIds, but for any membership (admin or plain) — used to resolve
+    // the inbox "sent by" sender for viewers who only see a document via group CC.
+    @Query("""
+           select m.groupId
+           from RecipientGroupMember m
+           where m.userId = :userId and m.groupId in :groupIds
+           """)
+    List<Long> findMemberGroupIds(@Param("userId") Long userId, @Param("groupIds") Collection<Long> groupIds);
 }

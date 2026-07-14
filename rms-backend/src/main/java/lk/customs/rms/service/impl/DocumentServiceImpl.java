@@ -308,11 +308,22 @@ public class DocumentServiceImpl implements DocumentService {
                     remark -> remark,
                     (first, second) -> first
                 ));
+        // A viewer can be CC'd purely through group membership (no toUserId movement of their own),
+        // so the inbound-movement lookup below also needs the groups they belong to on this page.
+        Set<Long> groupIdsOnPage = docs.getContent().stream()
+            .map(Document::getCurrentOwnerGroupId)
+            .filter(java.util.Objects::nonNull)
+            .collect(Collectors.toSet());
+        Set<Long> actorMemberGroupIds = groupIdsOnPage.isEmpty()
+            ? Set.of()
+            : new HashSet<>(recipientGroupMemberRepository.findMemberGroupIds(actorUserId, groupIdsOnPage));
+
         Map<Long, DocumentMovement> latestInboundByDoc = docIds.isEmpty()
             ? Map.of()
             : movementRepository.findLatestInboundByActorAndDocumentIds(
                     actorUserId,
                     docIds,
+                    actorMemberGroupIds,
                     List.of(MovementActionType.CREATE, MovementActionType.FORWARD, MovementActionType.RETURN, MovementActionType.UNDO_SEND)
                 )
                 .stream()
@@ -353,11 +364,8 @@ public class DocumentServiceImpl implements DocumentService {
 
         // A group admin can act on any document their group holds, even when they are not the
         // current_owner_user_id anchor. Batch this (one query for the whole page) instead of a
-        // per-row isGroupAdmin lookup.
-        Set<Long> groupIdsOnPage = docs.getContent().stream()
-            .map(Document::getCurrentOwnerGroupId)
-            .filter(java.util.Objects::nonNull)
-            .collect(Collectors.toSet());
+        // per-row isGroupAdmin lookup. groupIdsOnPage was already computed above for the inbound-
+        // movement lookup.
         Set<Long> adminGroupIds = groupIdsOnPage.isEmpty()
             ? Set.of()
             : new HashSet<>(recipientGroupMemberRepository.findAdminGroupIds(actorUserId, groupIdsOnPage));
@@ -1255,6 +1263,10 @@ public class DocumentServiceImpl implements DocumentService {
         );
         DocumentMovement savedUndoMovement = movementRepository.save(undoMovement);
         d.setCurrentOwnerUserId(senderUserId);
+        // Undo always hands the document back to a single person (the original sender), so it is
+        // no longer group-held - without this, canActOnDocument() would keep granting action rights
+        // to admins of whatever group the undone forward had targeted.
+        d.setCurrentOwnerGroupId(null);
         documentRecipientService.restorePreviousSetForTo(d, senderUserId, actorUserId, savedUndoMovement.getId(), RecipientSetReason.UNDO_SEND);
         d.setStatus(Status.IN_PROGRESS);
         d.setCompletedAt(null);
