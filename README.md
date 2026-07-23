@@ -310,7 +310,7 @@ same `APP_CORS_ALLOWED_ORIGINS` setting as HTTP CORS.
 
 | Suite | Count | Command |
 |-------|-------|---------|
-| Backend (JUnit 5, H2) | 199 | `cd rms-backend; .\mvnw.cmd test` |
+| Backend (JUnit 5, H2) | 201 | `cd rms-backend; .\mvnw.cmd test` |
 | Frontend unit (Vitest) | 100 | `npm --prefix rms-frontend run test:unit` |
 | Frontend E2E (Playwright) | 19 | `cd rms-frontend; npm run test:e2e` |
 
@@ -357,6 +357,9 @@ bootstrap, security hardening, rollback, and troubleshooting. Verify each releas
 
 ## Further documentation
 
+- **[Customs-RMS-System-Documentation.docx](Customs-RMS-System-Documentation.docx)** — full system documentation:
+  architecture, complete data model, security and permission model, workflow, API reference, and
+  maintenance/handover notes. Start here for the internals ([PDF copy](Customs-RMS-System-Documentation.pdf)).
 - [QUICKSTART-DOCKER.md](QUICKSTART-DOCKER.md) — run the whole stack in Docker with one command.
 - [DEPLOYMENT.md](DEPLOYMENT.md) — production deployment guide (Appendix A covers Docker + bundles).
 - [packaging/README.md](packaging/README.md) — recipient guide shipped inside the offline image bundle.
